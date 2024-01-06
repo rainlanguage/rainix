@@ -23,6 +23,10 @@
       in with pkgs; rec {
         packages = rec {
 
+          ci-test-sol = ''
+            ${forge-bin} test -vvv
+          '';
+
           build-dispair-meta-cmd = ''
             ${rain-cli-bin} meta build \
               -i <(${rain-cli-bin} meta solc artifact -c abi -i out/RainterpreterExpressionDeployerNPE2.sol/RainterpreterExpressionDeployerNPE2.json) -m solidity-abi-v2 -t json -e deflate -l en \
