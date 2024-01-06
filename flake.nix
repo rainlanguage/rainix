@@ -20,9 +20,8 @@
         rain-cli-bin = "${rain.defaultPackage.${system}}/bin/rain";
         forge-bin = "${foundry.defaultPackage.${system}}/bin/forge";
 
-      in with pkgs; rec {
+      in rec {
         # reexport everything for use downstream.
-        pkgs = pkgs;
         nixpkgs = nixpkgs;
         rain = rain;
         flake-utils = flake-utils;
@@ -30,42 +29,17 @@
         foundry = foundry;
 
         packages = rec {
-
-          ci-test-sol = ''
+          ci-test-sol = pkgs.writeShellScriptBin "ci-test-sol" ''
             ${forge-bin} test -vvv
           '';
-
-          build-dispair-meta-cmd = ''
-            ${rain-cli-bin} meta build \
-              -i <(${rain-cli-bin} meta solc artifact -c abi -i out/RainterpreterExpressionDeployerNPE2.sol/RainterpreterExpressionDeployerNPE2.json) -m solidity-abi-v2 -t json -e deflate -l en \
-              -i <(${forge-bin} script --silent ./script/GetAuthoringMeta.sol && cat ./meta/AuthoringMeta.rain.meta) -m authoring-meta-v1 -t cbor -e deflate -l none \
-          '';
-
-          build-meta = pkgs.writeShellScriptBin "build-meta" ''
-            mkdir -p meta;
-            ${forge-bin} build --force;
-            ${(build-dispair-meta-cmd)} -o meta/RainterpreterExpressionDeployerNPE2.rain.meta;
-          '';
-
-          deploy-dispair = pkgs.writeShellScriptBin "deploy-dispair" (''
-            set -euo pipefail;
-            mkdir -p meta;
-            ${forge-bin} build --force;
-            ${forge-bin} script -vvvvv script/DeployDISPair.sol --legacy --verify --broadcast --rpc-url "''${CI_DEPLOY_RPC_URL}" --etherscan-api-key "''${EXPLORER_VERIFICATION_KEY}" \
-              --sig='run(bytes)' \
-              "$( ${(build-dispair-meta-cmd)} -E hex )" \
-            ;
-          '');
-
-          default = build-meta;
         };
 
           # For `nix develop`:
         devShells.default = pkgs.mkShell {
           buildInputs = [
-            rust-bin.stable."1.75.0".default
-            foundry-bin
-            slither-analyzer
+            pkgs.rust-bin.stable."1.75.0".default
+            pkgs.foundry-bin
+            pkgs.slither-analyzer
           ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
             pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
           ]);
