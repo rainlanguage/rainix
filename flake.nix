@@ -34,7 +34,6 @@
             pkgs.rust-bin.stable."1.75.0".default
             pkgs.foundry-bin
             pkgs.slither-analyzer
-            rain
           ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
             pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
           ]);
