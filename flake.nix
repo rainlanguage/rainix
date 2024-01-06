@@ -21,12 +21,7 @@
         forge-bin = "${foundry.defaultPackage.${system}}/bin/forge";
 
       in rec {
-        # reexport everything for use downstream.
-        nixpkgs = nixpkgs;
-        rain = rain;
-        flake-utils = flake-utils;
-        rust-overlay = rust-overlay;
-        foundry = foundry;
+        inputs = inputs;
 
         packages = rec {
           ci-test-sol = pkgs.writeShellScriptBin "ci-test-sol" ''
