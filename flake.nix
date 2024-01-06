@@ -6,7 +6,7 @@
     rain.url = "github:rainprotocol/rain.cli/6a912680be6d967fd6114aafab793ebe8503d27b";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
-    foundry.url = "github:shazow/foundry.nix/monthly";
+    foundry.url = "github:shazow/foundry.nix/main";
   };
 
   outputs = inputs@{ self, nixpkgs, rain, flake-utils, rust-overlay, foundry, ... }:
