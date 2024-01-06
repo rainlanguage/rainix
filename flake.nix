@@ -9,7 +9,7 @@
     foundry.url = "github:shazow/foundry.nix/monthly";
   };
 
-  outputs = { self, nixpkgs, rain, flake-utils, rust-overlay, foundry, ... }:
+  outputs = inputs@{ self, nixpkgs, rain, flake-utils, rust-overlay, foundry, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         # pkgs = nixpkgs.legacyPackages.${system};
@@ -20,10 +20,10 @@
         rain-cli-bin = "${rain.defaultPackage.${system}}/bin/rain";
         forge-bin = "${foundry.defaultPackage.${system}}/bin/forge";
 
-      in rec {
+      in {
         i = inputs;
 
-        packages = rec {
+        packages = {
           ci-test-sol = pkgs.writeShellScriptBin "ci-test-sol" ''
             ${forge-bin} test -vvv
           '';
