@@ -21,7 +21,7 @@
         forge-bin = "${foundry.defaultPackage.${system}}/bin/forge";
 
       in rec {
-        inputs = inputs;
+        i = inputs;
 
         packages = rec {
           ci-test-sol = pkgs.writeShellScriptBin "ci-test-sol" ''
