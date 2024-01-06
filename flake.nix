@@ -16,16 +16,10 @@
         pkgs = import nixpkgs {
           inherit system overlays;
         };
-        rain-cli-bin = "${rain.defaultPackage.${system}}/bin/rain";
-        forge-bin = "${foundry.defaultPackage.${system}}/bin/forge";
+        forge-bin = "${pkgs.foundry-bin}/bin/forge";
 
       in {
         pkgs = pkgs;
-        nixpkgs-url = nixpkgs.url;
-        rain-url = rain.url;
-        flake-utils-url = flake-utils.url;
-        rust-overlay-url = rust-overlay.url;
-        foundry-url = foundry.url;
 
         packages = {
           ci-test-sol = pkgs.writeShellScriptBin "ci-test-sol" ''
