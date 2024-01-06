@@ -12,7 +12,6 @@
   outputs = inputs@{ self, nixpkgs, rain, flake-utils, rust-overlay, foundry, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        # pkgs = nixpkgs.legacyPackages.${system};
         overlays =[ (import rust-overlay) foundry.overlay ];
         pkgs = import nixpkgs {
           inherit system overlays;
@@ -21,6 +20,7 @@
         forge-bin = "${foundry.defaultPackage.${system}}/bin/forge";
 
       in {
+        pkgs = pkgs;
         nixpkgs-url = nixpkgs.url;
         rain-url = rain.url;
         flake-utils-url = flake-utils.url;
