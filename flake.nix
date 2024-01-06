@@ -21,7 +21,11 @@
         forge-bin = "${foundry.defaultPackage.${system}}/bin/forge";
 
       in {
-        i = inputs;
+        nixpkgs-url = nixpkgs.url;
+        rain-url = rain.url;
+        flake-utils-url = flake-utils.url;
+        rust-overlay-url = rust-overlay.url;
+        foundry-url = foundry.url;
 
         packages = {
           ci-test-sol = pkgs.writeShellScriptBin "ci-test-sol" ''
