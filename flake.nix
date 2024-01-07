@@ -23,23 +23,31 @@
         pkgs = pkgs;
 
         packages = {
-          ci-test-sol = pkgs.writeShellScriptBin "ci-test-sol" ''
-            ${forge-bin} install --shallow
-            ${forge-bin} fmt --check
+          ci-sol-test = pkgs.writeShellScriptBin "ci-sol-test" ''
             ${forge-bin} test -vvv
+          '';
+
+          ci-sol-artifacts = pkgs.writeShellScriptBin "ci-sol-artifacts" ''
             ${forge-bin} selectors up --all
           '';
 
-          ci-test-rs = pkgs.writeShellScriptBin "ci-test-rs" ''
-            ${cargo-bin} fmt --check
-            ${cargo-bin} clippy
+          # Slither first to avoid any potential conflicts with other checks.
+          ci-sol-static = pkgs.writeShellScriptBin "ci-sol-static" ''
+            ${slither-bin} --ignore-compile --skip-clean .
+            ${forge-bin} fmt --check
+          '';
+
+          ci-rs-test = pkgs.writeShellScriptBin "ci-rs-test" ''
             ${cargo-bin} test
           '';
 
-          # Run slither with the expectation that the CI will perform a clean
-          # build and any other repo specific prep first.
-          ci-slither = pkgs.writeShellScriptBin "ci-slither" ''
-            ${slither-bin} --ignore-compile --skip-clean .
+          ci-rs-artifacts = pkgs.writeShellScriptBin "ci-rs-artifacts" ''
+            ${cargo-bin} build --release
+          '';
+
+          ci-rs-static = pkgs.writeShellScriptBin "ci-rs-static" ''
+            ${cargo-bin} fmt --check
+            ${cargo-bin} clippy
           '';
         };
 
