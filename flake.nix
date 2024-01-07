@@ -28,6 +28,8 @@
           '';
 
           ci-test-rs = pkgs.writeShellScriptBin "ci-test-rs" ''
+            ${cargo-bin} fmt --check
+            ${cargo-bin} clippy
             ${cargo-bin} test
           '';
 
