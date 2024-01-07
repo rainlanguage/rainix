@@ -19,6 +19,7 @@
         slither-bin = "${pkgs.slither-analyzer}/bin/slither";
         rust-bin-pin = pkgs.rust-bin.stable."1.75.0".default;
         cargo-bin = "${rust-bin-pin}/bin/cargo";
+
         baseBuildInputs = [
           pkgs.rust-bin.stable."1.75.0".default
           pkgs.foundry-bin
@@ -26,6 +27,19 @@
         ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
         ]);
+
+        # https://ertt.ca/nix/shell-scripts/
+        mkCITask = name: pkgs.symlinkJoin {
+            name = name;
+            paths = [
+              ((pkgs.writeScriptBin name (builtins.readFile ./ci/${name}.sh)).overrideAttrs(old: {
+                buildCommand = "${old.buildCommand}\n patchShebangs $out";
+              }))
+            ] ++ baseBuildInputs;
+            buildInputs = [ pkgs.makeWrapper ];
+            postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
+          };
+
       in {
         pkgs = pkgs;
         buildInputs = baseBuildInputs;
@@ -45,20 +59,8 @@
             ${forge-bin} fmt --check
           '';
 
-          ci-rs-test = pkgs.symlinkJoin {
-            name = "ci-rs-test";
-            paths = [
-              ((pkgs.writeScriptBin "ci-rs-test" (builtins.readFile ./ci/ci-rs-test.sh)).overrideAttrs(old: {
-                buildCommand = "${old.buildCommand}\n patchShebangs $out";
-              }))
-            ] ++ baseBuildInputs;
-            buildInputs = [ pkgs.makeWrapper ];
-            postBuild = "wrapProgram $out/bin/ci-rs-test --prefix PATH : $out/bin";
-          };
-
-          ci-rs-artifacts = pkgs.writeShellScriptBin "ci-rs-artifacts" ''
-            ${cargo-bin} build --release
-          '';
+          ci-rs-test = mkCITask "ci-rs-test";
+          ci-rs-artifacts = mkCITask "ci-rs-artifacts";
 
           ci-rs-static = pkgs.writeShellScriptBin "ci-rs-static" ''
             ${cargo-bin} fmt --check
