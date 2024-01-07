@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
 cargo fmt --check
-cargo clippy
+cargo clippy --no-deps
