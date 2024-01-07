@@ -36,8 +36,10 @@
             ${cargo-bin} test
           '';
 
+          # Run slither with the expectation that the CI will perform a clean
+          # build and any other repo specific prep first.
           ci-slither = pkgs.writeShellScriptBin "ci-slither" ''
-            ${slither-bin} .
+            ${slither-bin} --ignore-compile --skip-clean .
           '';
         };
 
