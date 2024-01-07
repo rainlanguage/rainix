@@ -24,7 +24,10 @@
 
         packages = {
           ci-test-sol = pkgs.writeShellScriptBin "ci-test-sol" ''
+            ${forge-bin} install --shallow
+            ${forge-bin} fmt --check
             ${forge-bin} test -vvv
+            ${forge-bin} selectors up --all
           '';
 
           ci-test-rs = pkgs.writeShellScriptBin "ci-test-rs" ''
