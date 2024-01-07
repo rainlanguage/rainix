@@ -16,6 +16,7 @@
           inherit system overlays;
         };
         forge-bin = "${pkgs.foundry-bin}/bin/forge";
+        slither-bin = "${pkgs.slither-analyzer}/bin/slither";
 
       in {
         pkgs = pkgs;
@@ -23,6 +24,10 @@
         packages = {
           ci-test-sol = pkgs.writeShellScriptBin "ci-test-sol" ''
             ${forge-bin} test -vvv
+          '';
+
+          ci-slither = pkgs.writeShellScriptBin "ci-slither" ''
+            ${slither-bin} .
           '';
         };
 
