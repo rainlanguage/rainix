@@ -61,11 +61,7 @@
 
           ci-rs-test = mkCITask "ci-rs-test";
           ci-rs-artifacts = mkCITask "ci-rs-artifacts";
-
-          ci-rs-static = pkgs.writeShellScriptBin "ci-rs-static" ''
-            ${cargo-bin} fmt --check
-            ${cargo-bin} clippy
-          '';
+          ci-rs-static = mkCITask "ci-rs-static";
         };
 
         devShells.default = pkgs.mkShell {
