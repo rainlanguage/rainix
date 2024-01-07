@@ -39,6 +39,7 @@
 
           ci-rs-test = pkgs.stdenv.mkDerivation {
             name = "ci-rs-test";
+            src = ./.;
             buildInputs = [
               rust-bin-pin
             ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
