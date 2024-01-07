@@ -17,13 +17,18 @@
         };
         forge-bin = "${pkgs.foundry-bin}/bin/forge";
         slither-bin = "${pkgs.slither-analyzer}/bin/slither";
-
+        rust-bin-pin = pkgs.rust-bin.stable."1.75.0".default;
+        cargo-bin = "${rust-bin-pin}/bin/cargo";
       in {
         pkgs = pkgs;
 
         packages = {
           ci-test-sol = pkgs.writeShellScriptBin "ci-test-sol" ''
             ${forge-bin} test -vvv
+          '';
+
+          ci-test-rs = pkgs.writeShellScriptBin "ci-test-rs" ''
+            ${cargo-bin} test
           '';
 
           ci-slither = pkgs.writeShellScriptBin "ci-slither" ''
@@ -33,7 +38,7 @@
 
         devShells.default = pkgs.mkShell {
           buildInputs = [
-            pkgs.rust-bin.stable."1.75.0".default
+            rust-bin-pin
             pkgs.foundry-bin
             pkgs.slither-analyzer
           ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
