@@ -18,3 +18,6 @@ jobs:
 
       - name: Check forge version
         run: nix develop --command forge --version
+
+      - name: Check slither version
+        run: nix develop --command slither --version
