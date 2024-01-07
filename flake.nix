@@ -19,8 +19,16 @@
         slither-bin = "${pkgs.slither-analyzer}/bin/slither";
         rust-bin-pin = pkgs.rust-bin.stable."1.75.0".default;
         cargo-bin = "${rust-bin-pin}/bin/cargo";
+        baseBuildInputs = [
+          pkgs.rust-bin.stable."1.75.0".default
+          pkgs.foundry-bin
+          pkgs.slither-analyzer
+        ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
+          pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
+        ]);
       in {
         pkgs = pkgs;
+        buildInputs = baseBuildInputs;
 
         packages = {
           ci-sol-test = pkgs.writeShellScriptBin "ci-sol-test" ''
@@ -43,8 +51,7 @@
               ((pkgs.writeScriptBin "ci-rs-test" (builtins.readFile ./ci/ci-rs-test.sh)).overrideAttrs(old: {
                 buildCommand = "${old.buildCommand}\n patchShebangs $out";
               }))
-              rust-bin-pin
-            ];
+            ] ++ baseBuildInputs;
             buildInputs = [ pkgs.makeWrapper ];
             postBuild = "wrapProgram $out/bin/ci-rs-test --prefix PATH : $out/bin";
           };
@@ -60,13 +67,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = [
-            rust-bin-pin
-            pkgs.foundry-bin
-            pkgs.slither-analyzer
-          ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
-            pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
-          ]);
+          buildInputs = baseBuildInputs;
         };
       }
     );
