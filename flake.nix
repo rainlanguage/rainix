@@ -27,10 +27,10 @@
         ]);
 
         # https://ertt.ca/nix/shell-scripts/
-        mkTask = { name, additionalBuildInputs ? [] }: pkgs.symlinkJoin {
+        mkTask = { name, additionalBuildInputs ? [], body ? (builtins.readFile ./task/${name}.sh) }: pkgs.symlinkJoin {
           name = name;
           paths = [
-            ((pkgs.writeScriptBin name (builtins.readFile ./task/${name}.sh)).overrideAttrs(old: {
+            ((pkgs.writeScriptBin name body).overrideAttrs(old: {
               buildCommand = "${old.buildCommand}\n patchShebangs $out";
             }))
           ] ++ baseBuildInputs ++ additionalBuildInputs;
