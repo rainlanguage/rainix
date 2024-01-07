@@ -45,19 +45,9 @@
         buildInputs = baseBuildInputs;
 
         packages = {
-          ci-sol-test = pkgs.writeShellScriptBin "ci-sol-test" ''
-            ${forge-bin} test -vvv
-          '';
-
-          ci-sol-artifacts = pkgs.writeShellScriptBin "ci-sol-artifacts" ''
-            ${forge-bin} selectors up --all
-          '';
-
-          # Slither first to avoid any potential conflicts with other checks.
-          ci-sol-static = pkgs.writeShellScriptBin "ci-sol-static" ''
-            ${slither-bin} --ignore-compile --skip-clean .
-            ${forge-bin} fmt --check
-          '';
+          ci-sol-test = mkCITask "ci-sol-test";
+          ci-sol-artifacts = mkCITask "ci-sol-artifacts";
+          ci-sol-static = mkCITask "ci-sol-static";
 
           ci-rs-test = mkCITask "ci-rs-test";
           ci-rs-artifacts = mkCITask "ci-rs-artifacts";
