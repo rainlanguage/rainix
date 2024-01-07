@@ -37,9 +37,17 @@
             ${forge-bin} fmt --check
           '';
 
-          ci-rs-test = pkgs.writeShellScriptBin "ci-rs-test" ''
-            ${cargo-bin} test
-          '';
+          ci-rs-test = pkgs.stdenv.mkDerivation {
+            name = "ci-rs-test";
+            buildInputs = [
+              rust-bin-pin
+            ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
+              pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
+            ]);
+            buildCommand = ''
+              ${cargo-bin} test
+            '';
+          };
 
           ci-rs-artifacts = pkgs.writeShellScriptBin "ci-rs-artifacts" ''
             ${cargo-bin} build --release
