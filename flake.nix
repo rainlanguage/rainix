@@ -46,6 +46,7 @@
               pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
             ]);
             buildCommand = ''
+              ls -la
               ${cargo-bin} test
             '';
           };
