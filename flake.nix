@@ -37,18 +37,16 @@
             ${forge-bin} fmt --check
           '';
 
-          ci-rs-test = pkgs.stdenv.mkDerivation {
+          ci-rs-test = pkgs.symlinkJoin {
             name = "ci-rs-test";
-            src = ./.;
-            buildInputs = [
+            paths = [
+              ((pkgs.writeScriptBin "ci-rs-test" (builtins.readFile ./ci/ci-rs-test.sh)).overrideAttrs(old: {
+                buildCommand = "${old.buildCommand}\n patchShebangs $out";
+              }))
               rust-bin-pin
-            ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
-              pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
-            ]);
-            buildCommand = ''
-              ls -la
-              ${cargo-bin} test
-            '';
+            ];
+            buildInputs = [ pkgs.makeWrapper ];
+            postBuild = "wrapProgram $out/bin/ci-rs-test --prefix PATH : $out/bin";
           };
 
           ci-rs-artifacts = pkgs.writeShellScriptBin "ci-rs-artifacts" ''
