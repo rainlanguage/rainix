@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
-# Shallow install is much faster for repos with several nested instances of
-# foundry in the dependency tree.
-forge install --shallow
-
 # Upload all function selectors to the registry.
 forge selectors up --all
 

@@ -44,13 +44,15 @@
         mkTask = mkTask;
 
         packages = {
-          ci-sol-test = mkTask { name = "ci-sol-test"; };
-          ci-sol-artifacts = mkTask { name = "ci-sol-artifacts"; };
-          ci-sol-static = mkTask { name = "ci-sol-static"; };
+          rainix-prelude = mkTask { name = "rainix-prelude"; };
 
-          ci-rs-test = mkTask { name = "ci-rs-test"; };
-          ci-rs-artifacts = mkTask { name = "ci-rs-artifacts"; };
-          ci-rs-static = mkTask { name = "ci-rs-static"; };
+          rainix-sol-test = mkTask { name = "rainix-sol-test"; };
+          rainix-sol-artifacts = mkTask { name = "rainix-sol-artifacts"; };
+          rainix-sol-static = mkTask { name = "rainix-sol-static"; };
+
+          rainix-rs-test = mkTask { name = "rainix-rs-test"; };
+          rainix-rs-artifacts = mkTask { name = "rainix-rs-artifacts"; };
+          rainix-rs-static = mkTask { name = "rainix-rs-static"; };
         };
 
         devShells.default = pkgs.mkShell {
