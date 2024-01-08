@@ -13,6 +13,4 @@ forge script script/Deploy.sol:Deploy \
     --legacy \
     --verify \
     --broadcast \
-    --rpc-url "${CI_DEPLOY_RPC_URL}" \
-    --etherscan-api-key "${EXPLORER_VERIFICATION_KEY}" \
 ;
