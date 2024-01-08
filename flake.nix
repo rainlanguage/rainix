@@ -27,7 +27,7 @@
         ]);
 
         # https://ertt.ca/nix/shell-scripts/
-        mkTask = { name, additionalBuildInputs ? [], body }: pkgs.symlinkJoin {
+        mkTask = { name, body, additionalBuildInputs ? [] }: pkgs.symlinkJoin {
           name = name;
           paths = [
             ((pkgs.writeScriptBin name body).overrideAttrs(old: {
