@@ -27,7 +27,7 @@
         ]);
 
         # https://ertt.ca/nix/shell-scripts/
-        mkTask = { name, additionalBuildInputs ? [], body ? (builtins.readFile ./task/${name}.sh) }: pkgs.symlinkJoin {
+        mkTask = { name, additionalBuildInputs ? [], body }: pkgs.symlinkJoin {
           name = name;
           paths = [
             ((pkgs.writeScriptBin name body).overrideAttrs(old: {
@@ -37,6 +37,7 @@
           buildInputs = [ pkgs.makeWrapper ];
           postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
         };
+        mkTaskLocal = name: mkTask { name = name; body = (builtins.readFile ./task/${name}.sh); };
 
       in {
         pkgs = pkgs;
@@ -44,15 +45,15 @@
         mkTask = mkTask;
 
         packages = {
-          rainix-prelude = mkTask { name = "rainix-prelude"; };
+          rainix-prelude = mkTaskLocal "rainix-prelude";
 
-          rainix-sol-test = mkTask { name = "rainix-sol-test"; };
-          rainix-sol-artifacts = mkTask { name = "rainix-sol-artifacts"; };
-          rainix-sol-static = mkTask { name = "rainix-sol-static"; };
+          rainix-sol-test = mkTaskLocal "rainix-sol-test";
+          rainix-sol-artifacts = mkTaskLocal "rainix-sol-artifacts";
+          rainix-sol-static = mkTaskLocal "rainix-sol-static";
 
-          rainix-rs-test = mkTask { name = "rainix-rs-test"; };
-          rainix-rs-artifacts = mkTask { name = "rainix-rs-artifacts"; };
-          rainix-rs-static = mkTask { name = "rainix-rs-static"; };
+          rainix-rs-test = mkTaskLocal "rainix-rs-test";
+          rainix-rs-artifacts = mkTaskLocal "rainix-rs-artifacts";
+          rainix-rs-static = mkTaskLocal "rainix-rs-static";
         };
 
         devShells.default = pkgs.mkShell {
