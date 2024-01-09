@@ -19,6 +19,7 @@
 
         baseBuildInputs = [
           pkgs.rust-bin.stable."1.75.0".default
+          pkgs.cargo-tauri
           pkgs.foundry-bin
           pkgs.slither-analyzer
           rain.defaultPackage.${system}
