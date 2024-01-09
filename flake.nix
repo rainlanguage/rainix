@@ -57,6 +57,8 @@
           rainix-rs-test = mkTaskLocal "rainix-rs-test";
           rainix-rs-artifacts = mkTaskLocal "rainix-rs-artifacts";
           rainix-rs-static = mkTaskLocal "rainix-rs-static";
+
+          rainix-tauri-artifacts = mkTaskLocal "rainix-tauri-artifacts";
         };
 
         devShells.default = pkgs.mkShell {
