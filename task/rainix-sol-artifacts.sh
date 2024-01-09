@@ -9,9 +9,9 @@ forge selectors up --all
 # Echos the deploy pubkey to stdout to make it easy to add gas to the account.
 echo 'deploy pubkey:';
 cast wallet address "${DEPLOYMENT_KEY}";
-echo "ETH_RPC_URL: $ETH_RPC_URL";
 forge script script/Deploy.sol:Deploy \
     --legacy \
     --verify \
     --broadcast \
+    --rpc-url "${ETH_RPC_URL}" \
 ;
