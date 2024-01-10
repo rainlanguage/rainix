@@ -22,16 +22,19 @@
         baseBuildInputs = [
           pkgs.rust-bin.stable."1.75.0".default
 
-          # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
-          pkgs.cargo-tauri
-          pkgs.gtk4
-
           pkgs.foundry-bin
           pkgs.slither-analyzer
           rain.defaultPackage.${system}
         ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
         ]);
+
+        tauriBuildInputs = [
+          # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
+          pkgs.cargo-tauri
+          pkgs.gtk4
+          pkgs.nodejs_21
+        ];
 
         # https://ertt.ca/nix/shell-scripts/
         mkTask = { name, body, additionalBuildInputs ? [] }: pkgs.symlinkJoin {
@@ -62,11 +65,15 @@
           rainix-rs-artifacts = mkTaskLocal "rainix-rs-artifacts";
           rainix-rs-static = mkTaskLocal "rainix-rs-static";
 
-          rainix-tauri-artifacts = mkTaskLocal "rainix-tauri-artifacts";
+          rainix-tauri-artifacts = mkTask rec { name = "rainix-tauri-artifacts"; body = (builtins.readFile ./task/${name}.sh); additionalBuildInputs = tauriBuildInputs; };
         };
 
         devShells.default = pkgs.mkShell {
           buildInputs = baseBuildInputs;
+        };
+
+        devShells.tauri = pkgs.mkShell {
+          buildInputs = baseBuildInputs ++ tauriBuildInputs;
         };
       }
     );
