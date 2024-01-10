@@ -21,7 +21,11 @@
 
         baseBuildInputs = [
           pkgs.rust-bin.stable."1.75.0".default
+
+          # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
           pkgs.cargo-tauri
+          pkgs.gtk4
+
           pkgs.foundry-bin
           pkgs.slither-analyzer
           rain.defaultPackage.${system}
