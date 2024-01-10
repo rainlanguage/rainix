@@ -28,20 +28,20 @@
 
           # This is needed to even do things like clippy when tauri is in the
           # workspace.
-          pkgs.curl
-          pkgs.wget
-          pkgs.pkg-config
-          pkgs.dbus
-          pkgs.openssl_3
-          pkgs.glib
-          pkgs.gtk3
-          pkgs.libsoup
-          pkgs.librsvg
+          # pkgs.curl
+          # pkgs.wget
+          # pkgs.pkg-config
+          # pkgs.dbus
+          # pkgs.openssl_3
+          # pkgs.glib
+          # pkgs.gtk3
+          # pkgs.libsoup
+          # pkgs.librsvg
         ]
-        ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
-          # for tauri
-          pkgs.webkitgtk
-        ])
+        # ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
+        #   # for tauri
+        #   pkgs.webkitgtk
+        # ])
         ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
         ]);
@@ -81,7 +81,7 @@
               buildCommand = "${old.buildCommand}\n patchShebangs $out";
             }))
           ] ++ baseBuildInputs ++ additionalBuildInputs;
-          buildInputs = [ pkgs.makeWrapper ] ++ baseBuildInputs ++ additionalBuildInputs;
+          buildInputs = [ pkgs.makeWrapper ];
           postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
         };
         mkTaskLocal = name: mkTask { name = name; body = (builtins.readFile ./task/${name}.sh); };
@@ -102,11 +102,11 @@
           rainix-rs-artifacts = mkTaskLocal "rainix-rs-artifacts";
           rainix-rs-static = mkTaskLocal "rainix-rs-static";
 
-          rainix-tauri-artifacts = mkTask rec {
-            name = "rainix-tauri-artifacts";
-            body = (builtins.readFile ./task/${name}.sh);
-            additionalBuildInputs = tauriBuildInputs;
-          };
+          # rainix-tauri-artifacts = mkTask rec {
+          #   name = "rainix-tauri-artifacts";
+          #   body = (builtins.readFile ./task/${name}.sh);
+          #   additionalBuildInputs = tauriBuildInputs;
+          # };
         };
 
         devShells.default = pkgs.mkShell {
