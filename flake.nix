@@ -38,7 +38,7 @@
           pkgs.libsoup
           pkgs.librsvg
         ]
-        ++ (pkgs.lib.optionals !pkgs.stdenv.isDarwin [
+        ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
           # for tauri
           pkgs.webkitgtk
         ])
