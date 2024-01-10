@@ -45,6 +45,17 @@
           pkgs.nodejs_21
         ];
 
+        tauriLibraries = [
+          pkgs.webkitgtk
+          pkgs.gtk3
+          pkgs.cairo
+          pkgs.gdk-pixbuf
+          pkgs.glib
+          pkgs.dbus
+          pkgs.openssl_3
+          pkgs.librsvg
+        ];
+
         # https://ertt.ca/nix/shell-scripts/
         mkTask = { name, body, additionalBuildInputs ? [] }: pkgs.symlinkJoin {
           name = name;
@@ -87,6 +98,11 @@
 
         devShells.tauri-shell = pkgs.mkShell {
           buildInputs = baseBuildInputs ++ tauriBuildInputs;
+          shellHook =
+            ''
+              export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath tauriLibraries}:$LD_LIBRARY_PATH
+              export XDG_DATA_DIRS=${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS
+            '';
         };
       }
     );
