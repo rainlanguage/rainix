@@ -36,7 +36,7 @@
           pkgs.glib
           pkgs.gtk3
           pkgs.libsoup
-          pkgs.webkitgtk
+          # pkgs.webkitgtk
           pkgs.librsvg
         ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
