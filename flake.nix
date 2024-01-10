@@ -72,7 +72,7 @@
           buildInputs = baseBuildInputs;
         };
 
-        devShells.tauri = pkgs.mkShell {
+        devShells.tauri-shell = pkgs.mkShell {
           buildInputs = baseBuildInputs ++ tauriBuildInputs;
         };
       }
