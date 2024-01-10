@@ -32,7 +32,7 @@
         tauriBuildInputs = [
           # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
           pkgs.cargo-tauri
-          pkgs.gtk4
+          pkgs.gtk3
           pkgs.nodejs_21
         ];
 
