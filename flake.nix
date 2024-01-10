@@ -25,6 +25,10 @@
           pkgs.foundry-bin
           pkgs.slither-analyzer
           rain.defaultPackage.${system}
+
+          # This is needed to even do things like clippy when tauri is in the
+          # workspace.
+          pkgs.gtk3
         ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
         ]);
