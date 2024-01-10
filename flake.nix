@@ -65,7 +65,11 @@
           rainix-rs-artifacts = mkTaskLocal "rainix-rs-artifacts";
           rainix-rs-static = mkTaskLocal "rainix-rs-static";
 
-          rainix-tauri-artifacts = mkTask rec { name = "rainix-tauri-artifacts"; body = (builtins.readFile ./task/${name}.sh); additionalBuildInputs = tauriBuildInputs; };
+          rainix-tauri-artifacts = mkTask rec {
+            name = "rainix-tauri-artifacts";
+            body = (builtins.readFile ./task/${name}.sh);
+            additionalBuildInputs = tauriBuildInputs;
+          };
         };
 
         devShells.default = pkgs.mkShell {
