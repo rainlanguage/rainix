@@ -28,7 +28,16 @@
 
           # This is needed to even do things like clippy when tauri is in the
           # workspace.
+          pkgs.curl
+          pkgs.wget
+          pkgs.pkg-config
+          pkgs.dbus
+          pkgs.openssl_3
+          pkgs.glib
           pkgs.gtk3
+          pkgs.libsoup
+          pkgs.webkitgtk
+          pkgs.librsvg
         ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
         ]);
