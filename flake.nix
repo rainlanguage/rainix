@@ -76,13 +76,16 @@
             pkgs.glib
             pkgs.gtk3
             pkgs.libsoup
-            pkgs.webkitgtk
             pkgs.librsvg
             pkgs.nodejs_21
-          ];
+          ]
+          ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
+            # This is probably needed but is is marked as broken in nixpkgs
+            pkgs.webkitgtk
+          ]);
+
 
           tauriLibraries = [
-            pkgs.webkitgtk
             pkgs.gtk3
             pkgs.cairo
             pkgs.gdk-pixbuf
@@ -90,7 +93,11 @@
             pkgs.dbus
             pkgs.openssl_3
             pkgs.librsvg
-          ];
+          ]
+          ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
+            # This is probably needed but is is marked as broken in nixpkgs
+            pkgs.webkitgtk
+          ]);
         in pkgs.mkShell {
           buildInputs = baseBuildInputs ++ tauriBuildInputs;
           shellHook =
