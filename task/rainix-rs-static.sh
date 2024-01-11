@@ -2,4 +2,4 @@
 set -euxo pipefail
 
 cargo fmt --check
-cargo clippy --no-deps
+cargo clippy --no-deps -- -D clippy::all
