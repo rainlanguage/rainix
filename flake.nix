@@ -21,6 +21,8 @@
 
         baseBuildInputs = [
           pkgs.rust-bin.stable."1.75.0".default
+          # Needed by common rust deps
+          pkgs.gmp
 
           pkgs.foundry-bin
           pkgs.slither-analyzer
