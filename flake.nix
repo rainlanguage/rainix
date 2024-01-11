@@ -25,53 +25,10 @@
           pkgs.foundry-bin
           pkgs.slither-analyzer
           rain.defaultPackage.${system}
-
-          # This is needed to even do things like clippy when tauri is in the
-          # workspace.
-          # pkgs.curl
-          # pkgs.wget
-          # pkgs.pkg-config
-          # pkgs.dbus
-          # pkgs.openssl_3
-          # pkgs.glib
-          # pkgs.gtk3
-          # pkgs.libsoup
-          # pkgs.librsvg
         ]
-        # ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
-        #   # for tauri
-        #   pkgs.webkitgtk
-        # ])
         ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
         ]);
-
-        tauriBuildInputs = [
-          # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
-          pkgs.cargo-tauri
-          pkgs.curl
-          pkgs.wget
-          pkgs.pkg-config
-          pkgs.dbus
-          pkgs.openssl_3
-          pkgs.glib
-          pkgs.gtk3
-          pkgs.libsoup
-          pkgs.webkitgtk
-          pkgs.librsvg
-          pkgs.nodejs_21
-        ];
-
-        tauriLibraries = [
-          pkgs.webkitgtk
-          pkgs.gtk3
-          pkgs.cairo
-          pkgs.gdk-pixbuf
-          pkgs.glib
-          pkgs.dbus
-          pkgs.openssl_3
-          pkgs.librsvg
-        ];
 
         # https://ertt.ca/nix/shell-scripts/
         mkTask = { name, body, additionalBuildInputs ? [] }: pkgs.symlinkJoin {
@@ -101,19 +58,40 @@
           rainix-rs-test = mkTaskLocal "rainix-rs-test";
           rainix-rs-artifacts = mkTaskLocal "rainix-rs-artifacts";
           rainix-rs-static = mkTaskLocal "rainix-rs-static";
-
-          # rainix-tauri-artifacts = mkTask rec {
-          #   name = "rainix-tauri-artifacts";
-          #   body = (builtins.readFile ./task/${name}.sh);
-          #   additionalBuildInputs = tauriBuildInputs;
-          # };
         };
 
         devShells.default = pkgs.mkShell {
           buildInputs = baseBuildInputs;
         };
 
-        devShells.tauri-shell = pkgs.mkShell {
+        # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
+        devShells.tauri-shell = let
+          tauriBuildInputs = [
+            pkgs.cargo-tauri
+            pkgs.curl
+            pkgs.wget
+            pkgs.pkg-config
+            pkgs.dbus
+            pkgs.openssl_3
+            pkgs.glib
+            pkgs.gtk3
+            pkgs.libsoup
+            pkgs.webkitgtk
+            pkgs.librsvg
+            pkgs.nodejs_21
+          ];
+
+          tauriLibraries = [
+            pkgs.webkitgtk
+            pkgs.gtk3
+            pkgs.cairo
+            pkgs.gdk-pixbuf
+            pkgs.glib
+            pkgs.dbus
+            pkgs.openssl_3
+            pkgs.librsvg
+          ];
+        in pkgs.mkShell {
           buildInputs = baseBuildInputs ++ tauriBuildInputs;
           shellHook =
             ''
