@@ -20,7 +20,7 @@
         };
 
         baseBuildInputs = [
-          pkgs.rust-bin.stable."1.75.0".default
+          pkgs.rust-bin.stable."1.74.0".default
           # Needed by common rust deps
           pkgs.gmp
 
