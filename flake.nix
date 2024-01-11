@@ -7,7 +7,7 @@
     nixpkgs.url = "github:nixos/nixpkgs/7a28f3cd1bb9176ff1cc21e5d120d4ef4be5cf7b";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
-    foundry.url = "github:shazow/foundry.nix/main";
+    foundry.url = "github:shazow/foundry.nix/monthly";
     rain.url = "github:rainprotocol/rain.cli";
   };
 
@@ -21,11 +21,12 @@
 
         baseBuildInputs = [
           pkgs.rust-bin.stable."1.75.0".default
-          pkgs.cargo-tauri
+
           pkgs.foundry-bin
           pkgs.slither-analyzer
           rain.defaultPackage.${system}
-        ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
+        ]
+        ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
         ]);
 
@@ -57,12 +58,47 @@
           rainix-rs-test = mkTaskLocal "rainix-rs-test";
           rainix-rs-artifacts = mkTaskLocal "rainix-rs-artifacts";
           rainix-rs-static = mkTaskLocal "rainix-rs-static";
-
-          rainix-tauri-artifacts = mkTaskLocal "rainix-tauri-artifacts";
         };
 
         devShells.default = pkgs.mkShell {
           buildInputs = baseBuildInputs;
+        };
+
+        # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
+        devShells.tauri-shell = let
+          tauriBuildInputs = [
+            pkgs.cargo-tauri
+            pkgs.curl
+            pkgs.wget
+            pkgs.pkg-config
+            pkgs.dbus
+            pkgs.openssl_3
+            pkgs.glib
+            pkgs.gtk3
+            pkgs.libsoup
+            pkgs.webkitgtk
+            pkgs.librsvg
+            pkgs.nodejs_21
+          ];
+
+          tauriLibraries = [
+            pkgs.webkitgtk
+            pkgs.gtk3
+            pkgs.cairo
+            pkgs.gdk-pixbuf
+            pkgs.glib
+            pkgs.dbus
+            pkgs.openssl_3
+            pkgs.librsvg
+          ];
+        in pkgs.mkShell {
+          buildInputs = baseBuildInputs ++ tauriBuildInputs;
+          shellHook =
+            ''
+              export WEBKIT_DISABLE_COMPOSITING_MODE=1
+              export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath tauriLibraries}:$LD_LIBRARY_PATH
+              export XDG_DATA_DIRS=${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS
+            '';
         };
       }
     );

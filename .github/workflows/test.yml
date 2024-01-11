@@ -26,4 +26,4 @@ jobs:
         run: nix develop --command cargo --version
 
       - name: Check tauri version
-        run: nix develop --command cargo tauri --version
+        run: nix develop .#tauri-shell --command cargo tauri --version
