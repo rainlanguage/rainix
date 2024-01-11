@@ -30,6 +30,7 @@
         ]
         ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
+          pkgs.darwin.apple_sdk.frameworks.AppKit
         ]);
 
         # https://ertt.ca/nix/shell-scripts/
