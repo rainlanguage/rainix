@@ -4,7 +4,7 @@
   inputs = {
     # Fork containing a fix for cargo-tauri on mac.
     # https://github.com/NixOS/nixpkgs/pull/279771
-    nixpkgs.url = "github:nixos/nixpkgs/7a28f3cd1bb9176ff1cc21e5d120d4ef4be5cf7b";
+    nixpkgs.url = "github:nixos/nixpkgs";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     foundry.url = "github:shazow/foundry.nix/main";
@@ -21,6 +21,8 @@
 
         baseBuildInputs = [
           pkgs.rust-bin.stable."1.75.0".default
+          # Needed by common rust deps
+          pkgs.gmp
 
           pkgs.foundry-bin
           pkgs.slither-analyzer
@@ -28,6 +30,7 @@
         ]
         ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
+          pkgs.darwin.apple_sdk.frameworks.AppKit
         ]);
 
         # https://ertt.ca/nix/shell-scripts/
@@ -38,7 +41,7 @@
               buildCommand = "${old.buildCommand}\n patchShebangs $out";
             }))
           ] ++ baseBuildInputs ++ additionalBuildInputs;
-          buildInputs = [ pkgs.makeWrapper ];
+          buildInputs = [ pkgs.makeWrapper ] ++ baseBuildInputs ++ additionalBuildInputs;
           postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
         };
         mkTaskLocal = name: mkTask { name = name; body = (builtins.readFile ./task/${name}.sh); };
@@ -83,7 +86,6 @@
             # This is probably needed but is is marked as broken in nixpkgs
             pkgs.webkitgtk
           ]);
-
 
           tauriLibraries = [
             pkgs.gtk3
