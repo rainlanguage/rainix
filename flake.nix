@@ -4,7 +4,7 @@
   inputs = {
     # Fork containing a fix for cargo-tauri on mac.
     # https://github.com/NixOS/nixpkgs/pull/279771
-    nixpkgs.url = "github:nixos/nixpkgs/7a28f3cd1bb9176ff1cc21e5d120d4ef4be5cf7b";
+    nixpkgs.url = "github:nixos/nixpkgs";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     foundry.url = "github:shazow/foundry.nix/main";
@@ -85,7 +85,6 @@
             # This is probably needed but is is marked as broken in nixpkgs
             pkgs.webkitgtk
           ]);
-
 
           tauriLibraries = [
             pkgs.gtk3
