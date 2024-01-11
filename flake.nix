@@ -40,7 +40,7 @@
               buildCommand = "${old.buildCommand}\n patchShebangs $out";
             }))
           ] ++ baseBuildInputs ++ additionalBuildInputs;
-          buildInputs = [ pkgs.makeWrapper ];
+          buildInputs = [ pkgs.makeWrapper ] ++ baseBuildInputs ++ additionalBuildInputs;
           postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
         };
         mkTaskLocal = name: mkTask { name = name; body = (builtins.readFile ./task/${name}.sh); };
