@@ -3,7 +3,7 @@ set -euxo pipefail
 
 # It's assumed that even rust builds likely need build artifacts from the
 # solidity contracts.
-# Shallow install is much faster for repos with several nested instances of
-# foundry in the dependency tree.
-forge install --shallow
+# We do NOT do a shallow clone here because nix flakes seem to not be compatible
+# with shallow clones.
+forge install
 forge build
