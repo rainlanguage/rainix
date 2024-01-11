@@ -20,6 +20,9 @@
         };
 
         baseBuildInputs = [
+          # Some common OS level prereqs.
+          pkgs.openssl_3
+
           pkgs.rust-bin.stable."1.75.0".default
           # Needed by common rust deps
           pkgs.gmp
@@ -75,7 +78,6 @@
             pkgs.wget
             pkgs.pkg-config
             pkgs.dbus
-            pkgs.openssl_3
             pkgs.glib
             pkgs.gtk3
             pkgs.libsoup
