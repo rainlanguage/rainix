@@ -7,7 +7,7 @@
     nixpkgs.url = "github:nixos/nixpkgs";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
-    foundry.url = "github:shazow/foundry.nix/324fe20d07ce9c0f237dc2727454f04204e85c00";
+    foundry.url = "github:shazow/foundry.nix";
     rain.url = "github:rainprotocol/rain.cli";
   };
 
@@ -35,6 +35,7 @@
         ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
           pkgs.darwin.apple_sdk.frameworks.AppKit
+          pkgs.darwin.apple_sdk.frameworks.WebKit
         ]);
 
         # https://ertt.ca/nix/shell-scripts/
