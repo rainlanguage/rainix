@@ -2,9 +2,7 @@
   description = "Rainix is a flake for Rain.";
 
   inputs = {
-    # Fork containing a fix for cargo-tauri on mac.
-    # https://github.com/NixOS/nixpkgs/pull/279771
-    nixpkgs.url = "github:nixos/nixpkgs";
+    nixpkgs.url = "github:nixos/nixpkgs/bae093a327ec2d599482dbfac6ebb6b17d1fdf45";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     foundry.url = "github:shazow/foundry.nix/monthly";
