@@ -22,6 +22,7 @@
         baseBuildInputs = [
           # Some common OS level prereqs.
           pkgs.openssl_3
+          pkgs.libusb
 
           pkgs.rust-bin.stable."1.75.0".default
           # Needed by common rust deps
