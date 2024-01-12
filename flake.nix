@@ -6,7 +6,7 @@
     nixpkgs.url = "github:nixos/nixpkgs/9e68f1146cacc5f45b6646e73c54c88c73e8df12";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
-    foundry.url = "github:shazow/foundry.nix/c257bd42cd6f661489326ea9f923a8063286a66f";
+    foundry.url = "github:shazow/foundry.nix/324fe20d07ce9c0f237dc2727454f04204e85c00";
     rain.url = "github:rainprotocol/rain.cli";
   };
 
