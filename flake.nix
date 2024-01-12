@@ -2,6 +2,7 @@
   description = "Rainix is a flake for Rain.";
 
   inputs = {
+    # Pinned because someone broke python in main. :(
     nixpkgs.url = "github:nixos/nixpkgs/9e68f1146cacc5f45b6646e73c54c88c73e8df12";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
