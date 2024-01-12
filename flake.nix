@@ -2,7 +2,7 @@
   description = "Rainix is a flake for Rain.";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/bae093a327ec2d599482dbfac6ebb6b17d1fdf45";
+    nixpkgs.url = "github:nixos/nixpkgs/9e68f1146cacc5f45b6646e73c54c88c73e8df12";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     foundry.url = "github:shazow/foundry.nix/monthly";
