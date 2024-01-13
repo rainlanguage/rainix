@@ -15,6 +15,7 @@ cast wallet address "${DEPLOYMENT_KEY}";
 # https://stackoverflow.com/questions/42985611/how-to-conditionally-add-flags-to-shell-scripts
 forge script script/Deploy.sol:Deploy \
     -vvvvv \
+    --slow \
     --legacy \
     ${ETHERSCAN_API_KEY:+--verify} \
     --broadcast \
