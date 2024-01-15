@@ -57,6 +57,7 @@
 
       in {
         pkgs = pkgs;
+        rust-toolchain = rust-toolchain;
         rust-build-inputs = rust-build-inputs;
         sol-build-inputs = sol-build-inputs;
         all-build-inputs = all-build-inputs;
