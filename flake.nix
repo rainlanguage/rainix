@@ -134,9 +134,33 @@
             additionalBuildInputs = rust-build-inputs;
           };
 
-          rainix-rs-test = mkTaskLocal "rainix-rs-test" rust-build-inputs;
-          rainix-rs-artifacts = mkTaskLocal "rainix-rs-artifacts" rust-build-inputs;
-          rainix-rs-static = mkTaskLocal "rainix-rs-static" rust-build-inputs;
+          rainix-rs-static = mkTask {
+            name = "rainix-rs-static";
+            body = ''
+              set -euxo pipefail
+              cargo fmt --all -- --check
+              cargo clippy --all-targets --all-features -- -D clippy::all
+            '';
+            additionalBuildInputs = rust-build-inputs;
+          };
+
+          rainix-rs-test = mkTask {
+            name = "rainix-rs-test";
+            body = ''
+              set -euxo pipefail
+              cargo test
+            '';
+            additionalBuildInputs = rust-build-inputs;
+          };
+
+          rainix-rs-artifacts = mkTask {
+            name = "rainix-rs-artifacts";
+            body = ''
+              set -euxo pipefail
+              cargo build --release
+            '';
+            additionalBuildInputs = rust-build-inputs;
+          };
         };
 
         devShells.default = pkgs.mkShell {
