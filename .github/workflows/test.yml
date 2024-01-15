@@ -1,29 +1,40 @@
-name: Tests
-
+name: Rainix CI
 on: [push]
 
 jobs:
-  check:
+  rainix:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
-    name: Tests
+        task: [rainix-rs-test, rainix-rs-artifacts]
+        include:
+          # Solidity doesn't need to be tested on multiple platforms
+          - os: ubuntu-latest
+            task: rainix-sol-test
+          - os: ubuntu-latest
+            task: rainix-sol-static
+          - os: ubuntu-latest
+            task: rainix-sol-artifacts
+          # We don't need to do rust static analysis on multiple platforms
+          - os: ubuntu-latest
+            task: rainix-rs-static
+      fail-fast: false
     runs-on: ${{ matrix.os }}
+    env:
+      DEPLOYMENT_KEY: ${{ github.ref == 'refs/heads/main' && secrets.PRIVATE_KEY || secrets.PRIVATE_KEY_DEV }}
+    defaults:
+      run:
+        working-directory: test/fixture
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v4
+      - uses: DeterminateSystems/nix-installer-action@v4
       - uses: DeterminateSystems/magic-nix-cache-action@v2
 
-      - name: Check forge version
-        run: nix develop --command forge --version
-
-      - name: Check slither version
-        run: nix develop --command slither --version
-
-      - name: Check cargo version
-        run: nix develop --command cargo --version
-
-      - name: Check tauri version
-        run: nix develop .#tauri-shell --command cargo tauri --version
+      - run: nix run ../..#rainix-sol-prelude
+      - run: nix run ../..#rainix-rs-prelude
+      - name: Run ${{ matrix.task }}
+        env:
+          ETH_RPC_URL: ${{ secrets.CI_DEPLOY_RPC_URL }}
+          ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY }}
+        run: nix run ../..#${{ matrix.task }}

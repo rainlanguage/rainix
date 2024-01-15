@@ -63,12 +63,77 @@
         mkTask = mkTask;
 
         packages = {
-          rainix-sol-prelude = mkTaskLocal "rainix-sol-prelude" sol-build-inputs;
-          rainix-sol-test = mkTaskLocal "rainix-sol-test" sol-build-inputs;
-          rainix-sol-artifacts = mkTaskLocal "rainix-sol-artifacts" sol-build-inputs;
-          rainix-sol-static = mkTaskLocal "rainix-sol-static" sol-build-inputs;
 
-          rainix-rs-prelude = mkTaskLocal "rainix-rs-prelude" rust-build-inputs;
+          rainix-sol-prelude = mkTask {
+            name = "rainix-sol-prelude";
+            # We do NOT do a shallow clone in the prelude because nix flakes
+            # seem to not be compatible with shallow clones.
+            # The reason we do a forge build here is that the output of the
+            # build is a set of artifacts that other tasks often need to use,
+            # such as the ABI and the bytecode.
+            body = ''
+              set -euxo pipefail
+              forge install
+              forge build
+            '';
+            additionalBuildInputs = sol-build-inputs;
+          };
+
+          rainix-sol-static = mkTask {
+            name = "rainix-sol-static";
+            body = ''
+              set -euxo pipefail
+              slither .
+              forge fmt --check
+            '';
+            additionalBuildInputs = sol-build-inputs;
+          };
+
+          rainix-sol-test = mkTask {
+            name = "rainix-sol-test";
+            body = ''
+              set -euxo pipefail
+              forge test -vvv
+            '';
+            additionalBuildInputs = sol-build-inputs;
+          };
+
+          rainix-sol-artifacts = mkTask {
+            name = "rainix-sol-artifacts";
+            body = ''
+              set -euxo pipefail
+
+              # Upload all function selectors to the registry.
+              forge selectors up --all
+
+              # Deploy all contracts to testnet.
+              # Assumes the existence of a `Deploy.sol` script in the `script` directory.
+              # Echos the deploy pubkey to stdout to make it easy to add gas to the account.
+              echo 'deploy pubkey:';
+              cast wallet address "''${DEPLOYMENT_KEY}";
+              # Need to set --rpc-url explicitly due to an upstream bug.
+              # https://github.com/foundry-rs/foundry/issues/6731
+              # Mind the bash-fu on --verify.
+              # https://stackoverflow.com/questions/42985611/how-to-conditionally-add-flags-to-shell-scripts
+              forge script script/Deploy.sol:Deploy \
+                  -vvvvv \
+                  --slow \
+                  --legacy \
+                  ''${ETHERSCAN_API_KEY:+--verify} \
+                  --broadcast \
+                  --rpc-url "''${ETH_RPC_URL}" \
+            '';
+            additionalBuildInputs = sol-build-inputs;
+          };
+
+          rainix-rs-prelude = mkTask {
+            name = "rainix-rs-prelude";
+            body = ''
+             set -euxo pipefail
+            '';
+            additionalBuildInputs = rust-build-inputs;
+          };
+
           rainix-rs-test = mkTaskLocal "rainix-rs-test" rust-build-inputs;
           rainix-rs-artifacts = mkTaskLocal "rainix-rs-artifacts" rust-build-inputs;
           rainix-rs-static = mkTaskLocal "rainix-rs-static" rust-build-inputs;
