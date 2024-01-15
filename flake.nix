@@ -18,24 +18,29 @@
           inherit system overlays;
         };
 
-        baseBuildInputs = [
-          # Some common OS level prereqs.
+        rust-version = "1.75.0";
+        rust-toolchain = pkgs.rust-bin.stable.${rust-version}.default.override (previous: {
+          targets = previous.targets ++ [ "wasm32-unknown-unknown" ];
+        });
+
+        rust-build-inputs = [
+          rust-toolchain
+          pkgs.gmp
           pkgs.openssl_3
           pkgs.libusb
-
-          pkgs.rust-bin.stable."1.75.0".default
-          # Needed by common rust deps
-          pkgs.gmp
-
-          pkgs.foundry-bin
-          pkgs.slither-analyzer
-          rain.defaultPackage.${system}
-        ]
-        ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
+        ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
           pkgs.darwin.apple_sdk.frameworks.AppKit
           pkgs.darwin.apple_sdk.frameworks.WebKit
         ]);
+
+        sol-build-inputs = [
+          pkgs.foundry-bin
+          pkgs.slither-analyzer
+          rain.defaultPackage.${system}
+        ];
+
+        all-build-inputs = rust-build-inputs ++ sol-build-inputs;
 
         # https://ertt.ca/nix/shell-scripts/
         mkTask = { name, body, additionalBuildInputs ? [] }: pkgs.symlinkJoin {
@@ -44,36 +49,127 @@
             ((pkgs.writeScriptBin name body).overrideAttrs(old: {
               buildCommand = "${old.buildCommand}\n patchShebangs $out";
             }))
-          ] ++ baseBuildInputs ++ additionalBuildInputs;
-          buildInputs = [ pkgs.makeWrapper ] ++ baseBuildInputs ++ additionalBuildInputs;
+          ] ++ additionalBuildInputs;
+          buildInputs = [ pkgs.makeWrapper ] ++ additionalBuildInputs;
           postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
         };
-        mkTaskLocal = name: mkTask { name = name; body = (builtins.readFile ./task/${name}.sh); };
 
       in {
         pkgs = pkgs;
-        buildInputs = baseBuildInputs;
+        rust-toolchain = rust-toolchain;
+        rust-build-inputs = rust-build-inputs;
+        sol-build-inputs = sol-build-inputs;
+        all-build-inputs = all-build-inputs;
         mkTask = mkTask;
 
         packages = {
-          rainix-prelude = mkTaskLocal "rainix-prelude";
 
-          rainix-sol-test = mkTaskLocal "rainix-sol-test";
-          rainix-sol-artifacts = mkTaskLocal "rainix-sol-artifacts";
-          rainix-sol-static = mkTaskLocal "rainix-sol-static";
+          rainix-sol-prelude = mkTask {
+            name = "rainix-sol-prelude";
+            # We do NOT do a shallow clone in the prelude because nix flakes
+            # seem to not be compatible with shallow clones.
+            # The reason we do a forge build here is that the output of the
+            # build is a set of artifacts that other tasks often need to use,
+            # such as the ABI and the bytecode.
+            body = ''
+              set -euxo pipefail
+              forge install
+              forge build
+            '';
+            additionalBuildInputs = sol-build-inputs;
+          };
 
-          rainix-rs-test = mkTaskLocal "rainix-rs-test";
-          rainix-rs-artifacts = mkTaskLocal "rainix-rs-artifacts";
-          rainix-rs-static = mkTaskLocal "rainix-rs-static";
+          rainix-sol-static = mkTask {
+            name = "rainix-sol-static";
+            body = ''
+              set -euxo pipefail
+              slither .
+              forge fmt --check
+            '';
+            additionalBuildInputs = sol-build-inputs;
+          };
+
+          rainix-sol-test = mkTask {
+            name = "rainix-sol-test";
+            body = ''
+              set -euxo pipefail
+              forge test -vvv
+            '';
+            additionalBuildInputs = sol-build-inputs;
+          };
+
+          rainix-sol-artifacts = mkTask {
+            name = "rainix-sol-artifacts";
+            body = ''
+              set -euxo pipefail
+
+              # Upload all function selectors to the registry.
+              forge selectors up --all
+
+              # Deploy all contracts to testnet.
+              # Assumes the existence of a `Deploy.sol` script in the `script` directory.
+              # Echos the deploy pubkey to stdout to make it easy to add gas to the account.
+              echo 'deploy pubkey:';
+              cast wallet address "''${DEPLOYMENT_KEY}";
+              # Need to set --rpc-url explicitly due to an upstream bug.
+              # https://github.com/foundry-rs/foundry/issues/6731
+              # Mind the bash-fu on --verify.
+              # https://stackoverflow.com/questions/42985611/how-to-conditionally-add-flags-to-shell-scripts
+              forge script script/Deploy.sol:Deploy \
+                  -vvvvv \
+                  --slow \
+                  --legacy \
+                  ''${ETHERSCAN_API_KEY:+--verify} \
+                  --broadcast \
+                  --rpc-url "''${ETH_RPC_URL}" \
+            '';
+            additionalBuildInputs = sol-build-inputs;
+          };
+
+          rainix-rs-prelude = mkTask {
+            name = "rainix-rs-prelude";
+            body = ''
+             set -euxo pipefail
+            '';
+            additionalBuildInputs = rust-build-inputs;
+          };
+
+          rainix-rs-static = mkTask {
+            name = "rainix-rs-static";
+            body = ''
+              set -euxo pipefail
+              cargo fmt --all -- --check
+              cargo clippy --all-targets --all-features -- -D clippy::all
+            '';
+            additionalBuildInputs = rust-build-inputs;
+          };
+
+          rainix-rs-test = mkTask {
+            name = "rainix-rs-test";
+            body = ''
+              set -euxo pipefail
+              cargo test
+            '';
+            additionalBuildInputs = rust-build-inputs;
+          };
+
+          rainix-rs-artifacts = mkTask {
+            name = "rainix-rs-artifacts";
+            body = ''
+              set -euxo pipefail
+              cargo build --release
+            '';
+            additionalBuildInputs = rust-build-inputs;
+          };
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = baseBuildInputs;
+          buildInputs = all-build-inputs;
         };
 
         # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
         devShells.tauri-shell = let
-          tauriBuildInputs = [
+          tauri-build-inputs = [
             pkgs.cargo-tauri
             pkgs.curl
             pkgs.wget
@@ -90,7 +186,7 @@
             pkgs.webkitgtk
           ]);
 
-          tauriLibraries = [
+          tauri-libraries = [
             pkgs.gtk3
             pkgs.cairo
             pkgs.gdk-pixbuf
@@ -104,11 +200,11 @@
             pkgs.webkitgtk
           ]);
         in pkgs.mkShell {
-          buildInputs = baseBuildInputs ++ tauriBuildInputs;
+          buildInputs = all-build-inputs ++ tauri-build-inputs;
           shellHook =
             ''
               export WEBKIT_DISABLE_COMPOSITING_MODE=1
-              export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath tauriLibraries}:$LD_LIBRARY_PATH
+              export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath tauri-libraries}:$LD_LIBRARY_PATH
               export XDG_DATA_DIRS=${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS
             '';
         };
