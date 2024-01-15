@@ -53,7 +53,6 @@
           buildInputs = [ pkgs.makeWrapper ] ++ additionalBuildInputs;
           postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
         };
-        mkTaskLocal = name: inputs: mkTask { name = name; body = (builtins.readFile ./task/${name}.sh); additionalBuildInputs = inputs; };
 
       in {
         pkgs = pkgs;
