@@ -18,24 +18,29 @@
           inherit system overlays;
         };
 
-        baseBuildInputs = [
-          # Some common OS level prereqs.
+        rust-version = "1.75.0";
+        rust-toolchain = pkgs.rust-bin.stable.${rust-version}.default.override (previous: {
+          targets = previous.targets ++ [ "wasm32-unknown-unknown" ];
+        });
+
+        rust-build-inputs = [
+          rust-toolchain
+          pkgs.gmp
           pkgs.openssl_3
           pkgs.libusb
-
-          pkgs.rust-bin.stable."1.75.0".default
-          # Needed by common rust deps
-          pkgs.gmp
-
-          pkgs.foundry-bin
-          pkgs.slither-analyzer
-          rain.defaultPackage.${system}
-        ]
-        ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
+        ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
           pkgs.darwin.apple_sdk.frameworks.AppKit
           pkgs.darwin.apple_sdk.frameworks.WebKit
         ]);
+
+        sol-build-inputs = [
+          pkgs.foundry-bin
+          pkgs.slither-analyzer
+          rain.defaultPackage.${system}
+        ];
+
+        all-build-inputs = rust-build-inputs ++ sol-build-inputs;
 
         # https://ertt.ca/nix/shell-scripts/
         mkTask = { name, body, additionalBuildInputs ? [] }: pkgs.symlinkJoin {
@@ -44,36 +49,38 @@
             ((pkgs.writeScriptBin name body).overrideAttrs(old: {
               buildCommand = "${old.buildCommand}\n patchShebangs $out";
             }))
-          ] ++ baseBuildInputs ++ additionalBuildInputs;
-          buildInputs = [ pkgs.makeWrapper ] ++ baseBuildInputs ++ additionalBuildInputs;
+          ] ++ additionalBuildInputs;
+          buildInputs = [ pkgs.makeWrapper ] ++ additionalBuildInputs;
           postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
         };
-        mkTaskLocal = name: mkTask { name = name; body = (builtins.readFile ./task/${name}.sh); };
+        mkTaskLocal = name: inputs: mkTask { name = name; body = (builtins.readFile ./task/${name}.sh); additionalBuildInputs = inputs; };
 
       in {
         pkgs = pkgs;
-        buildInputs = baseBuildInputs;
+        rust-build-inputs = rust-build-inputs;
+        sol-build-inputs = sol-build-inputs;
+        all-build-inputs = all-build-inputs;
         mkTask = mkTask;
 
         packages = {
-          rainix-prelude = mkTaskLocal "rainix-prelude";
+          rainix-sol-prelude = mkTaskLocal "rainix-sol-prelude" sol-build-inputs;
+          rainix-sol-test = mkTaskLocal "rainix-sol-test" sol-build-inputs;
+          rainix-sol-artifacts = mkTaskLocal "rainix-sol-artifacts" sol-build-inputs;
+          rainix-sol-static = mkTaskLocal "rainix-sol-static" sol-build-inputs;
 
-          rainix-sol-test = mkTaskLocal "rainix-sol-test";
-          rainix-sol-artifacts = mkTaskLocal "rainix-sol-artifacts";
-          rainix-sol-static = mkTaskLocal "rainix-sol-static";
-
-          rainix-rs-test = mkTaskLocal "rainix-rs-test";
-          rainix-rs-artifacts = mkTaskLocal "rainix-rs-artifacts";
-          rainix-rs-static = mkTaskLocal "rainix-rs-static";
+          rainix-rs-prelude = mkTaskLocal "rainix-rs-prelude" rust-build-inputs;
+          rainix-rs-test = mkTaskLocal "rainix-rs-test" rust-build-inputs;
+          rainix-rs-artifacts = mkTaskLocal "rainix-rs-artifacts" rust-build-inputs;
+          rainix-rs-static = mkTaskLocal "rainix-rs-static" rust-build-inputs;
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = baseBuildInputs;
+          buildInputs = all-build-inputs;
         };
 
         # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
         devShells.tauri-shell = let
-          tauriBuildInputs = [
+          tauri-build-inputs = [
             pkgs.cargo-tauri
             pkgs.curl
             pkgs.wget
@@ -90,7 +97,7 @@
             pkgs.webkitgtk
           ]);
 
-          tauriLibraries = [
+          tauri-libraries = [
             pkgs.gtk3
             pkgs.cairo
             pkgs.gdk-pixbuf
@@ -104,11 +111,11 @@
             pkgs.webkitgtk
           ]);
         in pkgs.mkShell {
-          buildInputs = baseBuildInputs ++ tauriBuildInputs;
+          buildInputs = all-build-inputs ++ tauri-build-inputs;
           shellHook =
             ''
               export WEBKIT_DISABLE_COMPOSITING_MODE=1
-              export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath tauriLibraries}:$LD_LIBRARY_PATH
+              export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath tauri-libraries}:$LD_LIBRARY_PATH
               export XDG_DATA_DIRS=${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS
             '';
         };
