@@ -124,7 +124,7 @@
                   --legacy \
                   --verify \
                   --verifier blockscout \
-                  --verify-url "''${BLOCKSCOUT_URL}" \
+                  --verifier-url "''${BLOCKSCOUT_URL}" \
                   --broadcast \
                   --rpc-url "''${ETH_RPC_URL}";
 
