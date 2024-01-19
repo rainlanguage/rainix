@@ -115,6 +115,7 @@
               # https://github.com/foundry-rs/foundry/issues/6731
               # Mind the bash-fu on --verify.
               # https://stackoverflow.com/questions/42985611/how-to-conditionally-add-flags-to-shell-scripts
+
               if [ ! -z "''${BLOCKSCOUT_URL}" ]
               then
                 forge script script/Deploy.sol:Deploy \
@@ -125,7 +126,7 @@
                   --verifier blockscout \
                   --verify-url "''${BLOCKSCOUT_URL}" \
                   --broadcast \
-                  --rpc-url "''${ETH_RPC_URL}"
+                  --rpc-url "''${ETH_RPC_URL}";
 
               else
                 forge script script/Deploy.sol:Deploy \
@@ -134,7 +135,9 @@
                     --legacy \
                     ''${ETHERSCAN_API_KEY:+--verify} \
                     --broadcast \
-                    --rpc-url "''${ETH_RPC_URL}"
+                    --rpc-url "''${ETH_RPC_URL}";
+
+              fi
             '';
             additionalBuildInputs = sol-build-inputs;
           };
