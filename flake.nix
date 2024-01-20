@@ -196,6 +196,7 @@
             pkgs.libsoup
             pkgs.librsvg
             pkgs.nodejs_21
+            pkgs.typeshare
           ]
           ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
             # This is probably needed but is is marked as broken in nixpkgs
