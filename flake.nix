@@ -116,7 +116,7 @@
               # Mind the bash-fu on --verify.
               # https://stackoverflow.com/questions/42985611/how-to-conditionally-add-flags-to-shell-scripts
 
-              if [ ! -z "''${BLOCKSCOUT_URL}" ]
+              if [ ! -z "''${BLOCKSCOUT_URL:-}" ]
               then
                 forge script script/Deploy.sol:Deploy \
                   -vvvvv \
