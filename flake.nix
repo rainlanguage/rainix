@@ -44,6 +44,27 @@
             pkgs.nodejs_21
         ];
 
+        tauri-build-inputs = [
+          pkgs.cargo-tauri
+          pkgs.curl
+          pkgs.wget
+          pkgs.pkg-config
+          pkgs.dbus
+          pkgs.glib
+          pkgs.gtk3
+          pkgs.libsoup
+          pkgs.librsvg
+        ]
+        ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
+          # This is probably needed but is is marked as broken in nixpkgs
+          pkgs.webkitgtk
+        ]);
+
+        tauri-release-env = pkgs.buildEnv {
+          name = "Tauri release environment";
+          paths = rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
+        };
+
         # https://ertt.ca/nix/shell-scripts/
         mkTask = { name, body, additionalBuildInputs ? [] }: pkgs.symlinkJoin {
           name = name;
@@ -56,10 +77,7 @@
           postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
         };
 
-        tauri-release-env = pkgs.buildEnv {
-          name = "Tauri release environment";
-          paths = rust-build-inputs ++ node-build-inputs;
-        };
+
 
       in {
         pkgs = pkgs;
@@ -194,21 +212,7 @@
 
         # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
         devShells.tauri-shell = let
-          tauri-build-inputs = [
-            pkgs.cargo-tauri
-            pkgs.curl
-            pkgs.wget
-            pkgs.pkg-config
-            pkgs.dbus
-            pkgs.glib
-            pkgs.gtk3
-            pkgs.libsoup
-            pkgs.librsvg
-          ]
-          ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
-            # This is probably needed but is is marked as broken in nixpkgs
-            pkgs.webkitgtk
-          ]);
+
 
           tauri-libraries = [
             pkgs.gtk3
