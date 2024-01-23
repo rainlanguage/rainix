@@ -56,6 +56,11 @@
           postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
         };
 
+        tauri-release-env = pkgs.buildEnv {
+          name = "Tauri release environment";
+          paths = rust-build-inputs ++ node-build-inputs;
+        };
+
       in {
         pkgs = pkgs;
         rust-toolchain = rust-toolchain;
@@ -179,6 +184,8 @@
             '';
             additionalBuildInputs = rust-build-inputs;
           };
+
+          tauri-release-env = tauri-release-env;
         };
 
         devShells.default = pkgs.mkShell {
