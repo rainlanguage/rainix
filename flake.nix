@@ -62,7 +62,10 @@
 
         tauri-release-env = pkgs.buildEnv {
           name = "Tauri release environment";
-          paths = rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
+          # Currently we don't use the tauri build inputs as above because
+          # it doesn't seem to be totally supported by the github action, even
+          # though the above is as documented by tauri.
+          paths = [pkgs.cargo-tauri] ++ rust-build-inputs ++ node-build-inputs;
         };
 
         # https://ertt.ca/nix/shell-scripts/
