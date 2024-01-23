@@ -40,7 +40,33 @@
           rain.defaultPackage.${system}
         ];
 
-        all-build-inputs = rust-build-inputs ++ sol-build-inputs;
+        node-build-inputs = [
+            pkgs.nodejs_21
+        ];
+
+        tauri-build-inputs = [
+          pkgs.cargo-tauri
+          pkgs.curl
+          pkgs.wget
+          pkgs.pkg-config
+          pkgs.dbus
+          pkgs.glib
+          pkgs.gtk3
+          pkgs.libsoup
+          pkgs.librsvg
+        ]
+        ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
+          # This is probably needed but is is marked as broken in nixpkgs
+          pkgs.webkitgtk
+        ]);
+
+        tauri-release-env = pkgs.buildEnv {
+          name = "Tauri release environment";
+          # Currently we don't use the tauri build inputs as above because
+          # it doesn't seem to be totally supported by the github action, even
+          # though the above is as documented by tauri.
+          paths = [pkgs.cargo-tauri] ++ rust-build-inputs ++ node-build-inputs;
+        };
 
         # https://ertt.ca/nix/shell-scripts/
         mkTask = { name, body, additionalBuildInputs ? [] }: pkgs.symlinkJoin {
@@ -54,12 +80,14 @@
           postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
         };
 
+
+
       in {
         pkgs = pkgs;
         rust-toolchain = rust-toolchain;
         rust-build-inputs = rust-build-inputs;
         sol-build-inputs = sol-build-inputs;
-        all-build-inputs = all-build-inputs;
+        node-build-inputs = node-build-inputs;
         mkTask = mkTask;
 
         packages = {
@@ -177,30 +205,17 @@
             '';
             additionalBuildInputs = rust-build-inputs;
           };
+
+          tauri-release-env = tauri-release-env;
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = all-build-inputs;
+          buildInputs = sol-build-inputs ++ rust-build-inputs;
         };
 
         # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
         devShells.tauri-shell = let
-          tauri-build-inputs = [
-            pkgs.cargo-tauri
-            pkgs.curl
-            pkgs.wget
-            pkgs.pkg-config
-            pkgs.dbus
-            pkgs.glib
-            pkgs.gtk3
-            pkgs.libsoup
-            pkgs.librsvg
-            pkgs.nodejs_21
-          ]
-          ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
-            # This is probably needed but is is marked as broken in nixpkgs
-            pkgs.webkitgtk
-          ]);
+
 
           tauri-libraries = [
             pkgs.gtk3
@@ -216,7 +231,7 @@
             pkgs.webkitgtk
           ]);
         in pkgs.mkShell {
-          buildInputs = all-build-inputs ++ tauri-build-inputs;
+          buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
           shellHook =
             ''
               export WEBKIT_DISABLE_COMPOSITING_MODE=1
