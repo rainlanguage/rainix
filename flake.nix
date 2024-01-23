@@ -40,7 +40,9 @@
           rain.defaultPackage.${system}
         ];
 
-        all-build-inputs = rust-build-inputs ++ sol-build-inputs;
+        node-build-inputs = [
+            pkgs.nodejs_21
+        ];
 
         # https://ertt.ca/nix/shell-scripts/
         mkTask = { name, body, additionalBuildInputs ? [] }: pkgs.symlinkJoin {
@@ -59,7 +61,7 @@
         rust-toolchain = rust-toolchain;
         rust-build-inputs = rust-build-inputs;
         sol-build-inputs = sol-build-inputs;
-        all-build-inputs = all-build-inputs;
+        node-build-inputs = node-build-inputs;
         mkTask = mkTask;
 
         packages = {
@@ -180,7 +182,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = all-build-inputs;
+          buildInputs = sol-build-inputs ++ rust-build-inputs;
         };
 
         # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
@@ -195,7 +197,6 @@
             pkgs.gtk3
             pkgs.libsoup
             pkgs.librsvg
-            pkgs.nodejs_21
           ]
           ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
             # This is probably needed but is is marked as broken in nixpkgs
@@ -216,7 +217,7 @@
             pkgs.webkitgtk
           ]);
         in pkgs.mkShell {
-          buildInputs = all-build-inputs ++ tauri-build-inputs;
+          buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
           shellHook =
             ''
               export WEBKIT_DISABLE_COMPOSITING_MODE=1
