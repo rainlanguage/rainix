@@ -151,6 +151,7 @@
                 ''${DEPLOY_VERIFIER:+--verify} \
                 --verifier "''${DEPLOY_VERIFIER}" \
                 --verifier-url "''${DEPLOY_VERIFIER_URL}" \
+                --etherscan-api-key "''${ETHERSCAN_API_KEY}" \
                 --broadcast \
                 --rpc-url "''${ETH_RPC_URL}";
             '';
