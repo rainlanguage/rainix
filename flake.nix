@@ -160,7 +160,7 @@
 
                   --verify \
                   --verifier "''${DEPLOY_VERIFIER}" \
-                  --verifier-url "''${DEPLOY_VERIFIER_URL}" \
+                  ''${DEPLOY_VERIFIER_URL:+--verifier-url "''${DEPLOY_VERIFIER_URL}"} \
                   --etherscan-api-key "''${ETHERSCAN_API_KEY}" \
                   ;
               fi
