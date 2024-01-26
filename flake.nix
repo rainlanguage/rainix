@@ -157,7 +157,6 @@
                   --legacy \
                   --broadcast \
                   --rpc-url "''${ETH_RPC_URL}" \
-
                   --verify \
                   --verifier "''${DEPLOY_VERIFIER}" \
                   ''${DEPLOY_VERIFIER_URL:+--verifier-url "''${DEPLOY_VERIFIER_URL}"} \
