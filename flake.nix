@@ -29,6 +29,7 @@
           pkgs.gmp
           pkgs.openssl_3
           pkgs.libusb
+          pkgs.pkg-config
         ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
           pkgs.darwin.apple_sdk.frameworks.AppKit
