@@ -7,7 +7,7 @@
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     foundry.url = "github:shazow/foundry.nix/9ecf12199280f738eaaad2d1224e54403dbdf426";
-    rain.url = "github:rainprotocol/rain.cli";
+    rain.url = "github:rainlanguage/rain.cli";
   };
 
   outputs = { self, nixpkgs, flake-utils, rust-overlay, foundry, rain }:
