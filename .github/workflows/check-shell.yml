@@ -1,0 +1,19 @@
+name: Rainix CI check shell
+on: [push]
+
+jobs:
+  rainix-check-shell:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@v4
+      - uses: DeterminateSystems/magic-nix-cache-action@v2
+
+      # Check that we have cargo release in the develop shell.
+      - run: nix develop --command cargo release --version
+
