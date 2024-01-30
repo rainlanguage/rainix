@@ -3,7 +3,7 @@
 
   inputs = {
     # Pinned because someone broke python in main. :(
-    nixpkgs.url = "github:nixos/nixpkgs/9e68f1146cacc5f45b6646e73c54c88c73e8df12";
+    nixpkgs.url = "github:nixos/nixpkgs/dad88c029e2644adfde882f73e9338fd39058a3f";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     foundry.url = "github:shazow/foundry.nix/9ecf12199280f738eaaad2d1224e54403dbdf426";
@@ -27,7 +27,7 @@
           rust-toolchain
           pkgs.cargo-release
           pkgs.gmp
-          pkgs.openssl_3
+          pkgs.openssl
           pkgs.libusb
           pkgs.pkg-config
         ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
