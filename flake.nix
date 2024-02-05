@@ -82,6 +82,101 @@
           postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
         };
 
+        rainix-sol-prelude = mkTask {
+          name = "rainix-sol-prelude";
+          # We do NOT do a shallow clone in the prelude because nix flakes
+          # seem to not be compatible with shallow clones.
+          # The reason we do a forge build here is that the output of the
+          # build is a set of artifacts that other tasks often need to use,
+          # such as the ABI and the bytecode.
+          body = ''
+            set -euxo pipefail
+            forge install
+            forge build
+          '';
+          additionalBuildInputs = sol-build-inputs;
+        };
+
+        rainix-sol-static = mkTask {
+          name = "rainix-sol-static";
+          body = ''
+            set -euxo pipefail
+            slither .
+            forge fmt --check
+          '';
+          additionalBuildInputs = sol-build-inputs;
+        };
+
+        rainix-sol-test = mkTask {
+          name = "rainix-sol-test";
+          body = ''
+            set -euxo pipefail
+            forge test -vvv
+          '';
+          additionalBuildInputs = sol-build-inputs;
+        };
+
+        rainix-sol-artifacts = mkTask {
+          name = "rainix-sol-artifacts";
+          body = ''
+            set -euxo pipefail
+
+            # Upload all function selectors to the registry.
+            forge selectors up --all
+
+            # Deploy all contracts to testnet.
+            # Assumes the existence of a `Deploy.sol` script in the `script` directory.
+            # Echos the deploy pubkey to stdout to make it easy to add gas to the account.
+            echo 'deploy pubkey:';
+            cast wallet address "''${DEPLOYMENT_KEY}";
+            # Need to set --rpc-url explicitly due to an upstream bug.
+            # https://github.com/foundry-rs/foundry/issues/6731
+
+            if [[ -z "''${DEPLOY_VERIFIER:-}" ]]; then
+              forge script script/Deploy.sol:Deploy \
+                -vvvvv \
+                --slow \
+                --legacy \
+                --broadcast \
+                --rpc-url "''${ETH_RPC_URL}" \
+                ;
+            else
+              forge script script/Deploy.sol:Deploy \
+                -vvvvv \
+                --slow \
+                --legacy \
+                --broadcast \
+                --rpc-url "''${ETH_RPC_URL}" \
+                --verify \
+                --verifier "''${DEPLOY_VERIFIER}" \
+                ''${DEPLOY_VERIFIER_URL:+--verifier-url "''${DEPLOY_VERIFIER_URL}"} \
+                --etherscan-api-key "''${ETHERSCAN_API_KEY}" \
+                ;
+            fi
+
+
+          '';
+          additionalBuildInputs = sol-build-inputs;
+        };
+
+        rainix-rs-prelude = mkTask {
+          name = "rainix-rs-prelude";
+          body = ''
+            set -euxo pipefail
+          '';
+          additionalBuildInputs = rust-build-inputs;
+        };
+
+        rainix-rs-static = mkTask {
+          name = "rainix-rs-static";
+          body = ''
+            set -euxo pipefail
+            cargo fmt --all -- --check
+            cargo clippy --all-targets --all-features -- -D clippy::all
+          '';
+          additionalBuildInputs = rust-build-inputs;
+        };
+
         rainix-rs-test = mkTask {
           name = "rainix-rs-test";
           body = ''
@@ -91,6 +186,26 @@
           additionalBuildInputs = rust-build-inputs;
         };
 
+        rainix-rs-artifacts = mkTask {
+          name = "rainix-rs-artifacts";
+          body = ''
+            set -euxo pipefail
+            cargo build --release
+          '';
+          additionalBuildInputs = rust-build-inputs;
+        };
+
+        rainix-tasks = [
+          rainix-sol-prelude
+          rainix-sol-static
+          rainix-sol-test
+          rainix-sol-artifacts
+
+          rainix-rs-prelude
+          rainix-rs-static
+          rainix-rs-test
+          rainix-rs-artifacts
+        ];
       in {
         pkgs = pkgs;
         rust-toolchain = rust-toolchain;
@@ -100,118 +215,21 @@
         mkTask = mkTask;
 
         packages = {
+          rainix-sol-prelude = rainix-sol-prelude;
+          rainix-sol-static = rainix-sol-static;
+          rainix-sol-test = rainix-sol-test;
+          rainix-sol-artifacts = rainix-sol-artifacts;
 
-          rainix-sol-prelude = mkTask {
-            name = "rainix-sol-prelude";
-            # We do NOT do a shallow clone in the prelude because nix flakes
-            # seem to not be compatible with shallow clones.
-            # The reason we do a forge build here is that the output of the
-            # build is a set of artifacts that other tasks often need to use,
-            # such as the ABI and the bytecode.
-            body = ''
-              set -euxo pipefail
-              forge install
-              forge build
-            '';
-            additionalBuildInputs = sol-build-inputs;
-          };
-
-          rainix-sol-static = mkTask {
-            name = "rainix-sol-static";
-            body = ''
-              set -euxo pipefail
-              slither .
-              forge fmt --check
-            '';
-            additionalBuildInputs = sol-build-inputs;
-          };
-
-          rainix-sol-test = mkTask {
-            name = "rainix-sol-test";
-            body = ''
-              set -euxo pipefail
-              forge test -vvv
-            '';
-            additionalBuildInputs = sol-build-inputs;
-          };
-
-          rainix-sol-artifacts = mkTask {
-            name = "rainix-sol-artifacts";
-            body = ''
-              set -euxo pipefail
-
-              # Upload all function selectors to the registry.
-              forge selectors up --all
-
-              # Deploy all contracts to testnet.
-              # Assumes the existence of a `Deploy.sol` script in the `script` directory.
-              # Echos the deploy pubkey to stdout to make it easy to add gas to the account.
-              echo 'deploy pubkey:';
-              cast wallet address "''${DEPLOYMENT_KEY}";
-              # Need to set --rpc-url explicitly due to an upstream bug.
-              # https://github.com/foundry-rs/foundry/issues/6731
-
-              if [[ -z "''${DEPLOY_VERIFIER:-}" ]]; then
-                forge script script/Deploy.sol:Deploy \
-                  -vvvvv \
-                  --slow \
-                  --legacy \
-                  --broadcast \
-                  --rpc-url "''${ETH_RPC_URL}" \
-                  ;
-              else
-                forge script script/Deploy.sol:Deploy \
-                  -vvvvv \
-                  --slow \
-                  --legacy \
-                  --broadcast \
-                  --rpc-url "''${ETH_RPC_URL}" \
-                  --verify \
-                  --verifier "''${DEPLOY_VERIFIER}" \
-                  ''${DEPLOY_VERIFIER_URL:+--verifier-url "''${DEPLOY_VERIFIER_URL}"} \
-                  --etherscan-api-key "''${ETHERSCAN_API_KEY}" \
-                  ;
-              fi
-
-
-            '';
-            additionalBuildInputs = sol-build-inputs;
-          };
-
-          rainix-rs-prelude = mkTask {
-            name = "rainix-rs-prelude";
-            body = ''
-             set -euxo pipefail
-            '';
-            additionalBuildInputs = rust-build-inputs;
-          };
-
-          rainix-rs-static = mkTask {
-            name = "rainix-rs-static";
-            body = ''
-              set -euxo pipefail
-              cargo fmt --all -- --check
-              cargo clippy --all-targets --all-features -- -D clippy::all
-            '';
-            additionalBuildInputs = rust-build-inputs;
-          };
-
+          rainix-rs-prelude = rainix-rs-prelude;
+          rainix-rs-static = rainix-rs-static;
           rainix-rs-test = rainix-rs-test;
-
-          rainix-rs-artifacts = mkTask {
-            name = "rainix-rs-artifacts";
-            body = ''
-              set -euxo pipefail
-              cargo build --release
-            '';
-            additionalBuildInputs = rust-build-inputs;
-          };
+          rainix-rs-artifacts = rainix-rs-artifacts;
 
           tauri-release-env = tauri-release-env;
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = sol-build-inputs ++ rust-build-inputs ++ [ rainix-rs-test ];
+          buildInputs = sol-build-inputs ++ rust-build-inputs ++ rainix-tasks;
         };
 
         # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
