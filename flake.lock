@@ -459,11 +459,11 @@
         "rainix": "rainix"
       },
       "locked": {
-        "lastModified": 1707161209,
-        "narHash": "sha256-Z8YB00GglD8qNJ+oMnuGWuV6jI6kA2B9AY4Di6+zGLg=",
+        "lastModified": 1707161449,
+        "narHash": "sha256-NGBr8Vumu/fwGLbgiAxxtdEAadN8j3IGYmb578r4NIY=",
         "owner": "rainlanguage",
         "repo": "rain.cli",
-        "rev": "9e1eb5abd1df70053325437e16eca7b183d0ae6a",
+        "rev": "98cc102f01bcbdab878a2e565198fb50ea470ff6",
         "type": "github"
       },
       "original": {
