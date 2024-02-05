@@ -82,7 +82,14 @@
           postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
         };
 
-
+        rainix-rs-test = mkTask {
+          name = "rainix-rs-test";
+          body = ''
+            set -euxo pipefail
+            cargo test
+          '';
+          additionalBuildInputs = rust-build-inputs;
+        };
 
       in {
         pkgs = pkgs;
@@ -189,14 +196,7 @@
             additionalBuildInputs = rust-build-inputs;
           };
 
-          rainix-rs-test = mkTask {
-            name = "rainix-rs-test";
-            body = ''
-              set -euxo pipefail
-              cargo test
-            '';
-            additionalBuildInputs = rust-build-inputs;
-          };
+          rainix-rs-test = rainix-rs-test;
 
           rainix-rs-artifacts = mkTask {
             name = "rainix-rs-artifacts";
@@ -211,7 +211,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = sol-build-inputs ++ rust-build-inputs;
+          buildInputs = sol-build-inputs ++ rust-build-inputs ++ [ rainix-rs-test ];
         };
 
         # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
