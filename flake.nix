@@ -230,13 +230,11 @@
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = sol-build-inputs ++ rust-build-inputs ++ rainix-tasks;
+          packages = sol-build-inputs ++ rust-build-inputs ++ rainix-tasks;
         };
 
         # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
         devShells.tauri-shell = let
-
-
           tauri-libraries = [
             pkgs.gtk3
             pkgs.cairo
@@ -251,7 +249,7 @@
             pkgs.webkitgtk
           ]);
         in pkgs.mkShell {
-          buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
+          packages = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
           shellHook =
             ''
               export WEBKIT_DISABLE_COMPOSITING_MODE=1
