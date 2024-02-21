@@ -13,6 +13,8 @@
   outputs = { self, nixpkgs, flake-utils, rust-overlay, foundry, rain }:
     flake-utils.lib.eachDefaultSystem (system:
       let
+        libiconv = if pkgs.stdenv.isDarwin then pkgs.darwin.libiconv else pkgs.libiconv;
+
         overlays =[ (import rust-overlay) foundry.overlay ];
         pkgs = import nixpkgs {
           inherit system overlays;
@@ -31,8 +33,8 @@
           pkgs.libusb
           pkgs.pkg-config
           pkgs.wasm-bindgen-cli
-          pkgs.libiconv
           pkgs.gettext
+          libiconv
         ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
           pkgs.darwin.apple_sdk.frameworks.AppKit
@@ -59,8 +61,8 @@
           pkgs.gtk3
           pkgs.libsoup
           pkgs.librsvg
-          pkgs.libiconv
           pkgs.gettext
+          libiconv
         ]
         ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
           # This is probably needed but is is marked as broken in nixpkgs
@@ -247,8 +249,8 @@
             pkgs.dbus
             pkgs.openssl_3
             pkgs.librsvg
-            pkgs.libiconv
             pkgs.gettext
+            libiconv
           ]
           ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
             # This is probably needed but is is marked as broken in nixpkgs
