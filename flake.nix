@@ -250,7 +250,6 @@
             pkgs.openssl_3
             pkgs.librsvg
             pkgs.gettext
-            libiconv
           ]
           ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
             # This is probably needed but is is marked as broken in nixpkgs
@@ -261,8 +260,8 @@
           shellHook =
             ''
               export WEBKIT_DISABLE_COMPOSITING_MODE=1
-              export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath tauri-libraries}:$LD_LIBRARY_PATH
-              export XDG_DATA_DIRS=${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS
+              export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${pkgs.lib.makeLibraryPath tauri-libraries}"
+              export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS"
             '';
         };
       }
