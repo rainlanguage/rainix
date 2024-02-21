@@ -250,6 +250,7 @@
             pkgs.openssl_3
             pkgs.librsvg
             pkgs.gettext
+            libiconv
           ]
           ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
             # This is probably needed but is is marked as broken in nixpkgs
