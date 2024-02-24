@@ -31,11 +31,9 @@
           pkgs.libusb
           pkgs.pkg-config
           pkgs.wasm-bindgen-cli
-        ]
-        ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
           pkgs.libiconv
           pkgs.gettext
-        ])
+        ]
         ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
           pkgs.darwin.apple_sdk.frameworks.AppKit
