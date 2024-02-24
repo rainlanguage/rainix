@@ -60,6 +60,8 @@
           pkgs.gtk3
           pkgs.libsoup
           pkgs.librsvg
+          pkgs.libiconv
+          pkgs.gettext
         ]
         ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
           pkgs.gettext
