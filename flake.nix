@@ -13,7 +13,8 @@
   outputs = { self, nixpkgs, flake-utils, rust-overlay, foundry, rain }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        libiconv = if pkgs.stdenv.isDarwin then pkgs.darwin.libiconv else pkgs.libiconv;
+        # libiconv = if pkgs.stdenv.isDarwin then pkgs.darwin.libiconv else pkgs.libiconv;
+        libiconv = pkgs.libiconv;
 
         overlays =[ (import rust-overlay) foundry.overlay ];
         pkgs = import nixpkgs {
