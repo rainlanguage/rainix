@@ -262,6 +262,7 @@
           buildInputs = tauri-libraries;
           shellHook =
             ''
+              echo $PKG_CONFIG_PATH
               export PATH="/usr/bin:$PATH"
               # export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath tauri-libraries}:$LD_LIBRARY_PATH
               export WEBKIT_DISABLE_COMPOSITING_MODE=1
