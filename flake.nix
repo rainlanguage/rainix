@@ -258,9 +258,7 @@
           packages = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
           shellHook =
             ''
-              # This alias is needed so that when tauri attempts to sign on mac it finds the system
-              # version of base64 and not the one in nix coreutils
-              alias base64="/usr/bin/base64"
+              export PATH="/usr/bin:$PATH"
               export WEBKIT_DISABLE_COMPOSITING_MODE=1
               export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath tauri-libraries}:$LD_LIBRARY_PATH
               export XDG_DATA_DIRS=${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS
