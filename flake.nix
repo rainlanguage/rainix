@@ -3,7 +3,7 @@
 
   inputs = {
     # Pinned because someone broke python in main. :(
-    nixpkgs.url = "github:nixos/nixpkgs/dad88c029e2644adfde882f73e9338fd39058a3f";
+    nixpkgs.url = "github:nixos/nixpkgs";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     foundry.url = "github:shazow/foundry.nix/9ecf12199280f738eaaad2d1224e54403dbdf426";
@@ -56,7 +56,7 @@
           pkgs.pkg-config
           pkgs.dbus
           pkgs.glib
-          # pkgs.gtk3
+          pkgs.gtk3
           pkgs.libsoup
           pkgs.librsvg
           pkgs.gettext
@@ -240,7 +240,7 @@
         # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
         devShells.tauri-shell = let
           tauri-libraries = [
-            # pkgs.gtk3
+            pkgs.gtk3
             pkgs.cairo
             pkgs.gdk-pixbuf
             pkgs.glib
@@ -257,9 +257,10 @@
           ]);
         in pkgs.mkShell {
           packages = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
-          nativeBuildInputs = [pkgs.pkg-config];
+          # nativeBuildInputs = [pkgs.pkg-config];
           # buildInputs = [ pkgs.gtk3 pkgs.glib ];
-          buildInputs = tauri-libraries;
+          # buildInputs = tauri-libraries;
+          buildInputs = [pkgs.pkg-config];
           shellHook =
             ''
               echo "pkg config path"
@@ -267,7 +268,7 @@
               export PATH="/usr/bin:$PATH"
               export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath tauri-libraries}:$LD_LIBRARY_PATH
               export WEBKIT_DISABLE_COMPOSITING_MODE=1
-              # export XDG_DATA_DIRS=${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS
+              export XDG_DATA_DIRS=${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS
             '';
         };
       }
