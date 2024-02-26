@@ -56,7 +56,7 @@
           pkgs.pkg-config
           pkgs.dbus
           pkgs.glib
-          pkgs.gtk3
+          # pkgs.gtk3
           pkgs.libsoup
           pkgs.librsvg
           pkgs.gettext
@@ -240,7 +240,7 @@
         # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
         devShells.tauri-shell = let
           tauri-libraries = [
-            pkgs.gtk3
+            # pkgs.gtk3
             pkgs.cairo
             pkgs.gdk-pixbuf
             pkgs.glib
@@ -267,7 +267,7 @@
               export PATH="/usr/bin:$PATH"
               export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath tauri-libraries}:$LD_LIBRARY_PATH
               export WEBKIT_DISABLE_COMPOSITING_MODE=1
-              export XDG_DATA_DIRS=${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS
+              # export XDG_DATA_DIRS=${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS
             '';
         };
       }
