@@ -249,6 +249,7 @@
             pkgs.librsvg
             pkgs.gettext
             pkgs.libiconv
+            pkgs.glibc
           ]
           ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
             # This is probably needed but is is marked as broken in nixpkgs
@@ -257,7 +258,8 @@
         in pkgs.mkShell {
           packages = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
           nativeBuildInputs = [pkgs.pkg-config];
-          buildInputs = [ pkgs.gtk3 pkgs.glib ];
+          # buildInputs = [ pkgs.gtk3 pkgs.glib ];
+          buildInputs = tauri-libraries;
           shellHook =
             ''
               export PATH="/usr/bin:$PATH"
