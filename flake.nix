@@ -256,6 +256,8 @@
           ]);
         in pkgs.mkShell {
           packages = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
+          nativeBuildInputs = [pkgs.pkg-config];
+          buildInputs = [ pkgs.gtk3 ];
           shellHook =
             ''
               export PATH="/usr/bin:$PATH"
