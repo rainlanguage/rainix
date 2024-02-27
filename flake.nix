@@ -34,7 +34,7 @@
           pkgs.gettext
           pkgs.libiconv
         ]
-        ++ (pkgs.lib.optionals !(pkgs.stdenv.isDarwin) [
+        ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
           pkgs.glibc
         ])
         ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
