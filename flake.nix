@@ -33,8 +33,11 @@
           pkgs.wasm-bindgen-cli
           pkgs.gettext
           pkgs.libiconv
+        ]
+        ++ (pkgs.lib.optionals !(pkgs.stdenv.isDarwin) [
           pkgs.glibc
-        ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
+        ])
+        ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
           pkgs.darwin.apple_sdk.frameworks.AppKit
           pkgs.darwin.apple_sdk.frameworks.WebKit
@@ -250,11 +253,11 @@
             pkgs.librsvg
             pkgs.gettext
             pkgs.libiconv
-            pkgs.glibc
           ]
           ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
             # This is probably needed but is is marked as broken in nixpkgs
             pkgs.webkitgtk
+            pkgs.glibc
           ]);
         in pkgs.mkShell {
           packages = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
