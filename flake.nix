@@ -33,6 +33,7 @@
           pkgs.wasm-bindgen-cli
           pkgs.gettext
           pkgs.libiconv
+          pkgs.glibc
         ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
           pkgs.darwin.apple_sdk.frameworks.AppKit
