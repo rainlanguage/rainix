@@ -35,7 +35,7 @@
           pkgs.libiconv
         ]
         ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
-          pkgs.glibc
+          # pkgs.glibc
         ])
         ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
@@ -257,7 +257,7 @@
           ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
             # This is probably needed but is is marked as broken in nixpkgs
             pkgs.webkitgtk
-            pkgs.glibc
+            # pkgs.glibc
           ]);
         in pkgs.mkShell {
           packages = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
