@@ -56,6 +56,7 @@
           pkgs.pkg-config
           pkgs.dbus
           pkgs.glib
+          pkgs.glibc
           pkgs.gtk3
           pkgs.libsoup
           pkgs.librsvg
@@ -244,6 +245,7 @@
             pkgs.cairo
             pkgs.gdk-pixbuf
             pkgs.glib
+            pkgs.glibc
             pkgs.dbus
             pkgs.openssl_3
             pkgs.librsvg
