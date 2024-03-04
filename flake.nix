@@ -66,6 +66,7 @@
         ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
           # This is probably needed but is is marked as broken in nixpkgs
           pkgs.webkitgtk
+          pkgs.lsb-release
         ]);
 
         tauri-release-env = pkgs.buildEnv {
@@ -255,6 +256,7 @@
           ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
             # This is probably needed but is is marked as broken in nixpkgs
             pkgs.webkitgtk
+            pkgs.lsb-release
           ]);
         in pkgs.mkShell {
           packages = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
