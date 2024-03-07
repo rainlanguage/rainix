@@ -241,10 +241,14 @@
 
         devShells.default = pkgs.mkShell {
           packages = sol-build-inputs ++ rust-build-inputs ++ rainix-tasks;
-        
+
+          sol-build-libraries = [
+            pkgs.libusb
+          ];
+
           shellHook =
             ''
-              export DYLD_FALLBACK_LIBRARY_PATH=${pkgs.lib.makeLibraryPath tauri-libraries}:$DYLD_FALLBACK_LIBRARY_PATH
+              export DYLD_FALLBACK_LIBRARY_PATH=${pkgs.lib.makeLibraryPath sol-build-libraries}:$DYLD_FALLBACK_LIBRARY_PATH
         
               echo "library fallback path"
               echo $DYLD_FALLBACK_LIBRARY_PATH
