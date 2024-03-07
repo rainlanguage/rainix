@@ -26,7 +26,6 @@
         rust-build-inputs = [
           rust-toolchain
           pkgs.cargo-release
-          pkgs.gmp
           pkgs.openssl
           pkgs.libusb
           pkgs.pkg-config
@@ -66,7 +65,6 @@
           pkgs.librsvg
           pkgs.gettext
           pkgs.libiconv
-          pkgs.gmp
         ]
         ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
           # This is probably needed but is is marked as broken in nixpkgs
@@ -249,12 +247,6 @@
           shellHook =
             ''
               export DYLD_FALLBACK_LIBRARY_PATH=${pkgs.lib.makeLibraryPath sol-build-libraries}:$DYLD_FALLBACK_LIBRARY_PATH
-        
-              echo "library fallback path"
-              echo $DYLD_FALLBACK_LIBRARY_PATH
-
-              echo "librar path"
-              echo $DYLD_LIBRARY_PATH
             '';
         };
 
@@ -270,6 +262,7 @@
             pkgs.librsvg
             pkgs.gettext
             pkgs.libiconv
+            pkgs.gmp
           ]
           ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
             # This is probably needed but is is marked as broken in nixpkgs
