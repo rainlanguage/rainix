@@ -239,12 +239,12 @@
           tauri-release-env = tauri-release-env;
         };
 
-        devShells.default = pkgs.mkShell {
-          packages = sol-build-inputs ++ rust-build-inputs ++ rainix-tasks;
-
+        devShells.default = let 
           sol-build-libraries = [
             pkgs.libusb
           ];
+        in pkgs.mkShell {
+          packages = sol-build-inputs ++ rust-build-inputs ++ rainix-tasks;
 
           shellHook =
             ''
