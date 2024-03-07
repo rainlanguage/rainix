@@ -46,6 +46,7 @@
         sol-build-inputs = [
           pkgs.foundry-bin
           pkgs.slither-analyzer
+          pkgs.libusb
           rain.defaultPackage.${system}
         ];
 
@@ -65,6 +66,7 @@
           pkgs.librsvg
           pkgs.gettext
           pkgs.libiconv
+          pkgs.gmp
         ]
         ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
           # This is probably needed but is is marked as broken in nixpkgs
