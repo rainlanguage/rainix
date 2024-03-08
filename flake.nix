@@ -45,7 +45,6 @@
         sol-build-inputs = [
           pkgs.foundry-bin
           pkgs.slither-analyzer
-          pkgs.libusb
           rain.defaultPackage.${system}
         ];
 
