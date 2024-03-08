@@ -3,7 +3,7 @@
 
   inputs = {
     # Pinned because someone broke python in main. :(
-    nixpkgs.url = "github:nixos/nixpkgs/dad88c029e2644adfde882f73e9338fd39058a3f";
+    nixpkgs.url = "github:nixos/nixpkgs";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     foundry.url = "github:shazow/foundry.nix/9ecf12199280f738eaaad2d1224e54403dbdf426";
@@ -33,7 +33,11 @@
           pkgs.wasm-bindgen-cli
           pkgs.gettext
           pkgs.libiconv
-        ] ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
+        ]
+        ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
+          # pkgs.glibc
+        ])
+        ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
           pkgs.darwin.apple_sdk.frameworks.AppKit
           pkgs.darwin.apple_sdk.frameworks.WebKit
@@ -253,16 +257,21 @@
           ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
             # This is probably needed but is is marked as broken in nixpkgs
             pkgs.webkitgtk
+            # pkgs.glibc
           ]);
         in pkgs.mkShell {
           packages = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
+          # nativeBuildInputs = [pkgs.pkg-config];
+          # buildInputs = [ pkgs.gtk3 pkgs.glib ];
+          # buildInputs = tauri-libraries;
+          buildInputs = [pkgs.pkg-config];
           shellHook =
             ''
-              # This alias is needed so that when tauri attempts to sign on mac it finds the system
-              # version of base64 and not the one in nix coreutils
-              alias base64="/usr/bin/base64"
-              export WEBKIT_DISABLE_COMPOSITING_MODE=1
+              echo "pkg config path"
+              echo $PKG_CONFIG_PATH
+              export PATH="/usr/bin:$PATH"
               export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath tauri-libraries}:$LD_LIBRARY_PATH
+              export WEBKIT_DISABLE_COMPOSITING_MODE=1
               export XDG_DATA_DIRS=${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS
             '';
         };
