@@ -146,7 +146,6 @@
                 -vvvvv \
                 --slow \
                 --legacy \
-                --broadcast \
                 --rpc-url "''${ETH_RPC_URL}" \
                 ;
             else
