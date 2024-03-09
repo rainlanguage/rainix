@@ -154,7 +154,7 @@
                 -vvvvv \
                 --slow \
                 --legacy \
-                ''${BROADCAST:+--broadcast} \
+                ''${DEPLOY_VERIFIER_URL:+--broadcast} \
                 --rpc-url "''${ETH_RPC_URL}" \
                 --verify \
                 --verifier "''${DEPLOY_VERIFIER}" \
