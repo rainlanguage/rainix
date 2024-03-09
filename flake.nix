@@ -146,7 +146,6 @@
                 -vvvvv \
                 --slow \
                 --legacy \
-                ${BROADCAST:+--broadcast} \
                 --rpc-url "''${ETH_RPC_URL}" \
                 ;
             else
@@ -154,7 +153,7 @@
                 -vvvvv \
                 --slow \
                 --legacy \
-                ''${DEPLOY_VERIFIER_URL:+--broadcast} \
+                --broadcast \
                 --rpc-url "''${ETH_RPC_URL}" \
                 --verify \
                 --verifier "''${DEPLOY_VERIFIER}" \
