@@ -266,6 +266,7 @@
           buildInputs = [pkgs.pkg-config];
           shellHook =
             ''
+              export PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig:$PKG_CONFIG_PATH";
               echo "pkg config path"
               echo $PKG_CONFIG_PATH
               export PATH="/usr/bin:$PATH"
