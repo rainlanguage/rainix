@@ -65,6 +65,7 @@
           pkgs.librsvg
           pkgs.gettext
           pkgs.libiconv
+          pkgs.openssl_3_1
         ]
         ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
           # This is probably needed but is is marked as broken in nixpkgs
@@ -266,7 +267,7 @@
           buildInputs = [pkgs.pkg-config];
           shellHook =
             ''
-              export PKG_CONFIG_PATH=${tauri-libraries.openssl_3_1}/lib/pkgconfig:$PKG_CONFIG_PATH;
+              export PKG_CONFIG_PATH=${pkgs.openssl_3_1}/lib/pkgconfig:$PKG_CONFIG_PATH;
               echo "pkg config path"
               echo $PKG_CONFIG_PATH
               export PATH="/usr/bin:$PATH"
