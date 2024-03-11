@@ -248,7 +248,7 @@
             pkgs.gdk-pixbuf
             pkgs.glib
             pkgs.dbus
-            pkgs.openssl_3
+            pkgs.openssl_3_1
             pkgs.librsvg
             pkgs.gettext
             pkgs.libiconv
@@ -266,7 +266,7 @@
           buildInputs = [pkgs.pkg-config];
           shellHook =
             ''
-              export PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig:$PKG_CONFIG_PATH";
+              export PKG_CONFIG_PATH=${pkgs.openssl_3_1}/lib/pkgconfig:$PKG_CONFIG_PATH;
               echo "pkg config path"
               echo $PKG_CONFIG_PATH
               export PATH="/usr/bin:$PATH"
