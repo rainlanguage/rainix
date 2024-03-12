@@ -256,20 +256,12 @@
           ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
             # This is probably needed but is is marked as broken in nixpkgs
             pkgs.webkitgtk
-            # pkgs.glibc
           ]);
         in pkgs.mkShell {
           packages = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
-          # nativeBuildInputs = [pkgs.pkg-config];
-          # buildInputs = [ pkgs.gtk3 pkgs.glib ];
-          # buildInputs = tauri-libraries;
           buildInputs = [pkgs.pkg-config];
           shellHook =
             ''
-              echo "pkg config path"
-              echo $PKG_CONFIG_PATH
-              export PATH="/usr/bin:$PATH"
-              export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath tauri-libraries}:$LD_LIBRARY_PATH
               export WEBKIT_DISABLE_COMPOSITING_MODE=1
               export XDG_DATA_DIRS=${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS
             '';
