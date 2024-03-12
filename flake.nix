@@ -238,7 +238,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          packages = sol-build-inputs ++ rust-build-inputs ++ rainix-tasks;
+          buildInputs = sol-build-inputs ++ rust-build-inputs ++ rainix-tasks;
         };
 
         # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
@@ -259,8 +259,7 @@
             pkgs.webkitgtk
           ]);
         in pkgs.mkShell {
-          packages = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
-          buildInputs = [pkgs.pkg-config];
+          buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
           shellHook =
             ''
               export PATH="/usr/bin:$PATH"
