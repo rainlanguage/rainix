@@ -262,6 +262,7 @@
           buildInputs = [pkgs.pkg-config];
           shellHook =
             ''
+              export PATH="/usr/bin:$PATH"
               export WEBKIT_DISABLE_COMPOSITING_MODE=1
               export XDG_DATA_DIRS=${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS
             '';
