@@ -33,6 +33,7 @@
           pkgs.wasm-bindgen-cli
           pkgs.gettext
           pkgs.libiconv
+          pkgs.cargo-flamegraph
         ]
         ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
           # pkgs.glibc

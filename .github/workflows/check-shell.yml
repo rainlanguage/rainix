@@ -14,6 +14,6 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@v4
       - uses: DeterminateSystems/magic-nix-cache-action@v2
 
-      # Check that we have cargo release in the develop shell.
       - run: nix develop --command cargo release --version
+      - run: nix develop --command flamegraph --help
 
