@@ -238,7 +238,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          packages = sol-build-inputs ++ rust-build-inputs ++ rainix-tasks;
+          buildInputs = sol-build-inputs ++ rust-build-inputs ++ rainix-tasks;
         };
 
         # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
@@ -259,11 +259,12 @@
             pkgs.webkitgtk
           ]);
         in pkgs.mkShell {
-          packages = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
-          buildInputs = [pkgs.pkg-config];
+          buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
           shellHook =
             ''
-              export PATH="/usr/bin:$PATH"
+              export TMP_BASE64_PATH=$(mktemp -d)
+              cp /usr/bin/base64 "$TMP_BASE64_PATH/base64"
+              export PATH="$TMP_BASE64_PATH:$PATH"
               export WEBKIT_DISABLE_COMPOSITING_MODE=1
               export XDG_DATA_DIRS=${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS
             '';
