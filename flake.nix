@@ -36,7 +36,7 @@
           pkgs.cargo-flamegraph
         ]
         ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
-          # pkgs.glibc
+          pkgs.glibc
         ])
         ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
