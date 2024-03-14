@@ -264,7 +264,7 @@
             ''
               export TMP_BASE64_PATH=$(mktemp -d)
               cp /usr/bin/base64 "$TMP_BASE64_PATH/base64"
-              export PATH="$TMP_BASE64_PATH:$PATH"
+              export PATH="$TMP_BASE64_PATH:$PATH:/usr/bin"
               export WEBKIT_DISABLE_COMPOSITING_MODE=1
               export XDG_DATA_DIRS=${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS
             '';
