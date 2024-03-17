@@ -162,7 +162,7 @@
                   --verifier "''${DEPLOY_VERIFIER}" \
                   ''${DEPLOY_VERIFIER_URL:+--verifier-url "''${DEPLOY_VERIFIER_URL}"} \
                   --etherscan-api-key "''${ETHERSCAN_API_KEY}" \
-                  ''${attempts:+--resume}
+                  ''${attempts:+--resume} \
                   ;
               }
 
