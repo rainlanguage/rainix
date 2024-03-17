@@ -173,7 +173,7 @@
                 if [[ ''${attempts} -gt 5 ]]; then
                   echo "Deploy failed after 5 attempts, aborting.";
                   exit 1;
-                fi;
+                fi
               done
             fi
 
