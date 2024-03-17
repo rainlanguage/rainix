@@ -167,7 +167,7 @@
               }
 
               until do_deploy; do
-                attempts=''${attempts:-0}+1;
+                attempts=$((''${attempts:-0} + 1));
                 echo "Deploy failed, retrying in 5 seconds... (attempt ''${attempts})";
                 sleep 5;
                 if [[ ''${attempts} -gt 5 ]]; then
