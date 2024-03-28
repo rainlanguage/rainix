@@ -253,7 +253,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = sol-build-inputs ++ rust-build-inputs ++ rainix-tasks;
+          buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ rainix-tasks;
         };
 
         # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
