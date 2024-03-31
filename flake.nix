@@ -143,7 +143,7 @@
             # Need to set --rpc-url explicitly due to an upstream bug.
             # https://github.com/foundry-rs/foundry/issues/6731
 
-            if [[ -z "''${DEPLOY_VERIFIER:-}" ]]; then
+            if [[ -z "''${DEPLOY_VERIFIER:-}" ]] && [[ -z "''${DEPLOY_VERIFIER_URL:-}" ]]; then
               forge script script/Deploy.sol:Deploy \
                 -vvvvv \
                 --slow \
@@ -160,7 +160,7 @@
                   --broadcast \
                   --rpc-url "''${ETH_RPC_URL}" \
                   --verify \
-                  --verifier "''${DEPLOY_VERIFIER}" \
+                  ''${DEPLOY_VERIFIER:+--verifier "''${DEPLOY_VERIFIER}"} \
                   ''${DEPLOY_VERIFIER_URL:+--verifier-url "''${DEPLOY_VERIFIER_URL}"} \
                   ''${ETHERSCAN_API_KEY:+--etherscan-api-key "''${ETHERSCAN_API_KEY}"} \
                   ''${attempts:+--resume} \
