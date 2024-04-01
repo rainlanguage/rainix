@@ -143,42 +143,31 @@
             # Need to set --rpc-url explicitly due to an upstream bug.
             # https://github.com/foundry-rs/foundry/issues/6731
 
-            if [[ -z "''${DEPLOY_VERIFIER:-}" ]] && [[ -z "''${DEPLOY_VERIFIER_URL:-}" ]]; then
+            attempts=;
+            do_deploy() {
               forge script script/Deploy.sol:Deploy \
                 -vvvvv \
                 --slow \
-                --legacy \
+                ''${DEPLOY_LEGACY:+--legacy} \
+                ''${DEPLOY_BROADCAST:+--broadcast} \
                 --rpc-url "''${ETH_RPC_URL}" \
+                ''${DEPLOY_VERIFY:+--verify} \
+                ''${DEPLOY_VERIFIER:+--verifier "''${DEPLOY_VERIFIER}"} \
+                ''${DEPLOY_VERIFIER_URL:+--verifier-url "''${DEPLOY_VERIFIER_URL}"} \
+                ''${ETHERSCAN_API_KEY:+--etherscan-api-key "''${ETHERSCAN_API_KEY}"} \
+                ''${attempts:+--resume} \
                 ;
-            else
-              attempts=;
-              do_deploy() {
-                forge script script/Deploy.sol:Deploy \
-                  -vvvvv \
-                  --slow \
-                  ''${DEPLOY_LEGACY:+--legacy} \
-                  --broadcast \
-                  --rpc-url "''${ETH_RPC_URL}" \
-                  --verify \
-                  ''${DEPLOY_VERIFIER:+--verifier "''${DEPLOY_VERIFIER}"} \
-                  ''${DEPLOY_VERIFIER_URL:+--verifier-url "''${DEPLOY_VERIFIER_URL}"} \
-                  ''${ETHERSCAN_API_KEY:+--etherscan-api-key "''${ETHERSCAN_API_KEY}"} \
-                  ''${attempts:+--resume} \
-                  ;
-              }
+            }
 
-              until do_deploy; do
-                attempts=$((''${attempts:-0} + 1));
-                echo "Deploy failed, retrying in 5 seconds... (attempt ''${attempts})";
-                sleep 5;
-                if [[ ''${attempts} -gt 5 ]]; then
-                  echo "Deploy failed after 5 attempts, aborting.";
-                  exit 1;
-                fi
-              done
-            fi
-
-
+            until do_deploy; do
+              attempts=$((''${attempts:-0} + 1));
+              echo "Deploy failed, retrying in 5 seconds... (attempt ''${attempts})";
+              sleep 5;
+              if [[ ''${attempts} -gt 5 ]]; then
+                echo "Deploy failed after 5 attempts, aborting.";
+                exit 1;
+              fi
+            done
           '';
           additionalBuildInputs = sol-build-inputs;
         };
