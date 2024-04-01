@@ -156,7 +156,7 @@
                 forge script script/Deploy.sol:Deploy \
                   -vvvvv \
                   --slow \
-                  --legacy \
+                  ''${DEPLOY_LEGACY:+--legacy} \
                   --broadcast \
                   --rpc-url "''${ETH_RPC_URL}" \
                   --verify \
