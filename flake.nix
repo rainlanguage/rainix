@@ -243,6 +243,12 @@
 
         devShells.default = pkgs.mkShell {
           buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ rainix-tasks;
+          shellHook =
+          ''
+          if [ -f ./package.json ]; then
+            npm install;
+          fi
+          '';
         };
 
         # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
