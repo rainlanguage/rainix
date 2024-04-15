@@ -54,6 +54,29 @@
             pkgs.nodejs_21
         ];
 
+        the-graph = pkgs.stdenv.mkDerivation rec {
+          pname = "the-graph";
+          version = "0.0.1";
+          src =
+            let
+              release-name = "%40graphprotocol%2Fgraph-cli%400.69.2";
+              system-mapping = {
+                x86_64-linux = "linux-x64";
+                x86_64-darwin = "darwin-x64";
+                aarch64-darwin = "darwin-arm64";
+              };
+            in
+            builtins.fetchTarball {
+              url = "https://github.com/graphprotocol/graph-tooling/releases/${release-name}/download/graph-${system-mapping.${system}}.tar.gz";
+              sha256 = "sha256:0pq0g0fq1myp0s58lswhcab6ccszpi5sx6l3y9a18ai0c6yzxim0";
+            };
+          buildInputs = [];
+          installPhase = ''
+            mkdir -p $out
+            cp -r $src/* $out
+          '';
+        };
+
         tauri-build-inputs = [
           pkgs.cargo-tauri
           pkgs.curl
@@ -242,7 +265,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ rainix-tasks;
+          buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ rainix-tasks ++ [ the-graph ];
           shellHook =
           ''
           if [ -f ./package.json ]; then
