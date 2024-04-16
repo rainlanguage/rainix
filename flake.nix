@@ -56,7 +56,7 @@
 
         the-graph = pkgs.stdenv.mkDerivation rec {
           pname = "the-graph";
-          version = "0.0.1";
+          version = "0.69.2";
           src =
             let
               release-name = "%40graphprotocol%2Fgraph-cli%400.69.2";
@@ -65,10 +65,15 @@
                 x86_64-darwin = "darwin-x64";
                 aarch64-darwin = "darwin-arm64";
               };
+              system-sha = {
+                x86_64-linux = "sha256:07grrdrx8w3m8sqwdmf9z9zymwnnzxckgnnjzfndk03a8r2d826m";
+                x86_64-darwin = "sha256:0pq0g0fq1myp0s58lswhcab6ccszpi5sx6l3y9a18ai0c6yzxim0";
+                aarch64-darwin = "sha256:0pq0g0fq1myp0s58lswhcab6ccszpi5sx6l3y9a18ai0c6yzxim0";
+              };
             in
             builtins.fetchTarball {
-              url = "https://github.com/graphprotocol/graph-tooling/releases/${release-name}/download/graph-${system-mapping.${system}}.tar.gz";
-              sha256 = "sha256:0pq0g0fq1myp0s58lswhcab6ccszpi5sx6l3y9a18ai0c6yzxim0";
+              url = "https://github.com/graphprotocol/graph-tooling/releases/download/${release-name}/graph-${system-mapping.${system}}.tar.gz";
+              sha256 = system-sha.${system};
             };
           buildInputs = [];
           installPhase = ''

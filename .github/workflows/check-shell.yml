@@ -16,4 +16,5 @@ jobs:
 
       - run: nix develop --command cargo release --version
       - run: nix develop --command flamegraph --help
+      - run: nix develop --command graph --version
 
