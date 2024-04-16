@@ -5,7 +5,13 @@ jobs:
   rainix-check-shell:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [
+          ubuntu-latest,
+          # intel mac
+          macos-13,
+          # apple silicon
+          macos-latest
+        ]
       fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
