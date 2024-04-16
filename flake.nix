@@ -57,8 +57,7 @@
         the-graph = pkgs.stdenv.mkDerivation rec {
           pname = "the-graph";
           version = "0.69.2";
-          src =
-            let
+          src = let
               release-name = "%40graphprotocol%2Fgraph-cli%400.69.2";
               system-mapping = {
                 x86_64-linux = "linux-x64";
@@ -79,6 +78,35 @@
           installPhase = ''
             mkdir -p $out
             cp -r $src/* $out
+          '';
+        };
+
+        goldsky = pkgs.stdenv.mkDerivation rec {
+          pname = "goldsky";
+          version = "8.6.6";
+          src = let
+              release-name = "8.6.6";
+              system-mapping = {
+                x86_64-linux = "linux";
+                x86_64-darwin = "macos";
+                aarch64-darwin = "macos";
+              };
+              system-sha = {
+                x86_64-linux = "sha256:1cqbinax63w07qxvmgni52qw4cd83ywkhjikw3rd4wgd2fh36027";
+                x86_64-darwin = "sha256:0yznf81yxc3a9vnfjdmmzdb59mh9bwrpxw87lrlhlchfr0jmnjk4";
+                aarch64-darwin = "sha256:0yznf81yxc3a9vnfjdmmzdb59mh9bwrpxw87lrlhlchfr0jmnjk4";
+              };
+            in
+            builtins.fetchurl {
+              url = "https://cli.goldsky.com/${release-name}/${system-mapping.${system}}/goldsky";
+              sha256 = system-sha.${system};
+            };
+          buildInputs = [];
+          phases = ["installPhase"];
+          installPhase = ''
+            mkdir -p $out/bin
+            cp $src $out/bin/goldsky
+            chmod +x $out/bin/goldsky
           '';
         };
 
@@ -270,7 +298,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ rainix-tasks ++ [ the-graph ];
+          buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ rainix-tasks ++ [ the-graph goldsky ];
           shellHook =
           ''
           if [ -f ./package.json ]; then
