@@ -1,19 +1,20 @@
 {
   description = "Rainix is a flake for Rain.";
 
-  inputs = {
+  inputs = rec {
     # Pinned to get slither working before it lands in nixpkgs main.
     nixpkgs.url = "github:nixos/nixpkgs/902522b1a069597be55bc1547fadaaeb62111019";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     foundry.url = "github:shazow/foundry.nix/monthly";
     rain.url = "github:rainlanguage/rain.cli";
+    solc.url = "github:hellwolf/solc.nix";
   };
 
-  outputs = { self, nixpkgs, flake-utils, rust-overlay, foundry, rain }:
+  outputs = { self, nixpkgs, flake-utils, rust-overlay, foundry, rain, solc }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        overlays =[ (import rust-overlay) foundry.overlay ];
+        overlays =[ (import rust-overlay) foundry.overlay solc.overlay ];
         pkgs = import nixpkgs {
           inherit system overlays;
         };
@@ -48,6 +49,7 @@
           pkgs.foundry-bin
           pkgs.slither-analyzer
           rain.defaultPackage.${system}
+          pkgs.solc_0_8_19
         ];
 
         node-build-inputs = [
