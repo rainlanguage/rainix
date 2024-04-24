@@ -8,12 +8,13 @@
     rust-overlay.url = "github:oxalica/rust-overlay";
     foundry.url = "github:shazow/foundry.nix/monthly";
     rain.url = "github:rainlanguage/rain.cli";
+    solc.url = "github:hellwolf/solc.nix";
   };
 
-  outputs = { self, nixpkgs, flake-utils, rust-overlay, foundry, rain }:
+  outputs = { self, nixpkgs, flake-utils, rust-overlay, foundry, rain, solc }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        overlays =[ (import rust-overlay) foundry.overlay ];
+        overlays =[ (import rust-overlay) foundry.overlay solc.overlay ];
         pkgs = import nixpkgs {
           inherit system overlays;
         };
@@ -39,6 +40,7 @@
           # pkgs.glibc
         ])
         ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
+          pkgs.darwin.DarwinTools
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
           pkgs.darwin.apple_sdk.frameworks.AppKit
           pkgs.darwin.apple_sdk.frameworks.WebKit
@@ -48,6 +50,7 @@
           pkgs.foundry-bin
           pkgs.slither-analyzer
           rain.defaultPackage.${system}
+          pkgs.solc_0_8_19
         ];
 
         node-build-inputs = [
