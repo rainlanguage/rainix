@@ -1,7 +1,7 @@
 {
   description = "Rainix is a flake for Rain.";
 
-  inputs = rec {
+  inputs = {
     # Pinned to get slither working before it lands in nixpkgs main.
     nixpkgs.url = "github:nixos/nixpkgs/902522b1a069597be55bc1547fadaaeb62111019";
     flake-utils.url = "github:numtide/flake-utils";
