@@ -304,6 +304,12 @@
           buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ rainix-tasks ++ [ the-graph goldsky ];
           shellHook =
           ''
+          if [ -f ./.env ]; then
+            set -a
+            source .env
+            set +a
+          fi
+
           if [ -f ./package.json ]; then
             npm install;
           fi
