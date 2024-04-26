@@ -222,8 +222,8 @@
               attempts=$((''${attempts:-0} + 1));
               echo "Deploy failed, retrying in 5 seconds... (attempt ''${attempts})";
               sleep 5;
-              if [[ ''${attempts} -gt 5 ]]; then
-                echo "Deploy failed after 5 attempts, aborting.";
+              if [[ ''${attempts} -gt 10 ]]; then
+                echo "Deploy failed after 10 attempts, aborting.";
                 exit 1;
               fi
             done
