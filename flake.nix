@@ -278,6 +278,14 @@
           rainix-rs-test
           rainix-rs-artifacts
         ];
+
+        source-dotenv = ''
+          if [ -f ./.env ]; then
+            set -a
+            source .env
+            set +a
+          fi
+        '';
       in {
         pkgs = pkgs;
         rust-toolchain = rust-toolchain;
@@ -304,11 +312,7 @@
           buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ rainix-tasks ++ [ the-graph goldsky ];
           shellHook =
           ''
-          if [ -f ./.env ]; then
-            set -a
-            source .env
-            set +a
-          fi
+          ${source-dotenv}
 
           if [ -f ./package.json ]; then
             npm install;
@@ -337,6 +341,8 @@
           buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
           shellHook =
             ''
+              ${source-dotenv}
+
               export TMP_BASE64_PATH=$(mktemp -d)
               cp /usr/bin/base64 "$TMP_BASE64_PATH/base64"
               export PATH="$TMP_BASE64_PATH:$PATH:/usr/bin"
