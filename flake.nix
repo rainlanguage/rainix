@@ -7,11 +7,10 @@
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     foundry.url = "github:shazow/foundry.nix/monthly";
-    rain.url = "github:rainlanguage/rain.cli";
     solc.url = "github:hellwolf/solc.nix";
   };
 
-  outputs = { self, nixpkgs, flake-utils, rust-overlay, foundry, rain, solc }:
+  outputs = { self, nixpkgs, flake-utils, rust-overlay, foundry, solc }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         overlays =[ (import rust-overlay) foundry.overlay solc.overlay ];
@@ -49,7 +48,6 @@
         sol-build-inputs = [
           pkgs.foundry-bin
           pkgs.slither-analyzer
-          rain.defaultPackage.${system}
           pkgs.solc_0_8_19
         ];
 
