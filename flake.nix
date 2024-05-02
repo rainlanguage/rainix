@@ -51,7 +51,7 @@
         ];
 
         node-build-inputs = [
-            pkgs.nodejs_21
+            pkgs.nodejs_22
         ];
 
         the-graph = pkgs.stdenv.mkDerivation rec {
