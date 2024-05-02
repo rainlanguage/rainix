@@ -2,8 +2,7 @@
   description = "Rainix is a flake for Rain.";
 
   inputs = {
-    # Pinned to get slither working before it lands in nixpkgs main.
-    nixpkgs.url = "github:nixos/nixpkgs/902522b1a069597be55bc1547fadaaeb62111019";
+    nixpkgs.url = "github:nixos/nixpkgs";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     foundry.url = "github:shazow/foundry.nix/monthly";
@@ -52,7 +51,7 @@
         ];
 
         node-build-inputs = [
-            pkgs.nodejs_21
+            pkgs.nodejs_22
         ];
 
         the-graph = pkgs.stdenv.mkDerivation rec {
