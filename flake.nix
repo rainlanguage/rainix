@@ -276,6 +276,42 @@
           rainix-rs-artifacts
         ];
 
+        subgraph-build = mkTask {
+          name = "subgraph-build";
+          body = ''
+            set -euxo pipefail
+            forge build
+            cd ./subgraph;
+            ${the-graph}/bin/graph codegen;
+            ${the-graph}/bin/graph build --network matic;
+            cd -;
+          '';
+        };
+
+        subgraph-test = mkTask {
+          name = "subgraph-test";
+          body = ''
+            set -euxo pipefail
+            (cd ./subgraph && docker compose up --abort-on-container-exit)
+          '';
+        };
+
+        subgraph-deploy = mkTask {
+          name = "subgraph-deploy";
+          body = ''
+            set -euo pipefail
+            ${subgraph-build}/bin/subgraph-build
+
+            (cd ./subgraph && ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph deploy ''${GOLDSKY_NAME_AND_VERSION})
+          '';
+        };
+
+        subgraph-tasks = [
+          subgraph-build
+          subgraph-test
+          subgraph-deploy
+        ];
+
         source-dotenv = ''
           if [ -f ./.env ]; then
             set -a
@@ -306,7 +342,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ rainix-tasks ++ [ the-graph goldsky ];
+          buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ rainix-tasks ++ subgraph-tasks ++ [ the-graph goldsky ];
           shellHook =
           ''
           ${source-dotenv}
