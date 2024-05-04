@@ -282,8 +282,9 @@
             set -euxo pipefail
             forge build
             cd ./subgraph;
+            npm install;
             ${the-graph}/bin/graph codegen;
-            ${the-graph}/bin/graph build --network matic;
+            ${the-graph}/bin/graph build;
             cd -;
           '';
         };
