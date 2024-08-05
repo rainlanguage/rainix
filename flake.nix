@@ -17,7 +17,7 @@
           inherit system overlays;
         };
 
-        rust-version = "1.76.0";
+        rust-version = "1.79.0";
         rust-toolchain = pkgs.rust-bin.stable.${rust-version}.default.override (previous: {
           targets = previous.targets ++ [ "wasm32-unknown-unknown" ];
         });
