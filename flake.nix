@@ -359,6 +359,7 @@
           rainix-deployer-words = rainix-deployer-words;
 
           tauri-release-env = tauri-release-env;
+          network-list = network-list;
         };
 
         devShells.default = pkgs.mkShell {
