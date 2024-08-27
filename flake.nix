@@ -247,7 +247,7 @@
             for network in ${network-list}
             do
                 echo "Checking deployer words for $network"
-                cargo run --manifest-path ''${MANIFEST_PATH} --package rain_orderbook_cli words -c ''${SETTINGS_PATH} -d "$network --stdout"
+                cargo run --manifest-path ''${MANIFEST_PATH} --package rain_orderbook_cli words -c ''${SETTINGS_PATH} -d "$network" --stdout
             done
           '';
           additionalBuildInputs = rust-build-inputs;
