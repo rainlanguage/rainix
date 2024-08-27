@@ -239,20 +239,6 @@
           additionalBuildInputs = rust-build-inputs;
         };
 
-        rainix-deployer-words = mkTask {
-          name = "rainix-deployer-words";
-          body = ''
-            set -euxo pipefail
-
-            for network in ${network-list}
-            do
-                echo "Checking deployer words for $network"
-                cargo run --manifest-path ''${MANIFEST_PATH} --package rain_orderbook_cli words -c ''${SETTINGS_PATH} -d "$network" --stdout
-            done
-          '';
-          additionalBuildInputs = rust-build-inputs;
-        };
-
         rainix-rs-static = mkTask {
           name = "rainix-rs-static";
           body = ''
@@ -291,7 +277,6 @@
           rainix-rs-static
           rainix-rs-test
           rainix-rs-artifacts
-          rainix-deployer-words
         ];
 
         subgraph-build = mkTask {
@@ -357,7 +342,6 @@
           rainix-rs-static = rainix-rs-static;
           rainix-rs-test = rainix-rs-test;
           rainix-rs-artifacts = rainix-rs-artifacts;
-          rainix-deployer-words = rainix-deployer-words;
 
           tauri-release-env = tauri-release-env;
           
