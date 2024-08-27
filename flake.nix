@@ -53,7 +53,10 @@
         node-build-inputs = [
             pkgs.nodejs_22
         ];
-
+        network-list = [
+          "base"
+          "flare"
+        ];
         the-graph = pkgs.stdenv.mkDerivation rec {
           pname = "the-graph";
           version = "0.69.2";
@@ -327,6 +330,7 @@
         sol-build-inputs = sol-build-inputs;
         node-build-inputs = node-build-inputs;
         mkTask = mkTask;
+        network-list = network-list;
 
         packages = {
           rainix-sol-prelude = rainix-sol-prelude;
@@ -340,6 +344,7 @@
           rainix-rs-artifacts = rainix-rs-artifacts;
 
           tauri-release-env = tauri-release-env;
+          
         };
 
         devShells.default = pkgs.mkShell {
