@@ -53,7 +53,10 @@
         node-build-inputs = [
             pkgs.nodejs_22
         ];
-
+        network-list = pkgs.lib.concatStringsSep " " [
+          "base"
+          "flare"
+        ];
         the-graph = pkgs.stdenv.mkDerivation rec {
           pname = "the-graph";
           version = "0.69.2";
@@ -236,6 +239,20 @@
           additionalBuildInputs = rust-build-inputs;
         };
 
+        rainix-deployer-words = mkTask {
+          name = "rainix-deployer-words";
+          body = ''
+            set -euxo pipefail
+
+            for network in ${network-list}
+            do
+                echo "Checking deployer words for $network"
+                cargo run --manifest-path ''${MANIFEST_PATH} --package rain_orderbook_cli words -c ''${SETTINGS_PATH} -d "$network"
+            done
+          '';
+          additionalBuildInputs = rust-build-inputs;
+        };
+
         rainix-rs-static = mkTask {
           name = "rainix-rs-static";
           body = ''
@@ -274,6 +291,7 @@
           rainix-rs-static
           rainix-rs-test
           rainix-rs-artifacts
+          rainix-deployer-words
         ];
 
         subgraph-build = mkTask {
@@ -338,6 +356,7 @@
           rainix-rs-static = rainix-rs-static;
           rainix-rs-test = rainix-rs-test;
           rainix-rs-artifacts = rainix-rs-artifacts;
+          rainix-deployer-words = rainix-deployer-words;
 
           tauri-release-env = tauri-release-env;
         };
