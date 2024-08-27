@@ -345,6 +345,7 @@
         sol-build-inputs = sol-build-inputs;
         node-build-inputs = node-build-inputs;
         mkTask = mkTask;
+        network-list = network-list;
 
         packages = {
           rainix-sol-prelude = rainix-sol-prelude;
@@ -359,7 +360,7 @@
           rainix-deployer-words = rainix-deployer-words;
 
           tauri-release-env = tauri-release-env;
-          network-list = network-list;
+          
         };
 
         devShells.default = pkgs.mkShell {
