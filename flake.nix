@@ -53,7 +53,7 @@
         node-build-inputs = [
             pkgs.nodejs_22
         ];
-        network-list = pkgs.lib.concatStringsSep " " [
+        network-list = [
           "base"
           "flare"
         ];
