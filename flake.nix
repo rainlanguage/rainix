@@ -51,7 +51,7 @@
         ];
 
         node-build-inputs = [
-            pkgs.nodejs_22
+            pkgs.nodejs_20
         ];
         network-list = [
           "base"
@@ -344,7 +344,7 @@
           rainix-rs-artifacts = rainix-rs-artifacts;
 
           tauri-release-env = tauri-release-env;
-          
+
         };
 
         devShells.default = pkgs.mkShell {
