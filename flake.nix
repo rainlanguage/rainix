@@ -354,7 +354,7 @@
           ${source-dotenv}
 
           if [ -f ./package.json ]; then
-            npm install;
+            npm install --ignore-scripts;
           fi
           '';
         };
