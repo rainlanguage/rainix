@@ -282,6 +282,7 @@
           rainix-sol-static
           rainix-sol-test
           rainix-sol-artifacts
+          rainix-sol-legal
 
           rainix-rs-prelude
           rainix-rs-static
