@@ -1,0 +1,15 @@
+version = 1
+
+[[annotations]]
+path = [
+  "REUSE.toml",
+  ".github/**/",
+  ".gitignore",
+  "Cargo.lock",
+  "Cargo.toml",
+  "README.md",
+  "foundry.toml",
+  "crates/**/"
+]
+SPDX-FileCopyrightText = "Copyright (c) 2020 thedavidmeister"
+SPDX-License-Identifier = "LicenseRef-DCL-1.0"

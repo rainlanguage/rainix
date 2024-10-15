@@ -48,6 +48,7 @@
           pkgs.foundry-bin
           pkgs.slither-analyzer
           pkgs.solc_0_8_19
+          pkgs.reuse
         ];
 
         node-build-inputs = [
@@ -173,6 +174,15 @@
             set -euxo pipefail
             slither .
             forge fmt --check
+          '';
+          additionalBuildInputs = sol-build-inputs;
+        };
+
+        rainix-sol-legal = mkTask {
+          name = "rainix-sol-legal";
+          body = ''
+            set -euxo pipefail
+            reuse lint
           '';
           additionalBuildInputs = sol-build-inputs;
         };
@@ -337,6 +347,7 @@
           rainix-sol-static = rainix-sol-static;
           rainix-sol-test = rainix-sol-test;
           rainix-sol-artifacts = rainix-sol-artifacts;
+          rainix-sol-legal = rainix-sol-legal;
 
           rainix-rs-prelude = rainix-rs-prelude;
           rainix-rs-static = rainix-rs-static;
@@ -344,7 +355,7 @@
           rainix-rs-artifacts = rainix-rs-artifacts;
 
           tauri-release-env = tauri-release-env;
-          
+
         };
 
         devShells.default = pkgs.mkShell {
