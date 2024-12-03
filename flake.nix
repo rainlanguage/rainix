@@ -45,6 +45,7 @@
         ]);
 
         sol-build-inputs = [
+          pkgs.git
           pkgs.foundry-bin
           pkgs.slither-analyzer
           pkgs.solc_0_8_19
