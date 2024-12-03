@@ -5,7 +5,7 @@
     nixpkgs.url = "github:nixos/nixpkgs";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
-    foundry.url = "github:shazow/foundry.nix/monthly";
+    foundry.url = "github:shazow/foundry.nix";
     solc.url = "github:hellwolf/solc.nix";
   };
 
@@ -27,7 +27,7 @@
           pkgs.cargo-release
           pkgs.gmp
           pkgs.openssl
-          pkgs.libusb
+          pkgs.libusb1
           pkgs.pkg-config
           pkgs.wasm-bindgen-cli
           pkgs.gettext
