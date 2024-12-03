@@ -27,7 +27,7 @@
           pkgs.cargo-release
           pkgs.gmp
           pkgs.openssl
-          pkgs.libusb
+          pkgs.libusb1
           pkgs.pkg-config
           pkgs.wasm-bindgen-cli
           pkgs.gettext
