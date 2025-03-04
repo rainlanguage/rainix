@@ -123,7 +123,7 @@
           pkgs.dbus
           pkgs.glib
           pkgs.gtk3
-          pkgs.libsoup
+          pkgs.libsoup_2_4
           pkgs.librsvg
           pkgs.gettext
           pkgs.libiconv
