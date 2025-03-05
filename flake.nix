@@ -116,7 +116,7 @@
         };
 
         tauri-build-inputs = [
-          pkgs.cargo-tauri
+          pkgs.cargo-tauri_1
           pkgs.curl
           pkgs.wget
           pkgs.pkg-config
@@ -139,7 +139,7 @@
           # Currently we don't use the tauri build inputs as above because
           # it doesn't seem to be totally supported by the github action, even
           # though the above is as documented by tauri.
-          paths = [pkgs.cargo-tauri] ++ rust-build-inputs ++ node-build-inputs;
+          paths = [pkgs.cargo-tauri_1] ++ rust-build-inputs ++ node-build-inputs;
         };
 
         # https://ertt.ca/nix/shell-scripts/
