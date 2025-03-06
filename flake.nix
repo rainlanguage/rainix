@@ -403,6 +403,7 @@
 
           tauri-release-env = tauri-release-env;
 
+          wasm-bindgen-cli = wasm-bindgen-cli;
         };
 
         devShells.default = pkgs.mkShell {
