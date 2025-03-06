@@ -22,6 +22,49 @@
           targets = previous.targets ++ [ "wasm32-unknown-unknown" ];
         });
 
+        # need to build from source since it errors on macos with current rainix rust version 1.79 on rainix
+        # and the version available on rainix.pkgs is 1.0.100 which is not compatible with rust 1.79,
+        # the latest version that works with rust 1.79 is v1.0.95 so we build form source
+        cargo-expand = (pkgs.makeRustPlatform{
+          rustc = rust-toolchain;
+          cargo = rust-toolchain;
+        }).buildRustPackage rec {
+          pname = "cargo-expand";
+          version = "1.0.95";
+          src = pkgs.fetchFromGitHub {
+            executable = true;
+            owner = "dtolnay";
+            repo = "cargo-expand";
+            tag = "1.0.95";
+            hash = "sha256-VEjgSmZcy/CZ8EO/mJ2nBOpQviF4A/QQ8SpLLF/9x4c=";
+          };
+          useFetchCargoVendor = true;
+          cargoHash = "sha256-ow5Zy0tv9W5w+Pib2yW1nPj2pUZt0HhplHxjIZZZzU8=";
+        };
+
+        # need to build latest version of wbg-cli from source
+        # since updating flake cause error for tauri v1 build
+        wasm-bindgen-cli = pkgs.rustPlatform.buildRustPackage rec {
+          pname = "wasm-bindgen-cli";
+          version = "0.2.100";
+
+          src = pkgs.fetchCrate {
+            inherit pname version;
+            hash = "sha256-3RJzK7mkYFrs7C/WkhW9Rr4LdP5ofb2FdYGz1P7Uxog=";
+          };
+          cargoHash = "sha256-tD0OY2PounRqsRiFh8Js5nyknQ809ZcHMvCOLrvYHRE=";
+          doCheck = false;
+
+          nativeBuildInputs = [ pkgs.pkg-config ];
+          nativeCheckInputs = [ pkgs.nodejs_latest ];
+          buildInputs = [
+            pkgs.openssl
+          ] ++ (with pkgs; lib.optionals stdenv.hostPlatform.isDarwin [
+            curl
+            darwin.apple_sdk.frameworks.Security
+          ]);
+        };
+
         rust-build-inputs = [
           rust-toolchain
           pkgs.cargo-release
@@ -29,10 +72,11 @@
           pkgs.openssl
           pkgs.libusb1
           pkgs.pkg-config
-          pkgs.wasm-bindgen-cli
+          wasm-bindgen-cli
           pkgs.gettext
           pkgs.libiconv
           pkgs.cargo-flamegraph
+          cargo-expand
         ]
         ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
           # pkgs.glibc
@@ -42,6 +86,7 @@
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
           pkgs.darwin.apple_sdk.frameworks.AppKit
           pkgs.darwin.apple_sdk.frameworks.WebKit
+          pkgs.darwin.apple_sdk.frameworks.Security
         ]);
 
         sol-build-inputs = [
@@ -116,14 +161,14 @@
         };
 
         tauri-build-inputs = [
-          pkgs.cargo-tauri_1
+          pkgs.cargo-tauri
           pkgs.curl
           pkgs.wget
           pkgs.pkg-config
           pkgs.dbus
           pkgs.glib
           pkgs.gtk3
-          pkgs.libsoup_2_4
+          pkgs.libsoup
           pkgs.librsvg
           pkgs.gettext
           pkgs.libiconv
@@ -139,7 +184,7 @@
           # Currently we don't use the tauri build inputs as above because
           # it doesn't seem to be totally supported by the github action, even
           # though the above is as documented by tauri.
-          paths = [pkgs.cargo-tauri_1] ++ rust-build-inputs ++ node-build-inputs;
+          paths = [pkgs.cargo-tauri] ++ rust-build-inputs ++ node-build-inputs;
         };
 
         # https://ertt.ca/nix/shell-scripts/
@@ -397,7 +442,7 @@
 
               export TMP_BASE64_PATH=$(mktemp -d)
               cp /usr/bin/base64 "$TMP_BASE64_PATH/base64"
-              export PATH="$TMP_BASE64_PATH:$PATH:/usr/bin"
+              export PATH="$TMP_BASE64_PATH:$PATH:/usr/bin:/usr/bin/SetFile"
               export WEBKIT_DISABLE_COMPOSITING_MODE=1
               export XDG_DATA_DIRS=${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS
               export GIO_MODULE_DIR="${pkgs.glib-networking}/lib/gio/modules/";
