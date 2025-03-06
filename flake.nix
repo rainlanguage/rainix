@@ -35,7 +35,7 @@
             executable = true;
             owner = "dtolnay";
             repo = "cargo-expand";
-            tag = "1.0.95";
+            rev = "1.0.95";
             hash = "sha256-VEjgSmZcy/CZ8EO/mJ2nBOpQviF4A/QQ8SpLLF/9x4c=";
           };
           useFetchCargoVendor = true;
