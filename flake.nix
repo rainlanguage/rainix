@@ -20,7 +20,7 @@
         rust-version = "1.79.0";
         rust-toolchain = pkgs.rust-bin.stable.${rust-version}.default.override (previous: {
           targets = previous.targets ++ [ "wasm32-unknown-unknown" ];
-          extensions = previous.extensions ++ [ "rust-src" ];
+          extensions = previous.extensions ++ [ "rust-src" "rust-analyzer" ];
         });
 
         rust-build-inputs = [
@@ -362,9 +362,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs =
-            sol-build-inputs ++ rust-build-inputs ++ node-build-inputs
-            ++ rainix-tasks ++ subgraph-tasks ++ [ the-graph goldsky pkgs.rust-analyzer ];
+          buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ rainix-tasks ++ subgraph-tasks ++ [ the-graph goldsky ];
           shellHook =
           ''
           ${source-dotenv}
@@ -393,10 +391,7 @@
             pkgs.webkitgtk
           ]);
         in pkgs.mkShell {
-          buildInputs =
-            sol-build-inputs ++ rust-build-inputs ++ node-build-inputs
-            ++ tauri-build-inputs ++ [ pkgs.rust-analyzer ];
-
+          buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
           shellHook =
             ''
               ${source-dotenv}
