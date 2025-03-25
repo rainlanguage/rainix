@@ -9,7 +9,7 @@ else
 fi
 
 # Bail if xcrun is in the PATH
-if echo "$PATH" | grep -qE '(^|:)xcrun(:|$)'; then
+if echo "$PATH" | grep -q 'xcrun'; then
   echo "found xcrun in the PATH, aborting..."
   exit 1
 else
