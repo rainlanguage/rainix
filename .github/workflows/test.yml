@@ -40,3 +40,8 @@ jobs:
           ETH_RPC_URL: ${{ secrets.CI_DEPLOY_SEPOLIA_RPC_URL || vars.CI_DEPLOY_SEPOLIA_RPC_URL }}
           ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY }}
         run: nix run ../..#${{ matrix.task }}
+
+      # Run on macOS only
+      - name: Check tauri-shell PATH
+        if: matrix.os == 'macos-latest'
+        run: nix develop .#tauri-shell -c ./test/fixture/test-tauri-devshell.sh
