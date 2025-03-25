@@ -12,12 +12,6 @@ jobs:
           # apple silicon
           macos-latest
         ]
-        include:
-          # Only run tauri-shell shellhook tests for macos
-          - os: macos-13
-            task: nix develop .#tauri-shell -c bats shellhook.test.bats
-          - os: macos-latest
-            task: nix develop .#tauri-shell -c bats shellhook.test.bats
       fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
@@ -30,8 +24,4 @@ jobs:
       - run: nix develop --command flamegraph --help
       - run: nix develop --command graph --version
       - run: nix develop --command goldsky --version
-
-      # Run on macOS only
-      - name: tauri-shell shellhook tests
-        run: ${{ matrix.task }}
-        working-directory: test/fixture/devshell/tauri
+      - run: nix develop .#tauri-shell --command tauri-shellhook-test

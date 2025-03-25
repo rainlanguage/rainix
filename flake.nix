@@ -17,10 +17,6 @@
           inherit system overlays;
         };
 
-        bash-build-inputs = [
-          pkgs.bats
-        ];
-
         rust-version = "1.79.0";
         rust-toolchain = pkgs.rust-bin.stable.${rust-version}.default.override (previous: {
           targets = previous.targets ++ [ "wasm32-unknown-unknown" ];
@@ -339,6 +335,16 @@
             set +a
           fi
         '';
+
+        tauri-shellhook-test = mkTask {
+          name = "tauri-shellhook-test";
+          # only run this test for darwin
+          body = if pkgs.stdenv.isDarwin then ''
+            bats test/fixture/devshell/tauri/shellhook.test.bats
+          '' else '''';
+          additionalBuildInputs = [pkgs.bats];
+        };
+
       in {
         pkgs = pkgs;
         rust-toolchain = rust-toolchain;
@@ -365,7 +371,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = bash-build-inputs ++ sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ rainix-tasks ++ subgraph-tasks ++ [ the-graph goldsky ];
+          buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ rainix-tasks ++ subgraph-tasks ++ [ the-graph goldsky ];
           shellHook =
           ''
           ${source-dotenv}
@@ -394,7 +400,8 @@
             pkgs.webkitgtk
           ]);
         in pkgs.mkShell {
-          buildInputs = bash-build-inputs ++ sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
+          packages = [tauri-shellhook-test];
+          buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
           shellHook =
             ''
               ${source-dotenv}
