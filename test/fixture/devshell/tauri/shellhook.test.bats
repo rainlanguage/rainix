@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 
 @test "/usr/bin should be in PATH" {
-  run bash -c 'echo "$PATH" \| grep -qE "(^|:)/usr/bin(:|$)"'
+  run bash -c 'echo "$PATH" | grep -qE "(^|:)/usr/bin(:|$)"'
   [ "$status" -eq 0 ]
 }
 
