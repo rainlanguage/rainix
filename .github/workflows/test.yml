@@ -44,4 +44,4 @@ jobs:
       # Run on macOS only
       - name: Check tauri-shell PATH
         if: matrix.os == 'macos-latest'
-        run: nix develop .#tauri-shell -c ./test/fixture/test-tauri-devshell.sh
+        run: nix develop .#tauri-shell -c ./test-tauri-devshell.sh
