@@ -9,7 +9,8 @@ path = [
   "Cargo.toml",
   "README.md",
   "foundry.toml",
-  "crates/**/"
+  "crates/**/",
+  "devshell/**/"
 ]
 SPDX-FileCopyrightText = "Copyright (c) 2020 thedavidmeister"
 SPDX-License-Identifier = "LicenseRef-DCL-1.0"

@@ -17,6 +17,10 @@
           inherit system overlays;
         };
 
+        bash-build-inputs = [
+          pkgs.bats
+        ];
+
         rust-version = "1.79.0";
         rust-toolchain = pkgs.rust-bin.stable.${rust-version}.default.override (previous: {
           targets = previous.targets ++ [ "wasm32-unknown-unknown" ];
@@ -361,7 +365,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ rainix-tasks ++ subgraph-tasks ++ [ the-graph goldsky ];
+          buildInputs = bash-build-inputs ++ sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ rainix-tasks ++ subgraph-tasks ++ [ the-graph goldsky ];
           shellHook =
           ''
           ${source-dotenv}
@@ -390,7 +394,7 @@
             pkgs.webkitgtk
           ]);
         in pkgs.mkShell {
-          buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
+          buildInputs = bash-build-inputs ++ sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
           shellHook =
             ''
               ${source-dotenv}
