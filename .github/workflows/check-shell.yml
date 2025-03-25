@@ -34,4 +34,4 @@ jobs:
       # Run on macOS only
       - name: tauri-shell shellhook tests
         run: ${{ matrix.task }}
-        working-directory: test/fixtures/devshell/tauri
+        working-directory: test/fixture/devshell/tauri
