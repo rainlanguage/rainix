@@ -9,9 +9,7 @@ path = [
   "Cargo.toml",
   "README.md",
   "foundry.toml",
-  "crates/**/",
-  "test-tauri-devshell.sh"
-
+  "crates/**/"
 ]
 SPDX-FileCopyrightText = "Copyright (c) 2020 thedavidmeister"
 SPDX-License-Identifier = "LicenseRef-DCL-1.0"
