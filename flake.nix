@@ -339,11 +339,10 @@
         tauri-shellhook-test = mkTask {
           name = "tauri-shellhook-test";
           # only run this test for darwin
-          # although it passes for linux, but its not actually a test case for linux
           body = if pkgs.stdenv.isDarwin then ''
             bats test/fixture/devshell/tauri/shellhook.test.bats
           '' else ''
-            # nothing to see here :D
+            # nothing to see here
           '';
           additionalBuildInputs = [ pkgs.bats ];
         };
