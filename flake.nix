@@ -20,6 +20,7 @@
         rust-version = "1.79.0";
         rust-toolchain = pkgs.rust-bin.stable.${rust-version}.default.override (previous: {
           targets = previous.targets ++ [ "wasm32-unknown-unknown" ];
+          extensions = previous.extensions ++ [ "rust-src" "rust-analyzer" ];
         });
 
         rust-build-inputs = [
