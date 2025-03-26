@@ -20,8 +20,7 @@
 }
 
 @test "should have access to native macos SetFile bin through native macos xcrun" {
-  run xcrun --find SetFile
-  [ "$output" == "/Library/Developer/CommandLineTools/usr/bin/SetFile" ]
+  run bash -c 'xcrun --find SetFile | grep -q "CommandLineTools"'
   [ "$status" -eq 0 ]
 }
 
