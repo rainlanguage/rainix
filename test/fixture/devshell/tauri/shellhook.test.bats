@@ -1,34 +1,34 @@
 #!/usr/bin/env bats
 
 @test "/usr/bin should be in PATH" {
-  bash -c 'echo "$PATH" | grep -qE "(^|:)/usr/bin(:|$)"'
+  bash -c 'echo $PATH | grep -qE "(^|:)/usr/bin(:|$)"'
 }
 
 @test "nixpkgs apple_sdk xcrun should NOT be in PATH" {
-  ! bash -c 'echo "$PATH" | grep -q "xcrun"'
+  ! bash -c 'echo $PATH | grep -q "xcrun"'
 }
 
 @test "should have access to native macos xcrun" {
   run xcrun --version
-  [ "$status" -eq 0 ]
+  [ $status -eq 0 ]
 
   run which xcrun
-  [ "$output" == "/usr/bin/xcrun" ]
-  [ "$status" -eq 0 ]
+  [ $output == "/usr/bin/xcrun" ]
+  [ $status -eq 0 ]
 }
 
 @test "should have access to native macos SetFile bin through native macos xcrun" {
   run xcrun --find SetFile
-  [ -n "$output" ]
-  [ "$status" -eq 0 ]
+  [ -n $output ]
+  [ $status -eq 0 ]
 }
 
 @test "should have access to native macos SetFile bin through /usr/bin in PATH" {
   run which SetFile
-  [ "$output" == "/usr/bin/SetFile" ]
-  [ "$status" -eq 0 ]
+  [ $output == "/usr/bin/SetFile" ]
+  [ $status -eq 0 ]
 }
 
 @test "DEVELOPER_DIR should be unset" {
-  [ -z "${DEVELOPER_DIR+x}" ]
+  [ -z ${DEVELOPER_DIR+x} ]
 }
