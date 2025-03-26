@@ -21,6 +21,7 @@
 
 @test "should have access to native macos SetFile bin through native macos xcrun" {
   run xcrun --find SetFile
+  [ -n "$output" ]
   [ "$status" -eq 0 ]
 }
 
