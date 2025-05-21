@@ -1,6 +1,3 @@
-[submodule "example/sol/lib/forge-std"]
-	path = example/sol/lib/forge-std
-	url = https://github.com/foundry-rs/forge-std
 [submodule "test/fixture/lib/forge-std"]
 	path = test/fixture/lib/forge-std
 	url = https://github.com/foundry-rs/forge-std

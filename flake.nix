@@ -358,19 +358,10 @@
         network-list = network-list;
 
         packages = {
-          rainix-sol-prelude = rainix-sol-prelude;
-          rainix-sol-static = rainix-sol-static;
-          rainix-sol-test = rainix-sol-test;
-          rainix-sol-artifacts = rainix-sol-artifacts;
-          rainix-sol-legal = rainix-sol-legal;
-
-          rainix-rs-prelude = rainix-rs-prelude;
-          rainix-rs-static = rainix-rs-static;
-          rainix-rs-test = rainix-rs-test;
-          rainix-rs-artifacts = rainix-rs-artifacts;
-
-          tauri-release-env = tauri-release-env;
-
+          inherit rainix-sol-prelude rainix-sol-static rainix-sol-test
+            rainix-sol-artifacts rainix-sol-legal rainix-rs-prelude
+            rainix-rs-static rainix-rs-test rainix-rs-artifacts
+            tauri-release-env;
         };
 
         devShells.default = pkgs.mkShell {
@@ -388,6 +379,7 @@
 
         # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
         devShells.tauri-shell = let
+          # NOTE: this binding is unused
           tauri-libraries = [
             pkgs.gtk3
             pkgs.cairo

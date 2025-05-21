@@ -6,19 +6,19 @@ jobs:
     strategy:
       matrix:
         os: [
-          ubuntu-latest,
-          # intel mac
-          macos-13,
-          # apple silicon
-          macos-latest
-        ]
+            ubuntu-latest,
+            # intel mac
+            macos-13,
+            # apple silicon
+            macos-latest,
+          ]
       fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: DeterminateSystems/nix-installer-action@v4
-      - uses: DeterminateSystems/magic-nix-cache-action@v2
+      # - uses: DeterminateSystems/magic-nix-cache-action@v2
 
       - run: nix develop --command cargo release --version
       - run: nix develop --command flamegraph --help
