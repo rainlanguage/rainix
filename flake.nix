@@ -52,7 +52,7 @@
 
         node-build-inputs = [ pkgs.nodejs_22 ];
         network-list = [ "base" "flare" ];
-        the-graph = pkgs.stdenv.mkDerivation rec {
+        the-graph = pkgs.stdenv.mkDerivation {
           pname = "the-graph";
           version = "0.69.2";
           src = let
