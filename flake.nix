@@ -12,16 +12,15 @@
   outputs = { self, nixpkgs, flake-utils, rust-overlay, foundry, solc }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        overlays =[ (import rust-overlay) foundry.overlay solc.overlay ];
-        pkgs = import nixpkgs {
-          inherit system overlays;
-        };
+        overlays = [ (import rust-overlay) foundry.overlay solc.overlay ];
+        pkgs = import nixpkgs { inherit system overlays; };
 
-        rust-version = "1.79.0";
-        rust-toolchain = pkgs.rust-bin.stable.${rust-version}.default.override (previous: {
-          targets = previous.targets ++ [ "wasm32-unknown-unknown" ];
-          extensions = previous.extensions ++ [ "rust-src" "rust-analyzer" ];
-        });
+        rust-version = "1.87.0";
+        rust-toolchain = pkgs.rust-bin.stable.${rust-version}.default.override
+          (previous: {
+            targets = previous.targets ++ [ "wasm32-unknown-unknown" ];
+            extensions = previous.extensions ++ [ "rust-src" "rust-analyzer" ];
+          });
 
         rust-build-inputs = [
           rust-toolchain
@@ -34,11 +33,9 @@
           pkgs.gettext
           pkgs.libiconv
           pkgs.cargo-flamegraph
-        ]
-        ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
+        ] ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
           # pkgs.glibc
-        ])
-        ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
+        ]) ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.DarwinTools
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
           pkgs.darwin.apple_sdk.frameworks.AppKit
@@ -53,34 +50,34 @@
           pkgs.reuse
         ];
 
-        node-build-inputs = [
-            pkgs.nodejs_22
-        ];
-        network-list = [
-          "base"
-          "flare"
-        ];
-        the-graph = pkgs.stdenv.mkDerivation rec {
+        node-build-inputs = [ pkgs.nodejs_22 ];
+        network-list = [ "base" "flare" ];
+        the-graph = pkgs.stdenv.mkDerivation {
           pname = "the-graph";
           version = "0.69.2";
           src = let
-              release-name = "%40graphprotocol%2Fgraph-cli%400.69.2";
-              system-mapping = {
-                x86_64-linux = "linux-x64";
-                x86_64-darwin = "darwin-x64";
-                aarch64-darwin = "darwin-arm64";
-              };
-              system-sha = {
-                x86_64-linux = "sha256:07grrdrx8w3m8sqwdmf9z9zymwnnzxckgnnjzfndk03a8r2d826m";
-                x86_64-darwin = "sha256:0j4p2bkx6pflkif6xkvfy4vj1v183mkg59p2kf3rk48wqfclids8";
-                aarch64-darwin = "sha256:0pq0g0fq1myp0s58lswhcab6ccszpi5sx6l3y9a18ai0c6yzxim0";
-              };
-            in
-            builtins.fetchTarball {
-              url = "https://github.com/graphprotocol/graph-tooling/releases/download/${release-name}/graph-${system-mapping.${system}}.tar.gz";
-              sha256 = system-sha.${system};
+            release-name = "%40graphprotocol%2Fgraph-cli%400.69.2";
+            system-mapping = {
+              x86_64-linux = "linux-x64";
+              x86_64-darwin = "darwin-x64";
+              aarch64-darwin = "darwin-arm64";
             };
-          buildInputs = [];
+            system-sha = {
+              x86_64-linux =
+                "sha256:07grrdrx8w3m8sqwdmf9z9zymwnnzxckgnnjzfndk03a8r2d826m";
+              x86_64-darwin =
+                "sha256:0j4p2bkx6pflkif6xkvfy4vj1v183mkg59p2kf3rk48wqfclids8";
+              aarch64-darwin =
+                "sha256:0pq0g0fq1myp0s58lswhcab6ccszpi5sx6l3y9a18ai0c6yzxim0";
+            };
+          in builtins.fetchTarball {
+            url =
+              "https://github.com/graphprotocol/graph-tooling/releases/download/${release-name}/graph-${
+                system-mapping.${system}
+              }.tar.gz";
+            sha256 = system-sha.${system};
+          };
+          buildInputs = [ ];
           installPhase = ''
             mkdir -p $out
             cp -r $src/* $out
@@ -91,24 +88,28 @@
           pname = "goldsky";
           version = "8.6.6";
           src = let
-              release-name = "8.6.6";
-              system-mapping = {
-                x86_64-linux = "linux";
-                x86_64-darwin = "macos";
-                aarch64-darwin = "macos";
-              };
-              system-sha = {
-                x86_64-linux = "sha256:1cqbinax63w07qxvmgni52qw4cd83ywkhjikw3rd4wgd2fh36027";
-                x86_64-darwin = "sha256:0yznf81yxc3a9vnfjdmmzdb59mh9bwrpxw87lrlhlchfr0jmnjk4";
-                aarch64-darwin = "sha256:0yznf81yxc3a9vnfjdmmzdb59mh9bwrpxw87lrlhlchfr0jmnjk4";
-              };
-            in
-            builtins.fetchurl {
-              url = "https://cli.goldsky.com/${release-name}/${system-mapping.${system}}/goldsky";
-              sha256 = system-sha.${system};
+            release-name = "8.6.6";
+            system-mapping = {
+              x86_64-linux = "linux";
+              x86_64-darwin = "macos";
+              aarch64-darwin = "macos";
             };
-          buildInputs = [];
-          phases = ["installPhase"];
+            system-sha = {
+              x86_64-linux =
+                "sha256:1cqbinax63w07qxvmgni52qw4cd83ywkhjikw3rd4wgd2fh36027";
+              x86_64-darwin =
+                "sha256:0yznf81yxc3a9vnfjdmmzdb59mh9bwrpxw87lrlhlchfr0jmnjk4";
+              aarch64-darwin =
+                "sha256:0yznf81yxc3a9vnfjdmmzdb59mh9bwrpxw87lrlhlchfr0jmnjk4";
+            };
+          in builtins.fetchurl {
+            url = "https://cli.goldsky.com/${release-name}/${
+                system-mapping.${system}
+              }/goldsky";
+            sha256 = system-sha.${system};
+          };
+          buildInputs = [ ];
+          phases = [ "installPhase" ];
           installPhase = ''
             mkdir -p $out/bin
             cp $src $out/bin/goldsky
@@ -129,8 +130,7 @@
           pkgs.gettext
           pkgs.libiconv
           pkgs.glib-networking
-        ]
-        ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
+        ] ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
           # This is probably needed but is is marked as broken in nixpkgs
           pkgs.webkitgtk
         ]);
@@ -140,20 +140,24 @@
           # Currently we don't use the tauri build inputs as above because
           # it doesn't seem to be totally supported by the github action, even
           # though the above is as documented by tauri.
-          paths = [pkgs.cargo-tauri_1] ++ rust-build-inputs ++ node-build-inputs;
+          paths = [ pkgs.cargo-tauri_1 ] ++ rust-build-inputs
+            ++ node-build-inputs;
         };
 
         # https://ertt.ca/nix/shell-scripts/
-        mkTask = { name, body, additionalBuildInputs ? [] }: pkgs.symlinkJoin {
-          name = name;
-          paths = [
-            ((pkgs.writeScriptBin name body).overrideAttrs(old: {
-              buildCommand = "${old.buildCommand}\n patchShebangs $out";
-            }))
-          ] ++ additionalBuildInputs;
-          buildInputs = [ pkgs.makeWrapper ] ++ additionalBuildInputs;
-          postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
-        };
+        mkTask = { name, body, additionalBuildInputs ? [ ] }:
+          pkgs.symlinkJoin {
+            name = name;
+            paths = [
+              ((pkgs.writeScriptBin name body).overrideAttrs (old: {
+                buildCommand = ''
+                  ${old.buildCommand}
+                   patchShebangs $out'';
+              }))
+            ] ++ additionalBuildInputs;
+            buildInputs = [ pkgs.makeWrapper ] ++ additionalBuildInputs;
+            postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
+          };
 
         rainix-sol-prelude = mkTask {
           name = "rainix-sol-prelude";
@@ -323,11 +327,7 @@
           '';
         };
 
-        subgraph-tasks = [
-          subgraph-build
-          subgraph-test
-          subgraph-deploy
-        ];
+        subgraph-tasks = [ subgraph-build subgraph-test subgraph-deploy ];
 
         source-dotenv = ''
           if [ -f ./.env ]; then
@@ -358,35 +358,28 @@
         network-list = network-list;
 
         packages = {
-          rainix-sol-prelude = rainix-sol-prelude;
-          rainix-sol-static = rainix-sol-static;
-          rainix-sol-test = rainix-sol-test;
-          rainix-sol-artifacts = rainix-sol-artifacts;
-          rainix-sol-legal = rainix-sol-legal;
-
-          rainix-rs-prelude = rainix-rs-prelude;
-          rainix-rs-static = rainix-rs-static;
-          rainix-rs-test = rainix-rs-test;
-          rainix-rs-artifacts = rainix-rs-artifacts;
-
-          tauri-release-env = tauri-release-env;
-
+          inherit rainix-sol-prelude rainix-sol-static rainix-sol-test
+            rainix-sol-artifacts rainix-sol-legal rainix-rs-prelude
+            rainix-rs-static rainix-rs-test rainix-rs-artifacts
+            tauri-release-env;
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ rainix-tasks ++ subgraph-tasks ++ [ the-graph goldsky ];
-          shellHook =
-          ''
-          ${source-dotenv}
+          buildInputs = sol-build-inputs ++ rust-build-inputs
+            ++ node-build-inputs ++ rainix-tasks ++ subgraph-tasks
+            ++ [ the-graph goldsky ];
+          shellHook = ''
+            ${source-dotenv}
 
-          if [ -f ./package.json ]; then
-            npm install --ignore-scripts;
-          fi
+            if [ -f ./package.json ]; then
+              npm install --ignore-scripts;
+            fi
           '';
         };
 
         # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
         devShells.tauri-shell = let
+          # NOTE: this binding is unused
           tauri-libraries = [
             pkgs.gtk3
             pkgs.cairo
@@ -397,25 +390,24 @@
             pkgs.librsvg
             pkgs.gettext
             pkgs.libiconv
-          ]
-          ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
+          ] ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
             # This is probably needed but is is marked as broken in nixpkgs
             pkgs.webkitgtk
           ]);
         in pkgs.mkShell {
-          packages = [tauri-shellhook-test];
-          buildInputs = sol-build-inputs ++ rust-build-inputs ++ node-build-inputs ++ tauri-build-inputs;
-          shellHook =
-            ''
-              ${source-dotenv}
+          packages = [ tauri-shellhook-test ];
+          buildInputs = sol-build-inputs ++ rust-build-inputs
+            ++ node-build-inputs ++ tauri-build-inputs;
+          shellHook = ''
+            ${source-dotenv}
 
-              export TMP_BASE64_PATH=$(mktemp -d)
-              cp /usr/bin/base64 "$TMP_BASE64_PATH/base64"
-              export PATH="$TMP_BASE64_PATH:$PATH:/usr/bin"
-              export WEBKIT_DISABLE_COMPOSITING_MODE=1
-              export XDG_DATA_DIRS=${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS
-              export GIO_MODULE_DIR="${pkgs.glib-networking}/lib/gio/modules/";
-            '' 
+            export TMP_BASE64_PATH=$(mktemp -d)
+            cp /usr/bin/base64 "$TMP_BASE64_PATH/base64"
+            export PATH="$TMP_BASE64_PATH:$PATH:/usr/bin"
+            export WEBKIT_DISABLE_COMPOSITING_MODE=1
+            export XDG_DATA_DIRS=${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS
+            export GIO_MODULE_DIR="${pkgs.glib-networking}/lib/gio/modules/";
+          ''
             # there is a known issue with nix pkgs new apple_sdk and that since it is now using xcrun,
             # apple_sdk's setup hook breaks the link to some of '/usr/bin' Xcode command line tools bins
             # and libs, this mainly is an issue for `tauri-shell` devshell when tauri cli is used to build
@@ -427,8 +419,8 @@
             + (if pkgs.stdenv.isDarwin then ''
               export PATH=''${PATH//'${pkgs.xcbuild.xcrun}/bin:'/}
               unset DEVELOPER_DIR
-            '' else '''');
+            '' else
+              "");
         };
-      }
-    );
+      });
 }
