@@ -367,7 +367,7 @@
         devShells.default = pkgs.mkShell {
           buildInputs = sol-build-inputs ++ rust-build-inputs
             ++ node-build-inputs ++ rainix-tasks ++ subgraph-tasks
-            ++ [ the-graph goldsky ];
+            ++ [ the-graph goldsky pkgs.sqlite ];
           shellHook = ''
             ${source-dotenv}
 
