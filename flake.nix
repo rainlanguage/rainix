@@ -302,7 +302,7 @@
             set -euxo pipefail
             forge build
             cd ./subgraph;
-            npm install;
+            npm ci;
             ${the-graph}/bin/graph codegen;
             ${the-graph}/bin/graph build;
             cd -;
@@ -372,7 +372,7 @@
             ${source-dotenv}
 
             if [ -f ./package.json ]; then
-              npm install --ignore-scripts;
+              npm ci --ignore-scripts;
             fi
           '';
         };
