@@ -122,7 +122,7 @@
           pkgs.dbus
           pkgs.glib
           pkgs.gtk3
-          pkgs.libsoup-2.74.3
+          pkgs.libsoup_3
           pkgs.librsvg
           pkgs.gettext
           pkgs.libiconv
@@ -338,7 +338,7 @@
           name = "tauri-shellhook-test";
           # only run this test for darwin
           body = if pkgs.stdenv.isDarwin then ''
-            bats test/fixture/devshell/tauri/shellhook.test.bats
+            bats test/bats/devshell/tauri/shellhook.test.bats
           '' else ''
             # nothing to see here
           '';
