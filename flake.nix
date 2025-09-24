@@ -37,9 +37,6 @@
           # pkgs.glibc
         ]) ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.darwin.DarwinTools
-          pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
-          pkgs.darwin.apple_sdk.frameworks.AppKit
-          pkgs.darwin.apple_sdk.frameworks.WebKit
         ]);
 
         sol-build-inputs = [
