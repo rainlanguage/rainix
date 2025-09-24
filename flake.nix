@@ -129,7 +129,7 @@
           pkgs.glib-networking
         ] ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
           # This is probably needed but is is marked as broken in nixpkgs
-          pkgs.webkitgtk
+          pkgs.webkitgtk_6_0
         ]);
 
         tauri-release-env = pkgs.buildEnv {
@@ -389,7 +389,7 @@
             pkgs.libiconv
           ] ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
             # This is probably needed but is is marked as broken in nixpkgs
-            pkgs.webkitgtk
+            pkgs.webkitgtk_6_0
           ]);
         in pkgs.mkShell {
           packages = [ tauri-shellhook-test ];
