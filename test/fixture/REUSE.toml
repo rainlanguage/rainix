@@ -11,7 +11,7 @@ path = [
   "foundry.toml",
   "crates/**/",
   "devshell/**/",
-  "foundry.lock"
+  "foundry.lock",
 ]
 SPDX-FileCopyrightText = "Copyright (c) 2020 thedavidmeister"
 SPDX-License-Identifier = "LicenseRef-DCL-1.0"

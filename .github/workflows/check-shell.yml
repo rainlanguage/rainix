@@ -1,22 +1,18 @@
 name: Rainix CI check shell
 on: [push]
-
 jobs:
   rainix-check-shell:
     strategy:
       matrix:
-        os: [
-            ubuntu-latest,
-            # intel mac
-            macos-13,
-            # apple silicon
-            macos-latest,
-          ]
+        os: [ubuntu-latest,
+          # intel mac
+          macos-13,
+          # apple silicon
+          macos-latest]
       fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: nixbuild/nix-quick-install-action@v30
         with:
           nix_conf: |
@@ -33,7 +29,6 @@ jobs:
           # before trying to save a new cache
           # 1G = 1073741824
           gc-max-store-size-linux: 1G
-
       - run: nix develop --command cargo release --version
       - run: nix develop --command flamegraph --help
       - run: nix develop --command graph --version

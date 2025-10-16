@@ -3,7 +3,8 @@
 }
 
 @test "nixpkgs apple_sdk xcrun should NOT be in PATH" {
-  ! bash -c 'echo "$PATH" | grep -q "xcrun"'
+  # shellcheck disable=SC2016
+  run ! bash -c 'echo "$PATH" | grep -q "xcrun"'
 }
 
 @test "should have access to native macos xcrun" {

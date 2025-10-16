@@ -1,6 +1,5 @@
 name: Rainix CI
 on: [push]
-
 jobs:
   rainix:
     strategy:
@@ -29,7 +28,6 @@ jobs:
         working-directory: test/fixture
     steps:
       - uses: actions/checkout@v4
-
       - uses: nixbuild/nix-quick-install-action@v30
         with:
           nix_conf: |
@@ -46,7 +44,6 @@ jobs:
           # before trying to save a new cache
           # 1G = 1073741824
           gc-max-store-size-linux: 1G
-
       - run: nix run ../..#rainix-sol-prelude
       - run: nix run ../..#rainix-rs-prelude
       - name: Run ${{ matrix.task }}
