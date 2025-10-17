@@ -368,7 +368,7 @@
               name = "rustfmt";
               entry = "${pkgs.writeShellScript "rustfmt-conditional" ''
                 if [ -f Cargo.toml ] || [ -f */Cargo.toml ]; then
-                  exec ${rust-toolchain}/bin/cargo-fmt fmt -- --check "$@"
+                  exec ${rust-toolchain}/bin/cargo-fmt fmt "$@"
                 else
                   exit 0
                 fi
