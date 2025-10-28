@@ -123,13 +123,13 @@
           pkgs.pkg-config
           pkgs.dbus
           pkgs.glib
-          pkgs.gtk3
+          old-pkgs.gtk3
           # pkgs.libsoup_3
           old-pkgs.libsoup_2_4
           pkgs.librsvg
           pkgs.gettext
           pkgs.libiconv
-          pkgs.glib-networking
+          old-pkgs.glib-networking
         ] ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
           # This is probably needed but is is marked as broken in nixpkgs
           old-pkgs.webkitgtk
@@ -381,7 +381,7 @@
         devShells.tauri-shell = let
           # NOTE: this binding is unused
           tauri-libraries = [
-            pkgs.gtk3
+            old-pkgs.gtk3
             pkgs.cairo
             pkgs.gdk-pixbuf
             pkgs.glib
@@ -405,8 +405,8 @@
             cp /usr/bin/base64 "$TMP_BASE64_PATH/base64"
             export PATH="$TMP_BASE64_PATH:$PATH:/usr/bin"
             export WEBKIT_DISABLE_COMPOSITING_MODE=1
-            export XDG_DATA_DIRS=${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS
-            export GIO_MODULE_DIR="${pkgs.glib-networking}/lib/gio/modules/";
+            export XDG_DATA_DIRS=${old-pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${old-pkgs.gsettings-desktop-schemas.name}:${old-pkgs.gtk3}/share/gsettings-schemas/${old-pkgs.gtk3.name}:$XDG_DATA_DIRS
+            export GIO_MODULE_DIR="${old-pkgs.glib-networking}/lib/gio/modules/";
           ''
             # there is a known issue with nix pkgs new apple_sdk and that since it is now using xcrun,
             # apple_sdk's setup hook breaks the link to some of '/usr/bin' Xcode command line tools bins
