@@ -124,7 +124,6 @@
           pkgs.dbus
           pkgs.glib
           old-pkgs.gtk3
-          # pkgs.libsoup_3
           old-pkgs.libsoup_2_4
           pkgs.librsvg
           pkgs.gettext
@@ -350,6 +349,7 @@
 
       in {
         pkgs = pkgs;
+        old-pkgs = old-pkgs;
         rust-toolchain = rust-toolchain;
         rust-build-inputs = rust-build-inputs;
         sol-build-inputs = sol-build-inputs;
