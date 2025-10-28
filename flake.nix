@@ -3,17 +3,19 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs";
+    nixpkgs-old.url = "github:nixos/nixpkgs?rev=48975d7f9b9960ed33c4e8561bcce20cc0c2de5b";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     foundry.url = "github:shazow/foundry.nix";
     solc.url = "github:hellwolf/solc.nix";
   };
 
-  outputs = { self, nixpkgs, flake-utils, rust-overlay, foundry, solc }:
+  outputs = { self, nixpkgs, flake-utils, rust-overlay, foundry, solc, nixpkgs-old }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         overlays = [ (import rust-overlay) foundry.overlay solc.overlay ];
         pkgs = import nixpkgs { inherit system overlays; };
+        old-pkgs = import nixpkgs-old { inherit system; };
 
         rust-version = "1.87.0";
         rust-toolchain = pkgs.rust-bin.stable.${rust-version}.default.override
@@ -123,16 +125,15 @@
           pkgs.glib
           pkgs.gtk3
           # pkgs.libsoup_3
+          old-pkgs.libsoup_2_4
           pkgs.librsvg
           pkgs.gettext
           pkgs.libiconv
           pkgs.glib-networking
-        ];
-        #  ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
-        #   # This is probably needed but is is marked as broken in nixpkgs
-        #   pkgs.webkitgtk_4_1
-        #   pkgs.gtk4
-        # ]);
+        ] ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
+          # This is probably needed but is is marked as broken in nixpkgs
+          old-pkgs.webkitgtk
+        ]);
 
         tauri-release-env = pkgs.buildEnv {
           name = "Tauri release environment";
@@ -389,12 +390,10 @@
             pkgs.librsvg
             pkgs.gettext
             pkgs.libiconv
-          ];
-          # ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
-          #   # This is probably needed but is is marked as broken in nixpkgs
-          #   pkgs.webkitgtk_4_1
-          #   pkgs.gtk4
-          # ]);
+          ] ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
+            # This is probably needed but is is marked as broken in nixpkgs
+            old-pkgs.webkitgtk
+          ]);
         in pkgs.mkShell {
           packages = [ tauri-shellhook-test ];
           buildInputs = sol-build-inputs ++ rust-build-inputs
