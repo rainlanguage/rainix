@@ -122,15 +122,17 @@
           pkgs.dbus
           pkgs.glib
           pkgs.gtk3
-          pkgs.libsoup_3
+          # pkgs.libsoup_3
           pkgs.librsvg
           pkgs.gettext
           pkgs.libiconv
           pkgs.glib-networking
-        ] ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
-          # This is probably needed but is is marked as broken in nixpkgs
-          pkgs.webkitgtk_4_1
-        ]);
+        ];
+        #  ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
+        #   # This is probably needed but is is marked as broken in nixpkgs
+        #   pkgs.webkitgtk_4_1
+        #   pkgs.gtk4
+        # ]);
 
         tauri-release-env = pkgs.buildEnv {
           name = "Tauri release environment";
@@ -387,10 +389,12 @@
             pkgs.librsvg
             pkgs.gettext
             pkgs.libiconv
-          ] ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
-            # This is probably needed but is is marked as broken in nixpkgs
-            pkgs.webkitgtk_4_1
-          ]);
+          ];
+          # ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
+          #   # This is probably needed but is is marked as broken in nixpkgs
+          #   pkgs.webkitgtk_4_1
+          #   pkgs.gtk4
+          # ]);
         in pkgs.mkShell {
           packages = [ tauri-shellhook-test ];
           buildInputs = sol-build-inputs ++ rust-build-inputs
