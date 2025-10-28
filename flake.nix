@@ -7,7 +7,7 @@
     rust-overlay.url = "github:oxalica/rust-overlay";
     foundry.url = "github:shazow/foundry.nix";
     solc.url = "github:hellwolf/solc.nix";
-    # old nixpkgs, pinned for webkitgtk and libsoup-2.4
+    # old nixpkgs, pinned for webkitgtk and libsoup-2.4 needed for tauri shell and build
     nixpkgs-old.url = "github:nixos/nixpkgs?rev=48975d7f9b9960ed33c4e8561bcce20cc0c2de5b";
   };
 
