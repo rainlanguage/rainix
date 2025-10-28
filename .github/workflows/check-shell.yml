@@ -38,5 +38,4 @@ jobs:
       - run: nix develop --command flamegraph --help
       - run: nix develop --command graph --version
       - run: nix develop --command goldsky --version
-      # we need the insecure and impure because of webkitgtk 4
-      - run: NIXPKGS_ALLOW_INSECURE=1 nix develop --impure .#tauri-shell --command tauri-shellhook-test
+      - run: nix develop .#tauri-shell --command tauri-shellhook-test
