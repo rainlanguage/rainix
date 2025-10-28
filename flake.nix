@@ -7,6 +7,7 @@
     rust-overlay.url = "github:oxalica/rust-overlay";
     foundry.url = "github:shazow/foundry.nix";
     solc.url = "github:hellwolf/solc.nix";
+    # old nixpkgs, pinned for webkitgtk and libsoup-2.4
     nixpkgs-old.url = "github:nixos/nixpkgs?rev=48975d7f9b9960ed33c4e8561bcce20cc0c2de5b";
   };
 
@@ -122,7 +123,7 @@
           pkgs.wget
           pkgs.pkg-config
           pkgs.dbus
-          pkgs.glib
+          old-pkgs.glib
           old-pkgs.gtk3
           old-pkgs.libsoup_2_4
           pkgs.librsvg
@@ -378,23 +379,7 @@
         };
 
         # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
-        devShells.tauri-shell = let
-          # NOTE: this binding is unused
-          tauri-libraries = [
-            old-pkgs.gtk3
-            pkgs.cairo
-            pkgs.gdk-pixbuf
-            pkgs.glib
-            pkgs.dbus
-            pkgs.openssl_3
-            pkgs.librsvg
-            pkgs.gettext
-            pkgs.libiconv
-          ] ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
-            # This is probably needed but is is marked as broken in nixpkgs
-            old-pkgs.webkitgtk
-          ]);
-        in pkgs.mkShell {
+        devShells.tauri-shell = pkgs.mkShell {
           packages = [ tauri-shellhook-test ];
           buildInputs = sol-build-inputs ++ rust-build-inputs
             ++ node-build-inputs ++ tauri-build-inputs;
