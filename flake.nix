@@ -7,13 +7,16 @@
     rust-overlay.url = "github:oxalica/rust-overlay";
     foundry.url = "github:shazow/foundry.nix";
     solc.url = "github:hellwolf/solc.nix";
+    # old nixpkgs, pinned for webkitgtk and libsoup-2.4 needed for tauri shell and build
+    nixpkgs-old.url = "github:nixos/nixpkgs?rev=48975d7f9b9960ed33c4e8561bcce20cc0c2de5b";
   };
 
-  outputs = { self, nixpkgs, flake-utils, rust-overlay, foundry, solc }:
+  outputs = { self, nixpkgs, flake-utils, rust-overlay, foundry, solc, nixpkgs-old }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         overlays = [ (import rust-overlay) foundry.overlay solc.overlay ];
         pkgs = import nixpkgs { inherit system overlays; };
+        old-pkgs = import nixpkgs-old { inherit system; };
 
         rust-version = "1.87.0";
         rust-toolchain = pkgs.rust-bin.stable.${rust-version}.default.override
@@ -120,16 +123,16 @@
           pkgs.wget
           pkgs.pkg-config
           pkgs.dbus
-          pkgs.glib
-          pkgs.gtk3
-          pkgs.libsoup_3
+          old-pkgs.glib
+          old-pkgs.gtk3
+          old-pkgs.libsoup_2_4
           pkgs.librsvg
           pkgs.gettext
           pkgs.libiconv
-          pkgs.glib-networking
+          old-pkgs.glib-networking
         ] ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
           # This is probably needed but is is marked as broken in nixpkgs
-          pkgs.webkitgtk_4_0
+          old-pkgs.webkitgtk
         ]);
 
         tauri-release-env = pkgs.buildEnv {
@@ -347,6 +350,7 @@
 
       in {
         pkgs = pkgs;
+        old-pkgs = old-pkgs;
         rust-toolchain = rust-toolchain;
         rust-build-inputs = rust-build-inputs;
         sol-build-inputs = sol-build-inputs;
@@ -375,23 +379,7 @@
         };
 
         # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
-        devShells.tauri-shell = let
-          # NOTE: this binding is unused
-          tauri-libraries = [
-            pkgs.gtk3
-            pkgs.cairo
-            pkgs.gdk-pixbuf
-            pkgs.glib
-            pkgs.dbus
-            pkgs.openssl_3
-            pkgs.librsvg
-            pkgs.gettext
-            pkgs.libiconv
-          ] ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
-            # This is probably needed but is is marked as broken in nixpkgs
-            pkgs.webkitgtk_4_0
-          ]);
-        in pkgs.mkShell {
+        devShells.tauri-shell = pkgs.mkShell {
           packages = [ tauri-shellhook-test ];
           buildInputs = sol-build-inputs ++ rust-build-inputs
             ++ node-build-inputs ++ tauri-build-inputs;
@@ -402,8 +390,8 @@
             cp /usr/bin/base64 "$TMP_BASE64_PATH/base64"
             export PATH="$TMP_BASE64_PATH:$PATH:/usr/bin"
             export WEBKIT_DISABLE_COMPOSITING_MODE=1
-            export XDG_DATA_DIRS=${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS
-            export GIO_MODULE_DIR="${pkgs.glib-networking}/lib/gio/modules/";
+            export XDG_DATA_DIRS=${old-pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${old-pkgs.gsettings-desktop-schemas.name}:${old-pkgs.gtk3}/share/gsettings-schemas/${old-pkgs.gtk3.name}:$XDG_DATA_DIRS
+            export GIO_MODULE_DIR="${old-pkgs.glib-networking}/lib/gio/modules/";
           ''
             # there is a known issue with nix pkgs new apple_sdk and that since it is now using xcrun,
             # apple_sdk's setup hook breaks the link to some of '/usr/bin' Xcode command line tools bins
