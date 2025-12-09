@@ -18,7 +18,7 @@
         pkgs = import nixpkgs { inherit system overlays; };
         old-pkgs = import nixpkgs-old { inherit system; };
 
-        rust-version = "1.87.0";
+        rust-version = "1.89.0";
         rust-toolchain = pkgs.rust-bin.stable.${rust-version}.default.override
           (previous: {
             targets = previous.targets ++ [ "wasm32-unknown-unknown" ];
