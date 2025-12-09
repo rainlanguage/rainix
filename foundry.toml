@@ -1,0 +1,9 @@
+[profile.default]
+src = "test/fixture/src"
+out = "test/fixture/out"
+libs = ["test/fixture/lib"]
+build_info = true
+build_info_path = "test/fixture/out/build-info"
+
+# Keep the same build skip patterns used in CI.
+ignored_paths = ["*/test/**", "*/script/**"]
