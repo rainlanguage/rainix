@@ -178,7 +178,9 @@
           name = "rainix-sol-static";
           body = ''
             set -euxo pipefail
-            slither .
+            cd test/fixture
+            forge build --build-info --skip "*/test/**" "*/script/**" --force
+            slither . --ignore-compile
             forge fmt --check
           '';
           additionalBuildInputs = sol-build-inputs;
