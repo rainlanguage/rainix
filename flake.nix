@@ -8,12 +8,13 @@
     foundry.url = "github:shazow/foundry.nix";
     solc.url = "github:hellwolf/solc.nix";
     # old nixpkgs, pinned for webkitgtk and libsoup-2.4 needed for tauri shell and build
-    nixpkgs-old.url = "github:nixos/nixpkgs?rev=48975d7f9b9960ed33c4e8561bcce20cc0c2de5b";
+    nixpkgs-old.url =
+      "github:nixos/nixpkgs?rev=48975d7f9b9960ed33c4e8561bcce20cc0c2de5b";
     git-hooks-nix.url = "github:cachix/git-hooks.nix";
   };
 
-  outputs =
-    { nixpkgs, flake-utils, rust-overlay, foundry, solc, nixpkgs-old, git-hooks-nix, ... }:
+  outputs = { nixpkgs, flake-utils, rust-overlay, foundry, solc, nixpkgs-old
+    , git-hooks-nix, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         overlays = [ (import rust-overlay) foundry.overlay solc.overlay ];
@@ -361,7 +362,6 @@
 
             # Rust
             taplo.enable = true;
-
             # Conditional rustfmt - only runs if Cargo.toml exists
             rustfmt-conditional = {
               enable = true;
@@ -377,8 +377,15 @@
               pass_filenames = false;
             };
 
+            # TypeScript
+            eslint.enable = true;
+            prettier.enable = true;
+
             # Misc
-            denofmt.enable = true;
+            denofmt = {
+              enable = true;
+              excludes = [ ".*\\.ts$" ".*\\.js$" ".*\\.json$" ];
+            };
             yamlfmt.enable = true;
             yamlfmt.settings.lint-only = false;
             shellcheck.enable = true;
