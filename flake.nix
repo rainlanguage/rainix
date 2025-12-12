@@ -8,10 +8,13 @@
     foundry.url = "github:shazow/foundry.nix";
     solc.url = "github:hellwolf/solc.nix";
     # old nixpkgs, pinned for webkitgtk and libsoup-2.4 needed for tauri shell and build
-    nixpkgs-old.url = "github:nixos/nixpkgs?rev=48975d7f9b9960ed33c4e8561bcce20cc0c2de5b";
+    nixpkgs-old.url =
+      "github:nixos/nixpkgs?rev=48975d7f9b9960ed33c4e8561bcce20cc0c2de5b";
+    git-hooks-nix.url = "github:cachix/git-hooks.nix";
   };
 
-  outputs = { self, nixpkgs, flake-utils, rust-overlay, foundry, solc, nixpkgs-old }:
+  outputs = { nixpkgs, flake-utils, rust-overlay, foundry, solc, nixpkgs-old
+    , git-hooks-nix, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         overlays = [ (import rust-overlay) foundry.overlay solc.overlay ];
@@ -38,9 +41,8 @@
           pkgs.cargo-flamegraph
         ] ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
           # pkgs.glibc
-        ]) ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
-          pkgs.darwin.DarwinTools
-        ]);
+        ]) ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin
+          [ pkgs.darwin.DarwinTools ]);
 
         sol-build-inputs = [
           pkgs.git
@@ -147,7 +149,7 @@
         # https://ertt.ca/nix/shell-scripts/
         mkTask = { name, body, additionalBuildInputs ? [ ] }:
           pkgs.symlinkJoin {
-            name = name;
+            inherit name;
             paths = [
               ((pkgs.writeScriptBin name body).overrideAttrs (old: {
                 buildCommand = ''
@@ -348,15 +350,49 @@
           additionalBuildInputs = [ pkgs.bats ];
         };
 
+        pre-commit = git-hooks-nix.lib.${system}.run {
+          src = ./.;
+          hooks = {
+            # Nix
+            nil.enable = true;
+            nixfmt-classic.enable = true;
+            deadnix.enable = true;
+            statix.enable = true;
+            statix.settings.ignore = [ "lib/" ];
+
+            # Rust
+            taplo.enable = true;
+            # Conditional rustfmt - only runs if Cargo.toml exists
+            rustfmt-conditional = {
+              enable = true;
+              name = "rustfmt";
+              entry = "${pkgs.writeShellScript "rustfmt-conditional" ''
+                if [ -f Cargo.toml ] || [ -f */Cargo.toml ]; then
+                  exec ${rust-toolchain}/bin/cargo-fmt fmt
+                else
+                  exit 0
+                fi
+              ''}";
+              files = "\\.rs$";
+              pass_filenames = false;
+            };
+
+            # Misc
+            denofmt = {
+              enable = true;
+              excludes = [ ".*\\.ts$" ".*\\.js$" ".*\\.json$" ];
+            };
+            yamlfmt.enable = true;
+            yamlfmt.settings.lint-only = false;
+            shellcheck.enable = true;
+          };
+        };
+
       in {
-        pkgs = pkgs;
-        old-pkgs = old-pkgs;
-        rust-toolchain = rust-toolchain;
-        rust-build-inputs = rust-build-inputs;
-        sol-build-inputs = sol-build-inputs;
-        node-build-inputs = node-build-inputs;
-        mkTask = mkTask;
-        network-list = network-list;
+        checks.pre-commit = pre-commit;
+
+        inherit pkgs old-pkgs rust-toolchain rust-build-inputs sol-build-inputs
+          node-build-inputs mkTask network-list;
 
         packages = {
           inherit rainix-sol-prelude rainix-sol-static rainix-sol-test
@@ -368,8 +404,10 @@
         devShells.default = pkgs.mkShell {
           buildInputs = sol-build-inputs ++ rust-build-inputs
             ++ node-build-inputs ++ rainix-tasks ++ subgraph-tasks
-            ++ [ the-graph goldsky pkgs.sqlite ];
+            ++ [ the-graph goldsky pkgs.sqlite pkgs.pre-commit ]
+            ++ pre-commit.enabledPackages;
           shellHook = ''
+            ${pre-commit.shellHook}
             ${source-dotenv}
 
             if [ -f ./package.json ]; then
@@ -382,8 +420,10 @@
         devShells.tauri-shell = pkgs.mkShell {
           packages = [ tauri-shellhook-test ];
           buildInputs = sol-build-inputs ++ rust-build-inputs
-            ++ node-build-inputs ++ tauri-build-inputs;
+            ++ node-build-inputs ++ tauri-build-inputs ++ [ pkgs.pre-commit ]
+            ++ pre-commit.enabledPackages;
           shellHook = ''
+            ${pre-commit.shellHook}
             ${source-dotenv}
 
             export TMP_BASE64_PATH=$(mktemp -d)
