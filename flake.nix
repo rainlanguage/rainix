@@ -17,7 +17,10 @@
     , git-hooks-nix, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        overlays = [ (import rust-overlay) foundry.overlay solc.overlay ];
+        wasm-bindgen-overlay = final: prev: {
+          wasm-bindgen-cli = prev.wasm-bindgen-cli_0_2_100;
+        };
+        overlays = [ (import rust-overlay) foundry.overlay solc.overlay wasm-bindgen-overlay ];
         pkgs = import nixpkgs { inherit system overlays; };
         old-pkgs = import nixpkgs-old { inherit system; };
 
