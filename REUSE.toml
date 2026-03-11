@@ -8,6 +8,7 @@ path = [
   ".gitmodules",
   "REUSE.toml",
   "CLAUDE.md",
+  ".coderabbit.yaml",
   ".github/**/",
   ".vscode/**/",
   "test/**/",
