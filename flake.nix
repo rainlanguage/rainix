@@ -252,6 +252,8 @@
 
         rainix-rs-prelude = mkTask {
           name = "rainix-rs-prelude";
+          # Intentionally empty — exists so downstream consumers can call
+          # rainix-rs-prelude unconditionally alongside rainix-sol-prelude.
           body = ''
             set -euxo pipefail
           '';

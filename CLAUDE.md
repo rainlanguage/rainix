@@ -60,7 +60,7 @@ The flake exports:
 ## CI
 
 Defined in `.github/workflows/`:
-- **test.yml** — runs sol and rs tasks against `test/fixture/` on Ubuntu + macOS (Intel & ARM)
+- **test.yml** — runs sol and rs tasks against `test/fixture/` on Ubuntu + macOS (ARM only; sol tasks Ubuntu-only)
 - **check-shell.yml** — verifies dev shell tools are available
 - **pr-assessment.yaml** — PR size assessment
 
