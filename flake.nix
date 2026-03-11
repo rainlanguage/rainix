@@ -21,7 +21,7 @@
         pkgs = import nixpkgs { inherit system overlays; };
         old-pkgs = import nixpkgs-old { inherit system; };
 
-        rust-version = "1.89.0";
+        rust-version = "1.94.0";
         rust-toolchain = pkgs.rust-bin.stable.${rust-version}.default.override
           (previous: {
             targets = previous.targets ++ [ "wasm32-unknown-unknown" ];
@@ -252,6 +252,8 @@
 
         rainix-rs-prelude = mkTask {
           name = "rainix-rs-prelude";
+          # Intentionally empty — exists so downstream consumers can call
+          # rainix-rs-prelude unconditionally alongside rainix-sol-prelude.
           body = ''
             set -euxo pipefail
           '';
