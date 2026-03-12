@@ -49,7 +49,7 @@
           pkgs.git
           pkgs.foundry-bin
           pkgs.slither-analyzer
-          pkgs.solc_0_8_19
+          pkgs.solc_0_8_25
           pkgs.reuse
         ];
 
@@ -342,6 +342,14 @@
           fi
         '';
 
+        default-shell-test = mkTask {
+          name = "default-shell-test";
+          body = ''
+            bats test/bats/devshell/default/solc.test.bats
+          '';
+          additionalBuildInputs = [ pkgs.bats ];
+        };
+
         tauri-shellhook-test = mkTask {
           name = "tauri-shellhook-test";
           # only run this test for darwin
@@ -354,12 +362,16 @@
         };
 
       in {
+        # Reusable outputs for downstream Rain flakes to compose their own
+        # dev shells and build tasks.
         pkgs = pkgs;
         old-pkgs = old-pkgs;
         rust-toolchain = rust-toolchain;
         rust-build-inputs = rust-build-inputs;
         sol-build-inputs = sol-build-inputs;
         node-build-inputs = node-build-inputs;
+        # mkTask { name, body, additionalBuildInputs? } — creates a Nix
+        # derivation wrapping a shell script with its dependencies on PATH.
         mkTask = mkTask;
         network-list = network-list;
 
@@ -373,7 +385,7 @@
         devShells.default = pkgs.mkShell {
           buildInputs = sol-build-inputs ++ rust-build-inputs
             ++ node-build-inputs ++ rainix-tasks ++ subgraph-tasks
-            ++ [ the-graph goldsky pkgs.sqlite pkgs.yq-go ];
+            ++ [ the-graph goldsky pkgs.sqlite pkgs.yq-go default-shell-test ];
           shellHook = ''
             ${source-dotenv}
 

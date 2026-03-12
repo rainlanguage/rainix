@@ -42,7 +42,7 @@ All tasks are Nix packages run via `nix run`. From a consuming repo use `..#` (e
 ## Pinned Versions
 
 - Rust: 1.94.0 (with `wasm32-unknown-unknown` target)
-- Solidity: solc 0.8.19
+- Solidity: solc 0.8.25
 - Foundry: via foundry.nix
 - Graph CLI: 0.69.2
 - Goldsky CLI: 8.6.6
