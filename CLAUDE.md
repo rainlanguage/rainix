@@ -19,7 +19,7 @@ The shell auto-sources `.env` if present and runs `npm ci --ignore-scripts` if `
 
 ## Build Tasks
 
-All tasks are Nix packages run via `nix run`. From a consuming repo (or `test/fixture/`):
+All tasks are Nix packages run via `nix run`. From a consuming repo use `..#` (e.g., `nix run ..#rainix-sol-test`); from `test/fixture/` use `../..#` (e.g., `nix run ../..#rainix-sol-test`). Examples below use the consuming-repo prefix:
 
 ### Solidity
 - `nix run ..#rainix-sol-prelude` — `forge install && forge build`
@@ -34,7 +34,7 @@ All tasks are Nix packages run via `nix run`. From a consuming repo (or `test/fi
 - `nix run ..#rainix-rs-static` — `cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D clippy::all`
 - `nix run ..#rainix-rs-artifacts` — `cargo build --release`
 
-### Subgraph
+### Subgraph (dev shell only, not `nix run` targets)
 - `subgraph-build` — forge build + npm ci + graph codegen/build
 - `subgraph-test` — `docker compose up` in `./subgraph`
 - `subgraph-deploy` — requires `GOLDSKY_TOKEN` and `GOLDSKY_NAME_AND_VERSION`
