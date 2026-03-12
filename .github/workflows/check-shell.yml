@@ -39,4 +39,5 @@ jobs:
       - run: nix develop --command graph --version
       - run: nix develop --command goldsky --version
       - run: nix develop --command yq --version
+      - run: nix develop --command default-shell-test
       - run: nix develop .#tauri-shell --command tauri-shellhook-test
