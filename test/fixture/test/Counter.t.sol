@@ -18,6 +18,12 @@ contract CounterTest is Test {
         assertEq(counter.number(), 1);
     }
 
+    function test_IncrementOverflowReverts() public {
+        counter.setNumber(type(uint256).max);
+        vm.expectRevert();
+        counter.increment();
+    }
+
     function testFuzz_SetNumber(uint256 x) public {
         counter.setNumber(x);
         assertEq(counter.number(), x);

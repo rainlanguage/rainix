@@ -4,8 +4,8 @@
 | ID | Severity | Title | Status |
 |----|----------|-------|--------|
 | A01-1-p0 | LOW | Inaccurate CI platform description in CLAUDE.md | FIXED |
-| A01-2-p0 | LOW | Task path prefix varies by working directory | PENDING |
-| A01-3-p0 | LOW | Subgraph tasks not runnable via `nix run` | PENDING |
+| A01-2-p0 | LOW | Task path prefix varies by working directory | FIXED |
+| A01-3-p0 | LOW | Subgraph tasks not runnable via `nix run` | FIXED |
 
 ## Pass 1: Security
 No LOW+ findings.
