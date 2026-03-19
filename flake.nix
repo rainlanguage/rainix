@@ -346,6 +346,7 @@
           name = "default-shell-test";
           body = ''
             bats test/bats/devshell/default/solc.test.bats
+            bats test/bats/devshell/default/gh.test.bats
           '';
           additionalBuildInputs = [ pkgs.bats ];
         };
@@ -385,7 +386,7 @@
         devShells.default = pkgs.mkShell {
           buildInputs = sol-build-inputs ++ rust-build-inputs
             ++ node-build-inputs ++ rainix-tasks ++ subgraph-tasks
-            ++ [ the-graph goldsky pkgs.sqlite pkgs.yq-go default-shell-test ];
+            ++ [ the-graph goldsky pkgs.sqlite pkgs.yq-go pkgs.gh default-shell-test ];
           shellHook = ''
             ${source-dotenv}
 
