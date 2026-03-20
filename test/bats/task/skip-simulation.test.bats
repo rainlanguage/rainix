@@ -1,5 +1,6 @@
 setup() {
   cd test/fixture
+  forge build
   anvil &
   ANVIL_PID=$!
   sleep 2
