@@ -306,13 +306,10 @@
           name = "subgraph-build";
           body = ''
             set -euxo pipefail
-            forge build
-            cd ./subgraph;
-            npm ci;
-            ${the-graph}/bin/graph codegen;
-            ${the-graph}/bin/graph build;
-            cd -;
+            ${pkgs.foundry-bin}/bin/forge build
+            (cd ./subgraph && ${pkgs.nodejs_22}/bin/npm ci && ${the-graph}/bin/graph codegen && ${the-graph}/bin/graph build)
           '';
+          additionalBuildInputs = sol-build-inputs ++ node-build-inputs;
         };
 
         subgraph-test = mkTask {
@@ -326,7 +323,7 @@
         subgraph-deploy = mkTask {
           name = "subgraph-deploy";
           body = ''
-            set -euo pipefail
+            set -euxo pipefail
             ${subgraph-build}/bin/subgraph-build
 
             (cd ./subgraph && ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph deploy ''${GOLDSKY_NAME_AND_VERSION})
