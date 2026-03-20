@@ -346,8 +346,9 @@
             bats test/bats/devshell/default/solc.test.bats
             bats test/bats/devshell/default/gh.test.bats
             bats test/bats/task/skip-simulation.test.bats
+            bats test/bats/task/subgraph-build.test.bats
           '';
-          additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs;
+          additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs ++ node-build-inputs;
         };
 
         tauri-shellhook-test = mkTask {

@@ -1,0 +1,22 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: Counter
+    network: mainnet
+    source:
+      abi: Counter
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - SetNumber
+      abis:
+        - name: Counter
+          file: ../out/Counter.sol/Counter.json
+      eventHandlers:
+        - event: SetNumber(indexed uint256)
+          handler: handleSetNumber
+      file: ./src/mapping.ts
