@@ -326,7 +326,12 @@
             set -euxo pipefail
             ${subgraph-build}/bin/subgraph-build
 
-            (cd ./subgraph && ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph deploy ''${GOLDSKY_NAME_AND_VERSION})
+            if ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph list ''${GOLDSKY_NAME_AND_VERSION} 2>/dev/null | grep -q ''${GOLDSKY_NAME_AND_VERSION}; then
+              echo "Subgraph ''${GOLDSKY_NAME_AND_VERSION} already deployed, skipping."
+            else
+              echo "Deploying subgraph ''${GOLDSKY_NAME_AND_VERSION}..."
+              (cd ./subgraph && ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph deploy ''${GOLDSKY_NAME_AND_VERSION})
+            fi
           '';
         };
 
