@@ -54,7 +54,6 @@
         ];
 
         node-build-inputs = [ pkgs.nodejs_22 ];
-        network-list = [ "base" "flare" ];
         the-graph = pkgs.stdenv.mkDerivation {
           pname = "the-graph";
           version = "0.69.2";
@@ -306,13 +305,14 @@
           name = "subgraph-build";
           body = ''
             set -euxo pipefail
-            forge build
-            cd ./subgraph;
-            npm ci;
-            ${the-graph}/bin/graph codegen;
-            ${the-graph}/bin/graph build;
-            cd -;
+            ${pkgs.foundry-bin}/bin/forge build
+            (cd ./subgraph && ${pkgs.nodejs_22}/bin/npm ci && ${the-graph}/bin/graph codegen)
+            for network in $(${pkgs.jq}/bin/jq -r 'keys[]' ./subgraph/networks.json); do
+              echo "Building subgraph for $network..."
+              (cd ./subgraph && ${the-graph}/bin/graph build --network "$network")
+            done
           '';
+          additionalBuildInputs = sol-build-inputs ++ node-build-inputs ++ [ pkgs.jq ];
         };
 
         subgraph-test = mkTask {
@@ -326,11 +326,26 @@
         subgraph-deploy = mkTask {
           name = "subgraph-deploy";
           body = ''
-            set -euo pipefail
-            ${subgraph-build}/bin/subgraph-build
+            set -euxo pipefail
+            ${pkgs.foundry-bin}/bin/forge build
+            (cd ./subgraph && ${pkgs.nodejs_22}/bin/npm ci && ${the-graph}/bin/graph codegen)
 
-            (cd ./subgraph && ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph deploy ''${GOLDSKY_NAME_AND_VERSION})
+            for network in $(${pkgs.jq}/bin/jq -r 'keys[]' ./subgraph/networks.json); do
+              version="$(date -Idate)-$(${pkgs.openssl}/bin/openssl rand -hex 2)"
+              name_and_version="''${GOLDSKY_SUBGRAPH_NAME}-$network/$version"
+
+              echo "Building subgraph for $network..."
+              (cd ./subgraph && ${the-graph}/bin/graph build --network "$network")
+
+              if ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph list "$name_and_version" 2>/dev/null | grep -q "$name_and_version"; then
+                echo "Subgraph $name_and_version already deployed, skipping."
+              else
+                echo "Deploying subgraph $name_and_version..."
+                (cd ./subgraph && ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph deploy "$name_and_version")
+              fi
+            done
           '';
+          additionalBuildInputs = [ pkgs.openssl ];
         };
 
         subgraph-tasks = [ subgraph-build subgraph-test subgraph-deploy ];
@@ -349,8 +364,9 @@
             bats test/bats/devshell/default/solc.test.bats
             bats test/bats/devshell/default/gh.test.bats
             bats test/bats/task/skip-simulation.test.bats
+            bats test/bats/task/subgraph-build.test.bats
           '';
-          additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs;
+          additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs ++ node-build-inputs;
         };
 
         tauri-shellhook-test = mkTask {
@@ -376,7 +392,6 @@
         # mkTask { name, body, additionalBuildInputs? } — creates a Nix
         # derivation wrapping a shell script with its dependencies on PATH.
         mkTask = mkTask;
-        network-list = network-list;
 
         packages = {
           inherit rainix-sol-prelude rainix-sol-static rainix-sol-test

@@ -1,0 +1,4 @@
+type SetNumber @entity(immutable: true) {
+  id: Bytes!
+  newNumber: BigInt!
+}
