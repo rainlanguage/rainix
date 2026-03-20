@@ -228,6 +228,7 @@
                 --slow \
                 ''${DEPLOY_LEGACY:+--legacy} \
                 ''${DEPLOY_BROADCAST:+--broadcast} \
+                ''${DEPLOY_SKIP_SIMULATION:+--skip-simulation} \
                 --rpc-url "''${ETH_RPC_URL}" \
                 ''${DEPLOY_VERIFY:+--verify} \
                 ''${DEPLOY_VERIFIER:+--verifier "''${DEPLOY_VERIFIER}"} \
