@@ -228,6 +228,7 @@
                 --slow \
                 ''${DEPLOY_LEGACY:+--legacy} \
                 ''${DEPLOY_BROADCAST:+--broadcast} \
+                ''${DEPLOY_SKIP_SIMULATION:+--skip-simulation} \
                 --rpc-url "''${ETH_RPC_URL}" \
                 ''${DEPLOY_VERIFY:+--verify} \
                 ''${DEPLOY_VERIFIER:+--verifier "''${DEPLOY_VERIFIER}"} \
@@ -347,8 +348,9 @@
           body = ''
             bats test/bats/devshell/default/solc.test.bats
             bats test/bats/devshell/default/gh.test.bats
+            bats test/bats/task/skip-simulation.test.bats
           '';
-          additionalBuildInputs = [ pkgs.bats ];
+          additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs;
         };
 
         tauri-shellhook-test = mkTask {
