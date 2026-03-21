@@ -13,7 +13,7 @@ subgraph_network_address() {
 subgraph_deploy_version() {
   local address="$1"
   local commit="$2"
-  echo "${address}-${commit}" | sha256sum | cut -c1-8
+  echo "${address}-${commit}"
 }
 
 # List all networks defined in networks.json.
