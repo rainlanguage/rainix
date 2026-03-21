@@ -53,7 +53,7 @@
           pkgs.reuse
         ];
 
-        node-build-inputs = [ pkgs.nodejs_22 ];
+        node-build-inputs = [ pkgs.nodejs_22 pkgs.jq ];
         the-graph = pkgs.stdenv.mkDerivation {
           pname = "the-graph";
           version = "0.69.2";
@@ -305,14 +305,16 @@
           name = "subgraph-build";
           body = ''
             set -euxo pipefail
+            source ${./lib/subgraph.sh}
+
             ${pkgs.foundry-bin}/bin/forge build
             (cd ./subgraph && ${pkgs.nodejs_22}/bin/npm ci && ${the-graph}/bin/graph codegen)
-            for network in $(${pkgs.jq}/bin/jq -r 'keys[]' ./subgraph/networks.json); do
+            for network in $(subgraph_networks ./subgraph/networks.json); do
               echo "Building subgraph for $network..."
               (cd ./subgraph && ${the-graph}/bin/graph build --network "$network")
             done
           '';
-          additionalBuildInputs = sol-build-inputs ++ node-build-inputs ++ [ pkgs.jq ];
+          additionalBuildInputs = sol-build-inputs ++ node-build-inputs;
         };
 
         subgraph-test = mkTask {
@@ -327,25 +329,28 @@
           name = "subgraph-deploy";
           body = ''
             set -euxo pipefail
+            source ${./lib/subgraph.sh}
+
             ${pkgs.foundry-bin}/bin/forge build
             (cd ./subgraph && ${pkgs.nodejs_22}/bin/npm ci && ${the-graph}/bin/graph codegen)
 
-            for network in $(${pkgs.jq}/bin/jq -r 'keys[]' ./subgraph/networks.json); do
-              version="$(date -Idate)-$(${pkgs.openssl}/bin/openssl rand -hex 2)"
+            commit="$(${pkgs.git}/bin/git rev-parse --short HEAD)"
+            for network in $(subgraph_networks ./subgraph/networks.json); do
+              address=$(subgraph_network_address ./subgraph/networks.json "$network")
+              version=$(subgraph_deploy_version "$address" "$commit")
               name_and_version="''${GOLDSKY_SUBGRAPH_NAME}-$network/$version"
-
-              echo "Building subgraph for $network..."
-              (cd ./subgraph && ${the-graph}/bin/graph build --network "$network")
 
               if ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph list "$name_and_version" 2>/dev/null | grep -q "$name_and_version"; then
                 echo "Subgraph $name_and_version already deployed, skipping."
               else
+                echo "Building subgraph for $network..."
+                (cd ./subgraph && ${the-graph}/bin/graph build --network "$network")
                 echo "Deploying subgraph $name_and_version..."
                 (cd ./subgraph && ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph deploy "$name_and_version")
               fi
             done
           '';
-          additionalBuildInputs = [ pkgs.openssl ];
+          additionalBuildInputs = node-build-inputs;
         };
 
         subgraph-tasks = [ subgraph-build subgraph-test subgraph-deploy ];
@@ -365,6 +370,7 @@
             bats test/bats/devshell/default/gh.test.bats
             bats test/bats/task/skip-simulation.test.bats
             bats test/bats/task/subgraph-build.test.bats
+            bats test/bats/task/subgraph-deploy-version.test.bats
           '';
           additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs ++ node-build-inputs;
         };
