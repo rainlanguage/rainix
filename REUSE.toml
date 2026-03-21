@@ -12,6 +12,7 @@ path = [
   ".coderabbit.yaml",
   ".github/**/",
   ".vscode/**/",
+  "lib/**/",
   "test/**/",
   "audit/**/"
 ]
