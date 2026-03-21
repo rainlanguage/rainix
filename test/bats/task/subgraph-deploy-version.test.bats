@@ -32,7 +32,7 @@ setup() {
   [ "$v1" != "$v2" ]
 }
 
-@test "subgraph_deploy_version should be 8 characters" {
+@test "subgraph_deploy_version should contain address and commit" {
   v=$(subgraph_deploy_version "0xabc" "abc1234")
-  [ ${#v} -eq 8 ]
+  [ "$v" = "0xabc-abc1234" ]
 }
