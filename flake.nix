@@ -446,6 +446,17 @@
               pass_filenames = false;
             };
 
+            # Svelte/JS/TS
+            prettier = {
+              enable = true;
+              types_or = [
+                "svelte"
+                "ts"
+                "javascript"
+                "json"
+              ];
+            };
+
             # Misc
             denofmt = {
               enable = true;
@@ -453,6 +464,7 @@
                 ".*\\.ts$"
                 ".*\\.js$"
                 ".*\\.json$"
+                ".*\\.svelte$"
               ];
             };
             yamlfmt.enable = true;
