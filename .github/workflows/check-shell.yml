@@ -4,11 +4,9 @@ jobs:
   rainix-check-shell:
     strategy:
       matrix:
-        os: [
-            ubuntu-latest,
-            # apple silicon
-            macos-latest,
-          ]
+        os: [ubuntu-latest,
+          # apple silicon
+          macos-latest]
       fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
