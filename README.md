@@ -57,7 +57,6 @@ Downstream flakes can compose their own tasks and shells using:
   lists
 - `mkTask` — create Nix derivations wrapping shell scripts with dependencies on
   PATH
-- `network-list` — supported network names
 
 ## Pinned Versions
 
