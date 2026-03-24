@@ -371,7 +371,7 @@
               fi
             done
           '';
-          additionalBuildInputs = node-build-inputs;
+          additionalBuildInputs = sol-build-inputs ++ node-build-inputs;
         };
 
         subgraph-tasks = [

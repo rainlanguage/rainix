@@ -69,8 +69,8 @@ The flake exports:
 - **`devShells`**: `default` (full toolchain) and `tauri-shell` (Tauri + macOS
   workarounds)
 - **Reusable outputs**: `pkgs`, `rust-toolchain`, `rust-build-inputs`,
-  `sol-build-inputs`, `node-build-inputs`, `mkTask`, `network-list` — consumed
-  by downstream Rain flakes to compose their own tasks/shells
+  `sol-build-inputs`, `node-build-inputs`, `mkTask` — consumed by downstream
+  Rain flakes to compose their own tasks/shells
 
 `mkTask` is the core abstraction: it creates self-contained Nix derivations
 wrapping shell scripts with their dependencies on `PATH`.
