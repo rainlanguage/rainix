@@ -1,5 +1,5 @@
 setup() {
-  cd test/fixture
+  cd test/fixture || exit
   forge build
   anvil &
   ANVIL_PID=$!
@@ -7,8 +7,8 @@ setup() {
 }
 
 teardown() {
-  kill $ANVIL_PID 2>/dev/null
-  wait $ANVIL_PID 2>/dev/null
+  kill "$ANVIL_PID" 2>/dev/null
+  wait "$ANVIL_PID" 2>/dev/null
 }
 
 forge_deploy() {

@@ -3,6 +3,7 @@
 ## Evidence of thorough reading
 
 ### Source: test/fixture/src/Counter.sol (15 lines)
+
 - Contract: Counter (line 5)
 - State variable: `number` (uint256, public) — line 6
 - Function: `setNumber(uint256 newNumber)` — line 8
@@ -10,4 +11,5 @@
 
 ## Findings
 
-No findings. This is a minimal test fixture. NatSpec documentation on a CI validation fixture would add no value.
+No findings. This is a minimal test fixture. NatSpec documentation on a CI
+validation fixture would add no value.

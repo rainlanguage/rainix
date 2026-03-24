@@ -1,8 +1,10 @@
 # Rainix
 
-Nix flake providing development environments and build tasks for the [Rain Protocol](https://rainprotocol.xyz) ecosystem.
+Nix flake providing development environments and build tasks for the
+[Rain Protocol](https://rainprotocol.xyz) ecosystem.
 
-Rainix is shared infrastructure consumed by other Rain repos — the actual project code lives in downstream consumers.
+Rainix is shared infrastructure consumed by other Rain repos — the actual
+project code lives in downstream consumers.
 
 ## Usage
 
@@ -23,13 +25,15 @@ nix develop        # default shell (Solidity + Rust + Node + subgraph tools)
 nix develop .#tauri-shell  # Tauri desktop app development
 ```
 
-The default shell auto-sources `.env` if present and runs `npm ci --ignore-scripts` if `package.json` exists.
+The default shell auto-sources `.env` if present and runs
+`npm ci --ignore-scripts` if `package.json` exists.
 
 ### Build Tasks
 
 All tasks are Nix packages run via `nix run`. From a consuming repo:
 
 #### Solidity
+
 - `nix run ..#rainix-sol-prelude` — forge install + build
 - `nix run ..#rainix-sol-test` — forge test
 - `nix run ..#rainix-sol-static` — slither + forge fmt check
@@ -37,6 +41,7 @@ All tasks are Nix packages run via `nix run`. From a consuming repo:
 - `nix run ..#rainix-sol-artifacts` — deploy to testnet
 
 #### Rust
+
 - `nix run ..#rainix-rs-prelude` — environment prep (currently no-op)
 - `nix run ..#rainix-rs-test` — cargo test
 - `nix run ..#rainix-rs-static` — cargo fmt + clippy
@@ -48,8 +53,10 @@ Downstream flakes can compose their own tasks and shells using:
 
 - `pkgs` — nixpkgs with all overlays applied
 - `rust-toolchain` — pinned Rust toolchain
-- `rust-build-inputs`, `sol-build-inputs`, `node-build-inputs` — dependency lists
-- `mkTask` — create Nix derivations wrapping shell scripts with dependencies on PATH
+- `rust-build-inputs`, `sol-build-inputs`, `node-build-inputs` — dependency
+  lists
+- `mkTask` — create Nix derivations wrapping shell scripts with dependencies on
+  PATH
 - `network-list` — supported network names
 
 ## Pinned Versions

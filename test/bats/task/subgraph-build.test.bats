@@ -1,5 +1,5 @@
 setup() {
-  cd test/fixture
+  cd test/fixture || exit
   rm -rf subgraph/generated subgraph/build subgraph/node_modules
 }
 

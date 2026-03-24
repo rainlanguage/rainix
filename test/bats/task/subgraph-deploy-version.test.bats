@@ -1,4 +1,5 @@
 setup() {
+  # shellcheck disable=SC1091
   source lib/subgraph.sh
 }
 

@@ -3,6 +3,7 @@
 ## Evidence of thorough reading
 
 ### Source: test/fixture/test/Counter.t.sol (25 lines)
+
 - Contract: CounterTest is Test (line 8)
 - Function: `setUp()` — line 11
 - Function: `test_Increment()` — line 16
