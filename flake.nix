@@ -24,7 +24,7 @@
         pkgs = import nixpkgs { inherit system overlays; };
         old-pkgs = import nixpkgs-old { inherit system; };
 
-        rust-version = "1.89.0";
+        rust-version = "1.94.0";
         rust-toolchain = pkgs.rust-bin.stable.${rust-version}.default.override
           (previous: {
             targets = previous.targets ++ [ "wasm32-unknown-unknown" ];
@@ -51,12 +51,11 @@
           pkgs.git
           pkgs.foundry-bin
           pkgs.slither-analyzer
-          pkgs.solc_0_8_19
+          pkgs.solc_0_8_25
           pkgs.reuse
         ];
 
-        node-build-inputs = [ pkgs.nodejs_22 ];
-        network-list = [ "base" "flare" ];
+        node-build-inputs = [ pkgs.nodejs_22 pkgs.jq ];
         the-graph = pkgs.stdenv.mkDerivation {
           pname = "the-graph";
           version = "0.69.2";
@@ -230,6 +229,7 @@
                 --slow \
                 ''${DEPLOY_LEGACY:+--legacy} \
                 ''${DEPLOY_BROADCAST:+--broadcast} \
+                ''${DEPLOY_SKIP_SIMULATION:+--skip-simulation} \
                 --rpc-url "''${ETH_RPC_URL}" \
                 ''${DEPLOY_VERIFY:+--verify} \
                 ''${DEPLOY_VERIFIER:+--verifier "''${DEPLOY_VERIFIER}"} \
@@ -254,6 +254,8 @@
 
         rainix-rs-prelude = mkTask {
           name = "rainix-rs-prelude";
+          # Intentionally empty — exists so downstream consumers can call
+          # rainix-rs-prelude unconditionally alongside rainix-sol-prelude.
           body = ''
             set -euxo pipefail
           '';
@@ -305,13 +307,16 @@
           name = "subgraph-build";
           body = ''
             set -euxo pipefail
-            forge build
-            cd ./subgraph;
-            npm ci;
-            ${the-graph}/bin/graph codegen;
-            ${the-graph}/bin/graph build;
-            cd -;
+            source ${./lib/subgraph.sh}
+
+            ${pkgs.foundry-bin}/bin/forge build
+            (cd ./subgraph && ${pkgs.nodejs_22}/bin/npm ci && ${the-graph}/bin/graph codegen)
+            for network in $(subgraph_networks ./subgraph/networks.json); do
+              echo "Building subgraph for $network..."
+              (cd ./subgraph && ${the-graph}/bin/graph build --network "$network")
+            done
           '';
+          additionalBuildInputs = sol-build-inputs ++ node-build-inputs;
         };
 
         subgraph-test = mkTask {
@@ -325,11 +330,29 @@
         subgraph-deploy = mkTask {
           name = "subgraph-deploy";
           body = ''
-            set -euo pipefail
-            ${subgraph-build}/bin/subgraph-build
+            set -euxo pipefail
+            source ${./lib/subgraph.sh}
 
-            (cd ./subgraph && ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph deploy ''${GOLDSKY_NAME_AND_VERSION})
+            ${pkgs.foundry-bin}/bin/forge build
+            (cd ./subgraph && ${pkgs.nodejs_22}/bin/npm ci && ${the-graph}/bin/graph codegen)
+
+            commit="$(${pkgs.git}/bin/git rev-parse --short HEAD)"
+            for network in $(subgraph_networks ./subgraph/networks.json); do
+              address=$(subgraph_network_address ./subgraph/networks.json "$network")
+              version=$(subgraph_deploy_version "$address" "$commit")
+              name_and_version="''${GOLDSKY_SUBGRAPH_NAME}-$network/$version"
+
+              if ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph list "$name_and_version" 2>/dev/null | grep -q "$name_and_version"; then
+                echo "Subgraph $name_and_version already deployed, skipping."
+              else
+                echo "Building subgraph for $network..."
+                (cd ./subgraph && ${the-graph}/bin/graph build --network "$network")
+                echo "Deploying subgraph $name_and_version..."
+                (cd ./subgraph && ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph deploy "$name_and_version")
+              fi
+            done
           '';
+          additionalBuildInputs = node-build-inputs;
         };
 
         subgraph-tasks = [ subgraph-build subgraph-test subgraph-deploy ];
@@ -341,6 +364,18 @@
             set +a
           fi
         '';
+
+        default-shell-test = mkTask {
+          name = "default-shell-test";
+          body = ''
+            bats test/bats/devshell/default/solc.test.bats
+            bats test/bats/devshell/default/gh.test.bats
+            bats test/bats/task/skip-simulation.test.bats
+            bats test/bats/task/subgraph-build.test.bats
+            bats test/bats/task/subgraph-deploy-version.test.bats
+          '';
+          additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs ++ node-build-inputs;
+        };
 
         tauri-shellhook-test = mkTask {
           name = "tauri-shellhook-test";
@@ -399,7 +434,7 @@
         checks.pre-commit = pre-commit;
 
         inherit pkgs old-pkgs rust-toolchain rust-build-inputs sol-build-inputs
-          node-build-inputs mkTask network-list;
+          node-build-inputs mkTask;
 
         packages = {
           inherit rainix-sol-prelude rainix-sol-static rainix-sol-test
@@ -411,7 +446,7 @@
         devShells.default = pkgs.mkShell {
           buildInputs = sol-build-inputs ++ rust-build-inputs
             ++ node-build-inputs ++ rainix-tasks ++ subgraph-tasks
-            ++ [ the-graph goldsky pkgs.sqlite pkgs.pre-commit ]
+            ++ [ the-graph goldsky pkgs.sqlite pkgs.yq-go pkgs.gh default-shell-test pkgs.pre-commit ]
             ++ pre-commit.enabledPackages;
           shellHook = ''
             ${pre-commit.shellHook}

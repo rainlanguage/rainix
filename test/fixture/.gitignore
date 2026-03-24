@@ -14,3 +14,8 @@ docs/
 .env
 
 target
+
+# Subgraph build artifacts
+subgraph/build/
+subgraph/generated/
+subgraph/node_modules/

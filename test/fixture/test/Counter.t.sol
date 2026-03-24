@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: LicenseRef-DCL-1.0
 // SPDX-FileCopyrightText: Copyright (c) 2020 thedavidmeister
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.25;
 
-import {Test, console2} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {Counter} from "../src/Counter.sol";
 
 contract CounterTest is Test {
@@ -16,6 +16,12 @@ contract CounterTest is Test {
     function test_Increment() public {
         counter.increment();
         assertEq(counter.number(), 1);
+    }
+
+    function test_IncrementOverflowReverts() public {
+        counter.setNumber(type(uint256).max);
+        vm.expectRevert();
+        counter.increment();
     }
 
     function testFuzz_SetNumber(uint256 x) public {
