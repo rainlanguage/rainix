@@ -3,6 +3,7 @@
 ## Evidence of thorough reading
 
 ### Source: test/fixture/test/Counter.t.sol (25 lines)
+
 - Contract: CounterTest is Test (line 8)
 - Function: `setUp()` — line 11
 - Function: `test_Increment()` — line 16
@@ -15,4 +16,5 @@
 
 **File:** test/fixture/test/Counter.t.sol:5
 
-`console2` is imported from `forge-std/Test.sol` but never used in the test contract. This is dead code.
+`console2` is imported from `forge-std/Test.sol` but never used in the test
+contract. This is dead code.
