@@ -1,573 +1,169 @@
 {
-  description = "Rainix is a flake for Rain.";
+  description = "Rain lang development toolchains and infra.";
+
+  # TODO: Check for substituters.
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs";
-    flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     foundry.url = "github:shazow/foundry.nix";
     solc.url = "github:hellwolf/solc.nix";
     # old nixpkgs, pinned for webkitgtk and libsoup-2.4 needed for tauri shell and build
-    nixpkgs-old.url = "github:nixos/nixpkgs?rev=48975d7f9b9960ed33c4e8561bcce20cc0c2de5b";
+    nixpkgs-25_05.url = "github:nixos/nixpkgs?rev=48975d7f9b9960ed33c4e8561bcce20cc0c2de5b";
     git-hooks-nix.url = "github:cachix/git-hooks.nix";
   };
 
   outputs =
-    {
-      nixpkgs,
-      flake-utils,
-      rust-overlay,
-      foundry,
-      solc,
-      nixpkgs-old,
-      git-hooks-nix,
-      ...
-    }:
-    flake-utils.lib.eachDefaultSystem (
-      system:
-      let
-        wasm-bindgen-overlay = _final: prev: {
-          wasm-bindgen-cli = prev.wasm-bindgen-cli_0_2_100;
-        };
-        overlays = [
-          (import rust-overlay)
-          foundry.overlay
-          solc.overlay
-          wasm-bindgen-overlay
-        ];
-        pkgs = import nixpkgs { inherit system overlays; };
-        old-pkgs = import nixpkgs-old { inherit system; };
-
-        rust-version = "1.94.0";
-        rust-toolchain = pkgs.rust-bin.stable.${rust-version}.default.override (previous: {
-          targets = previous.targets ++ [ "wasm32-unknown-unknown" ];
-          extensions = previous.extensions ++ [
-            "rust-src"
-            "rust-analyzer"
-          ];
-        });
-
-        rust-build-inputs = [
-          rust-toolchain
-          pkgs.cargo-release
-          pkgs.gmp
-          pkgs.openssl
-          pkgs.libusb1
-          pkgs.pkg-config
-          pkgs.wasm-bindgen-cli
-          pkgs.gettext
-          pkgs.libiconv
-          pkgs.cargo-flamegraph
-        ]
-        ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
-          # pkgs.glibc
-        ])
-        ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [ pkgs.darwin.DarwinTools ]);
-
-        sol-build-inputs = [
-          pkgs.git
-          pkgs.foundry-bin
-          pkgs.slither-analyzer
-          pkgs.solc_0_8_25
-          pkgs.reuse
-        ];
-
-        node-build-inputs = [
-          pkgs.nodejs_22
-          pkgs.jq
-        ];
-        the-graph = pkgs.stdenv.mkDerivation {
-          pname = "the-graph";
-          version = "0.69.2";
-          src =
-            let
-              release-name = "%40graphprotocol%2Fgraph-cli%400.69.2";
-              system-mapping = {
-                x86_64-linux = "linux-x64";
-                x86_64-darwin = "darwin-x64";
-                aarch64-darwin = "darwin-arm64";
-              };
-              system-sha = {
-                x86_64-linux = "sha256:07grrdrx8w3m8sqwdmf9z9zymwnnzxckgnnjzfndk03a8r2d826m";
-                x86_64-darwin = "sha256:0j4p2bkx6pflkif6xkvfy4vj1v183mkg59p2kf3rk48wqfclids8";
-                aarch64-darwin = "sha256:0pq0g0fq1myp0s58lswhcab6ccszpi5sx6l3y9a18ai0c6yzxim0";
-              };
-            in
-            builtins.fetchTarball {
-              url = "https://github.com/graphprotocol/graph-tooling/releases/download/${release-name}/graph-${system-mapping.${system}}.tar.gz";
-              sha256 = system-sha.${system};
-            };
-          buildInputs = [ ];
-          installPhase = ''
-            mkdir -p $out
-            cp -r $src/* $out
-          '';
-        };
-
-        goldsky = pkgs.stdenv.mkDerivation rec {
-          pname = "goldsky";
-          version = "8.6.6";
-          src =
-            let
-              release-name = "8.6.6";
-              system-mapping = {
-                x86_64-linux = "linux";
-                x86_64-darwin = "macos";
-                aarch64-darwin = "macos";
-              };
-              system-sha = {
-                x86_64-linux = "sha256:1cqbinax63w07qxvmgni52qw4cd83ywkhjikw3rd4wgd2fh36027";
-                x86_64-darwin = "sha256:0yznf81yxc3a9vnfjdmmzdb59mh9bwrpxw87lrlhlchfr0jmnjk4";
-                aarch64-darwin = "sha256:0yznf81yxc3a9vnfjdmmzdb59mh9bwrpxw87lrlhlchfr0jmnjk4";
-              };
-            in
-            builtins.fetchurl {
-              url = "https://cli.goldsky.com/${release-name}/${system-mapping.${system}}/goldsky";
-              sha256 = system-sha.${system};
-            };
-          buildInputs = [ ];
-          phases = [ "installPhase" ];
-          installPhase = ''
-            mkdir -p $out/bin
-            cp $src $out/bin/goldsky
-            chmod +x $out/bin/goldsky
-          '';
-        };
-
-        tauri-build-inputs = [
-          pkgs.cargo-tauri_1
-          pkgs.curl
-          pkgs.wget
-          pkgs.pkg-config
-          pkgs.dbus
-          old-pkgs.glib
-          old-pkgs.gtk3
-          old-pkgs.libsoup_2_4
-          pkgs.librsvg
-          pkgs.gettext
-          pkgs.libiconv
-          old-pkgs.glib-networking
-        ]
-        ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
-          # This is probably needed but is is marked as broken in nixpkgs
-          old-pkgs.webkitgtk
-        ]);
-
-        tauri-release-env = pkgs.buildEnv {
-          name = "Tauri release environment";
-          # Currently we don't use the tauri build inputs as above because
-          # it doesn't seem to be totally supported by the github action, even
-          # though the above is as documented by tauri.
-          paths = [ pkgs.cargo-tauri_1 ] ++ rust-build-inputs ++ node-build-inputs;
-        };
-
-        # https://ertt.ca/nix/shell-scripts/
-        mkTask =
-          {
-            name,
-            body,
-            additionalBuildInputs ? [ ],
-          }:
-          pkgs.symlinkJoin {
-            inherit name;
-            paths = [
-              ((pkgs.writeScriptBin name body).overrideAttrs (old: {
-                buildCommand = ''
-                  ${old.buildCommand}
-                   patchShebangs $out'';
-              }))
-            ]
-            ++ additionalBuildInputs;
-            buildInputs = [ pkgs.makeWrapper ] ++ additionalBuildInputs;
-            postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
+    { self
+    , nixpkgs
+    , git-hooks-nix
+    , ...
+    }@inputs:
+    let
+      systems = [
+        "x86_64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
+      eachSystem = f: nixpkgs.lib.genAttrs systems (system:
+        let
+          pkgs = import nixpkgs {
+            localSystem = { inherit system; };
+            overlays = [ overlays.default ];
           };
+        in
+        f system pkgs);
 
-        rainix-sol-prelude = mkTask {
-          name = "rainix-sol-prelude";
-          # We do NOT do a shallow clone in the prelude because nix flakes
-          # seem to not be compatible with shallow clones.
-          # The reason we do a forge build here is that the output of the
-          # build is a set of artifacts that other tasks often need to use,
-          # such as the ABI and the bytecode.
-          body = ''
-            set -euxo pipefail
-            forge install
-            forge build
-          '';
-          additionalBuildInputs = sol-build-inputs;
-        };
-
-        rainix-sol-static = mkTask {
-          name = "rainix-sol-static";
-          body = ''
-            set -euxo pipefail
-            slither .
-            forge fmt --check
-          '';
-          additionalBuildInputs = sol-build-inputs;
-        };
-
-        rainix-sol-legal = mkTask {
-          name = "rainix-sol-legal";
-          body = ''
-            set -euxo pipefail
-            reuse lint
-          '';
-          additionalBuildInputs = sol-build-inputs;
-        };
-
-        rainix-sol-test = mkTask {
-          name = "rainix-sol-test";
-          body = ''
-            set -euxo pipefail
-            forge test -vvv
-          '';
-          additionalBuildInputs = sol-build-inputs;
-        };
-
-        rainix-sol-artifacts = mkTask {
-          name = "rainix-sol-artifacts";
-          body = ''
-            set -euxo pipefail
-
-            # Upload all function selectors to the registry.
-            forge selectors up --all
-
-            # Deploy all contracts to testnet.
-            # Assumes the existence of a `Deploy.sol` script in the `script` directory.
-            # Echos the deploy pubkey to stdout to make it easy to add gas to the account.
-            echo 'deploy pubkey:';
-            cast wallet address "''${DEPLOYMENT_KEY}";
-            # Need to set --rpc-url explicitly due to an upstream bug.
-            # https://github.com/foundry-rs/foundry/issues/6731
-
-            attempts=;
-            do_deploy() {
-              forge script script/Deploy.sol:Deploy \
-                -vvvvv \
-                --slow \
-                ''${DEPLOY_LEGACY:+--legacy} \
-                ''${DEPLOY_BROADCAST:+--broadcast} \
-                ''${DEPLOY_SKIP_SIMULATION:+--skip-simulation} \
-                --rpc-url "''${ETH_RPC_URL}" \
-                ''${DEPLOY_VERIFY:+--verify} \
-                ''${DEPLOY_VERIFIER:+--verifier "''${DEPLOY_VERIFIER}"} \
-                ''${DEPLOY_VERIFIER_URL:+--verifier-url "''${DEPLOY_VERIFIER_URL}"} \
-                ''${ETHERSCAN_API_KEY:+--etherscan-api-key "''${ETHERSCAN_API_KEY}"} \
-                ''${attempts:+--resume} \
-                ;
-            }
-
-            until do_deploy; do
-              attempts=$((''${attempts:-0} + 1));
-              echo "Deploy failed, retrying in 5 seconds... (attempt ''${attempts})";
-              sleep 5;
-              if [[ ''${attempts} -gt 10 ]]; then
-                echo "Deploy failed after 10 attempts, aborting.";
-                exit 1;
-              fi
-            done
-          '';
-          additionalBuildInputs = sol-build-inputs;
-        };
-
-        rainix-rs-prelude = mkTask {
-          name = "rainix-rs-prelude";
-          # Intentionally empty — exists so downstream consumers can call
-          # rainix-rs-prelude unconditionally alongside rainix-sol-prelude.
-          body = ''
-            set -euxo pipefail
-          '';
-          additionalBuildInputs = rust-build-inputs;
-        };
-
-        rainix-rs-static = mkTask {
-          name = "rainix-rs-static";
-          body = ''
-            set -euxo pipefail
-            cargo fmt --all -- --check
-            cargo clippy --all-targets --all-features -- -D clippy::all
-          '';
-          additionalBuildInputs = rust-build-inputs;
-        };
-
-        rainix-rs-test = mkTask {
-          name = "rainix-rs-test";
-          body = ''
-            set -euxo pipefail
-            cargo test
-          '';
-          additionalBuildInputs = rust-build-inputs;
-        };
-
-        rainix-rs-artifacts = mkTask {
-          name = "rainix-rs-artifacts";
-          body = ''
-            set -euxo pipefail
-            cargo build --release
-          '';
-          additionalBuildInputs = rust-build-inputs;
-        };
-
-        rainix-tasks = [
-          rainix-sol-prelude
-          rainix-sol-static
-          rainix-sol-test
-          rainix-sol-artifacts
-          rainix-sol-legal
-
-          rainix-rs-prelude
-          rainix-rs-static
-          rainix-rs-test
-          rainix-rs-artifacts
-        ];
-
-        subgraph-build = mkTask {
-          name = "subgraph-build";
-          body = ''
-            set -euxo pipefail
-            source ${./lib/subgraph.sh}
-
-            ${pkgs.foundry-bin}/bin/forge build
-            (cd ./subgraph && ${pkgs.nodejs_22}/bin/npm ci && ${the-graph}/bin/graph codegen)
-            for network in $(subgraph_networks ./subgraph/networks.json); do
-              echo "Building subgraph for $network..."
-              (cd ./subgraph && ${the-graph}/bin/graph build --network "$network")
-            done
-          '';
-          additionalBuildInputs = sol-build-inputs ++ node-build-inputs;
-        };
-
-        subgraph-test = mkTask {
-          name = "subgraph-test";
-          body = ''
-            set -euxo pipefail
-            (cd ./subgraph && docker compose up --abort-on-container-exit)
-          '';
-        };
-
-        subgraph-deploy = mkTask {
-          name = "subgraph-deploy";
-          body = ''
-            set -euxo pipefail
-            source ${./lib/subgraph.sh}
-
-            ${pkgs.foundry-bin}/bin/forge build
-            (cd ./subgraph && ${pkgs.nodejs_22}/bin/npm ci && ${the-graph}/bin/graph codegen)
-
-            commit="$(${pkgs.git}/bin/git rev-parse --short HEAD)"
-            for network in $(subgraph_networks ./subgraph/networks.json); do
-              address=$(subgraph_network_address ./subgraph/networks.json "$network")
-              version=$(subgraph_deploy_version "$address" "$commit")
-              name_and_version="''${GOLDSKY_SUBGRAPH_NAME}-$network/$version"
-
-              if ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph list "$name_and_version" 2>/dev/null | grep -q "$name_and_version"; then
-                echo "Subgraph $name_and_version already deployed, skipping."
-              else
-                echo "Building subgraph for $network..."
-                (cd ./subgraph && ${the-graph}/bin/graph build --network "$network")
-                echo "Deploying subgraph $name_and_version..."
-                (cd ./subgraph && ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph deploy "$name_and_version")
-              fi
-            done
-          '';
-          additionalBuildInputs = sol-build-inputs ++ node-build-inputs;
-        };
-
-        subgraph-tasks = [
-          subgraph-build
-          subgraph-test
-          subgraph-deploy
-        ];
-
-        source-dotenv = ''
-          if [ -f ./.env ]; then
-            set -a
-            source .env
-            set +a
-          fi
-        '';
-
-        default-shell-test = mkTask {
-          name = "default-shell-test";
-          body = ''
-            bats test/bats/devshell/default/solc.test.bats
-            bats test/bats/devshell/default/gh.test.bats
-            bats test/bats/task/skip-simulation.test.bats
-            bats test/bats/task/subgraph-build.test.bats
-            bats test/bats/task/subgraph-deploy-version.test.bats
-          '';
-          additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs ++ node-build-inputs;
-        };
-
-        tauri-shellhook-test = mkTask {
-          name = "tauri-shellhook-test";
-          # only run this test for darwin
-          body =
-            if pkgs.stdenv.isDarwin then
-              ''
-                bats test/bats/devshell/tauri/shellhook.test.bats
-              ''
-            else
-              ''
-                # nothing to see here
-              '';
-          additionalBuildInputs = [ pkgs.bats ];
-        };
-
-        pre-commit = git-hooks-nix.lib.${system}.run {
-          src = ./.;
-          hooks = {
-            # Nix
-            nil.enable = true;
-            nixfmt.enable = true;
-
-            deadnix.enable = true;
-            # excluded for files generated by bun2nix
-            deadnix.excludes = [ "bun\\.nix$" ];
-
-            statix.enable = true;
-            statix.settings.ignore = [ "lib/" ];
-
-            # Rust
-            taplo.enable = true;
-            # Conditional rustfmt - only runs if Cargo.toml exists
-            rustfmt-conditional = {
-              enable = true;
-              name = "rustfmt";
-              entry = "${pkgs.writeShellScript "rustfmt-conditional" ''
-                if [ -f Cargo.toml ] || [ -f */Cargo.toml ]; then
-                  exec ${rust-toolchain}/bin/cargo-fmt fmt
-                else
-                  exit 0
-                fi
-              ''}";
-              files = "\\.rs$";
-              pass_filenames = false;
-            };
-
-            # Svelte/JS/TS
-            prettier = {
-              enable = true;
-              types_or = [
-                "svelte"
-                "ts"
-                "javascript"
-                "json"
-              ];
-            };
-
-            # Misc
-            denofmt = {
-              enable = true;
-              excludes = [
-                ".*\\.ts$"
-                ".*\\.js$"
-                ".*\\.json$"
-                ".*\\.svelte$"
-              ];
-            };
-            yamlfmt.enable = true;
-            yamlfmt.settings.lint-only = false;
-            shellcheck.enable = true;
+      overlays =
+        let
+          rust-overlay = inputs.rust-overlay.overlays.default;
+          solc = inputs.solc.overlay;
+          foundry = inputs.foundry.overlay;
+          the-graph = _final: prev: {
+            the-graph = prev.callPackage ./nix/packages/the-graph { };
           };
-        };
-
-      in
-      {
-        checks.pre-commit = pre-commit;
-
-        inherit
-          pkgs
-          old-pkgs
-          rust-toolchain
-          rust-build-inputs
-          sol-build-inputs
-          node-build-inputs
-          mkTask
-          ;
-
-        packages = {
-          inherit
-            rainix-sol-prelude
-            rainix-sol-static
-            rainix-sol-test
-            rainix-sol-artifacts
-            rainix-sol-legal
-            rainix-rs-prelude
-            rainix-rs-static
-            rainix-rs-test
-            rainix-rs-artifacts
-            tauri-release-env
-            ;
-        };
-
-        devShells.default = pkgs.mkShell {
-          buildInputs =
-            sol-build-inputs
-            ++ rust-build-inputs
-            ++ node-build-inputs
-            ++ rainix-tasks
-            ++ subgraph-tasks
-            ++ [
+          goldsky = _final: prev: {
+            goldsky = prev.callPackage ./nix/packages/goldsky { };
+          };
+          rainix =
+            let
+              rainix-sol = final: prev:
+                let solc = final.solc_0_8_25; in {
+                  foundry-bin = prev.foundry-bin.overrideAttrs (old: {
+                    buildInputs = old.buildInputs or [ ] ++ [ solc ];
+                  });
+                  slither-analyzer = prev.slither-analyzer.override {
+                    inherit solc;
+                    withSolc = true;
+                  };
+                };
+              rainix-rs = _final: prev:
+                let RUST_VERSION = "1.94.0"; in {
+                  rainix = prev.rainix or { } // {
+                    rust-toolchain =
+                      prev.rust-bin.stable.${RUST_VERSION}.default.override (old: {
+                        targets = old.targets or [ ] ++ [ "wasm32-unknown-unknown" ];
+                        extensions = old.extensions or [ ] ++ [
+                          "rust-src"
+                          "rust-analyzer"
+                        ];
+                      });
+                  };
+                };
+              rainix-apps = final: prev:
+                let
+                  inherit (final.rainix) rust-toolchain;
+                  inherit (final.rainix.lib) subgraph;
+                  nodejs = final.nodejs_22;
+                  cargo-tauri = final.cargo-tauri_1;
+                  wasm-bindgen-cli = final.wasm-bindgen-cli_0_2_100;
+                in
+                {
+                  rainix = prev.rainix or { } // {
+                    lib.subgraph = prev.callPackage ./nix/packages/subgraph { };
+                    envs.tauri-release-env = prev.callPackage ./nix/packages/tauri-release-env {
+                      inherit (final.rainix) rust-toolchain;
+                      inherit
+                        nodejs
+                        cargo-tauri
+                        wasm-bindgen-cli
+                        ;
+                    };
+                    apps = {
+                      rainix-sol-prelude = prev.callPackage ./nix/apps/rainix-sol-prelude { };
+                      rainix-sol-static = prev.callPackage ./nix/apps/rainix-sol-static { };
+                      rainix-sol-legal = prev.callPackage ./nix/apps/rainix-sol-legal { };
+                      rainix-sol-test = prev.callPackage ./nix/apps/rainix-sol-test { };
+                      rainix-sol-artifacts = prev.callPackage ./nix/apps/rainix-sol-artifacts { };
+                      rainix-rs-prelude = prev.callPackage ./nix/apps/rainix-rs-prelude {
+                        inherit rust-toolchain;
+                        inherit wasm-bindgen-cli;
+                      };
+                      rainix-rs-static = prev.callPackage ./nix/apps/rainix-rs-static { inherit rust-toolchain; };
+                      rainix-rs-test = prev.callPackage ./nix/apps/rainix-rs-test { inherit rust-toolchain; };
+                      rainix-rs-artifacts = prev.callPackage ./nix/apps/rainix-rs-artifacts { inherit rust-toolchain; };
+                      subgraph-build = prev.callPackage ./nix/apps/subgraph-build { inherit nodejs subgraph; };
+                      subgraph-test = prev.callPackage ./nix/apps/subgraph-test { };
+                      subgraph-deploy = prev.callPackage ./nix/apps/subgraph-deploy { inherit nodejs subgraph; };
+                    };
+                  };
+                };
+            in
+            nixpkgs.lib.composeManyExtensions [
+              rust-overlay
+              solc
+              foundry
               the-graph
               goldsky
-              pkgs.sqlite
-              pkgs.yq-go
-              pkgs.gh
-              default-shell-test
-              pkgs.pre-commit
-            ]
-            ++ pre-commit.enabledPackages;
-          shellHook = ''
-            ${pre-commit.shellHook}
-            ${source-dotenv}
-
-            if [ -f ./package.json ]; then
-              npm ci --ignore-scripts;
-            fi
-          '';
+              rainix-sol
+              rainix-rs
+              rainix-apps
+            ];
+        in
+        {
+          inherit
+            rust-overlay
+            solc
+            foundry
+            the-graph
+            goldsky
+            rainix
+            ;
+          default = rainix;
         };
+    in
+    {
+      inherit overlays;
 
-        # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
-        devShells.tauri-shell = pkgs.mkShell {
-          packages = [ tauri-shellhook-test ];
-          buildInputs =
-            sol-build-inputs
-            ++ rust-build-inputs
-            ++ node-build-inputs
-            ++ tauri-build-inputs
-            ++ [ pkgs.pre-commit ]
-            ++ pre-commit.enabledPackages;
-          shellHook = ''
-            ${pre-commit.shellHook}
-            ${source-dotenv}
+      legacyPackages = eachSystem (_system: pkgs: pkgs);
 
-            export TMP_BASE64_PATH=$(mktemp -d)
-            cp /usr/bin/base64 "$TMP_BASE64_PATH/base64"
-            export PATH="$TMP_BASE64_PATH:$PATH:/usr/bin"
-            export WEBKIT_DISABLE_COMPOSITING_MODE=1
-            export XDG_DATA_DIRS=${old-pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${old-pkgs.gsettings-desktop-schemas.name}:${old-pkgs.gtk3}/share/gsettings-schemas/${old-pkgs.gtk3.name}:$XDG_DATA_DIRS
-            export GIO_MODULE_DIR="${old-pkgs.glib-networking}/lib/gio/modules/";
-          ''
-          # there is a known issue with nix pkgs new apple_sdk and that since it is now using xcrun,
-          # apple_sdk's setup hook breaks the link to some of '/usr/bin' Xcode command line tools bins
-          # and libs, this mainly is an issue for `tauri-shell` devshell when tauri cli is used to build
-          # a tauri app for macos where it needs one of those bins called `SetFile`, for more details:
-          # https://github.com/NixOS/nixpkgs/issues/355486
-          #
-          # this is a workaround that removes xcrun from devshell PATH and unsets DEVELOPER_DIR so that
-          # those apple bins and libs are accessible normally through `/usr/bin`
-          + (
-            if pkgs.stdenv.isDarwin then
-              ''
-                export PATH=''${PATH//'${pkgs.xcbuild.xcrun}/bin:'/}
-                unset DEVELOPER_DIR
-              ''
-            else
-              ""
-          );
-        };
-      }
-    );
+      # TODO: Add commit-hook check
+      checks = eachSystem (system: _pkgs: {
+        inherit (self.packages.${system}) default;
+      });
+
+      packages = eachSystem (_system: pkgs:
+        let
+          packages = pkgs.rainix.envs // pkgs.rainix.apps;
+        in
+        packages // {
+          default = pkgs.symlinkJoin {
+            name = "rainix";
+            description = "Builds all Rainix packages";
+            paths = builtins.attrValues packages;
+          };
+        });
+
+      apps = eachSystem (_system: pkgs: pkgs.lib.mapAttrs (_: pkg: {
+        inherit (pkg) meta;
+        type = "app";
+        program = "${pkg}/bin/${pkg.meta.mainProgram or pkg.name}";
+      })
+        pkgs.rainix.apps);
+
+      # TODO:
+      # devShells = eachSystem (system: pkgs: {
+      #
+      # });
+    };
 }
