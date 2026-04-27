@@ -106,19 +106,19 @@
 
         goldsky = pkgs.stdenv.mkDerivation rec {
           pname = "goldsky";
-          version = "8.6.6";
+          version = "13.3.4";
           src =
             let
-              release-name = "8.6.6";
+              release-name = "13.3.4";
               system-mapping = {
                 x86_64-linux = "linux";
                 x86_64-darwin = "macos";
                 aarch64-darwin = "macos";
               };
               system-sha = {
-                x86_64-linux = "sha256:1cqbinax63w07qxvmgni52qw4cd83ywkhjikw3rd4wgd2fh36027";
-                x86_64-darwin = "sha256:0yznf81yxc3a9vnfjdmmzdb59mh9bwrpxw87lrlhlchfr0jmnjk4";
-                aarch64-darwin = "sha256:0yznf81yxc3a9vnfjdmmzdb59mh9bwrpxw87lrlhlchfr0jmnjk4";
+                x86_64-linux = "sha256:1wg09vz652hv3hb0w7mx7hjxm00c857h2a8kd2vj11wnik8gh73m";
+                x86_64-darwin = "sha256:048w06x56lk84h9x8q2jf7mdxx8lyzd9nrkxsmfkj39rns1nr4yk";
+                aarch64-darwin = "sha256:048w06x56lk84h9x8q2jf7mdxx8lyzd9nrkxsmfkj39rns1nr4yk";
               };
             in
             builtins.fetchurl {
