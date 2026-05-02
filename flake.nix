@@ -393,6 +393,7 @@
           body = ''
             bats test/bats/devshell/default/solc.test.bats
             bats test/bats/devshell/default/gh.test.bats
+            bats test/bats/devshell/default/prettier-svelte.test.bats
             bats test/bats/task/skip-simulation.test.bats
             bats test/bats/task/subgraph-build.test.bats
             bats test/bats/task/subgraph-deploy-version.test.bats
@@ -446,9 +447,25 @@
               pass_filenames = false;
             };
 
-            # Svelte/JS/TS
+            # Svelte/JS/TS — prefer the consumer's pinned prettier from
+            # node_modules so prettier core stays in sync with whatever
+            # plugins the consumer pins (e.g. prettier-plugin-svelte +
+            # prettier-plugin-tailwindcss together corrupt embedded TS in
+            # `<script lang="ts">` blocks under nixpkgs prettier 3.6.2).
+            # Falls back to nixpkgs prettier when no node_modules exists,
+            # which keeps the hook useful for plain JSON/JS in flakes that
+            # don't ship a package.json (rainix itself).
             prettier = {
               enable = true;
+              entry = toString (
+                pkgs.writeShellScript "prettier-conditional" ''
+                  set -e
+                  if [ -x node_modules/.bin/prettier ]; then
+                    exec node_modules/.bin/prettier --ignore-unknown --list-different --write "$@"
+                  fi
+                  exec ${pkgs.prettier}/bin/prettier --ignore-unknown --list-different --write "$@"
+                ''
+              );
               types_or = [
                 "svelte"
                 "ts"
