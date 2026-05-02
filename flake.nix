@@ -134,6 +134,28 @@
           '';
         };
 
+        # rainix-curated prettier bundle: a single nix-built node_modules
+        # tree containing prettier + the standardized plugins, plus a
+        # .prettierrc.json picked up via PRETTIER_BUNDLE_DIR. Consumers
+        # MUST NOT ship their own prettier or prettier-plugin-* packages —
+        # the no-consumer-prettier pre-commit hook below enforces that.
+        prettier-bundle = pkgs.buildNpmPackage {
+          pname = "rainix-prettier-bundle";
+          version = "0.0.0";
+          src = ./prettier-bundle;
+          npmDepsHash = "sha256-64dISGPfTPK7LUSL43CKoHM5SPZYqx6Ngg2dBgsqIyg=";
+          dontNpmBuild = true;
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out
+            cp -r node_modules $out/
+            cp .prettierrc.json $out/
+            mkdir -p $out/bin
+            ln -s $out/node_modules/.bin/prettier $out/bin/prettier
+            runHook postInstall
+          '';
+        };
+
         tauri-build-inputs = [
           pkgs.cargo-tauri_1
           pkgs.curl
@@ -393,6 +415,7 @@
           body = ''
             bats test/bats/devshell/default/solc.test.bats
             bats test/bats/devshell/default/gh.test.bats
+            bats test/bats/devshell/default/prettier-bundle.test.bats
             bats test/bats/task/skip-simulation.test.bats
             bats test/bats/task/subgraph-build.test.bats
             bats test/bats/task/subgraph-deploy-version.test.bats
@@ -446,15 +469,96 @@
               pass_filenames = false;
             };
 
-            # Svelte/JS/TS
+            # Svelte/JS/TS — use the rainix-curated prettier bundle so all
+            # consumers run identical prettier core + plugin versions AND
+            # identical formatting rules. `no-consumer-prettier` below blocks
+            # consumers from shipping their own prettier, plugins, or
+            # prettierrc, so the bundle is the only prettier in play.
             prettier = {
               enable = true;
+              entry = toString (
+                pkgs.writeShellScript "prettier-rainix-bundled" ''
+                  set -e
+                  exec ${prettier-bundle}/bin/prettier \
+                    --config=${prettier-bundle}/.prettierrc.json \
+                    --plugin=${prettier-bundle}/node_modules/prettier-plugin-svelte/plugin.js \
+                    --plugin=${prettier-bundle}/node_modules/prettier-plugin-tailwindcss/dist/index.mjs \
+                    --ignore-unknown --list-different --write "$@"
+                ''
+              );
               types_or = [
                 "svelte"
                 "ts"
                 "javascript"
                 "json"
               ];
+            };
+
+            # Block consumers from shipping their own prettier, prettier
+            # plugins, or prettierrc. The rainix bundle is the canonical
+            # source; any consumer-side prettier setup either reintroduces
+            # the version-skew bug (#117) or lets formatting drift from the
+            # rainix standard.
+            no-consumer-prettier = {
+              enable = true;
+              name = "no-consumer-prettier";
+              entry = toString (
+                pkgs.writeShellScript "no-consumer-prettier" ''
+                  set -e
+                  if [ -f package.json ]; then
+                    forbidden_deps="$(${pkgs.jq}/bin/jq -r '
+                      [.dependencies // {}, .devDependencies // {}, .optionalDependencies // {}, .peerDependencies // {}]
+                      | add // {}
+                      | keys[]
+                      | select(. == "prettier" or startswith("prettier-plugin-"))
+                    ' package.json)"
+                    if [ -n "$forbidden_deps" ]; then
+                      echo "ERROR: package.json must not declare prettier or prettier-plugin-*." >&2
+                      echo "rainix supplies these via the pre-commit hook bundle." >&2
+                      echo "Forbidden packages found:" >&2
+                      printf '  - %s\n' $forbidden_deps >&2
+                      exit 1
+                    fi
+                    if ${pkgs.jq}/bin/jq -e 'has("prettier")' package.json > /dev/null 2>&1; then
+                      echo "ERROR: package.json must not contain a top-level \"prettier\" key." >&2
+                      echo "Prettier config inlined in package.json drifts from the rainix canon; delete the key." >&2
+                      exit 1
+                    fi
+                  fi
+                  for cfg in \
+                    .prettierrc \
+                    .prettierrc.json \
+                    .prettierrc.json5 \
+                    .prettierrc.yaml \
+                    .prettierrc.yml \
+                    .prettierrc.toml \
+                    .prettierrc.js \
+                    .prettierrc.cjs \
+                    .prettierrc.mjs \
+                    .prettierrc.ts \
+                    .prettierrc.cts \
+                    .prettierrc.mts \
+                    prettier.config.js \
+                    prettier.config.cjs \
+                    prettier.config.mjs \
+                    prettier.config.ts \
+                    prettier.config.cts \
+                    prettier.config.mts; do
+                    if [ -e "$cfg" ]; then
+                      echo "ERROR: $cfg is present in the repo." >&2
+                      echo "rainix supplies the canonical prettier config via the bundle." >&2
+                      echo "Delete $cfg." >&2
+                      exit 1
+                    fi
+                  done
+                ''
+              );
+              # always_run so the check fires on every commit, not just commits
+              # that happen to stage package.json or a prettierrc. A consumer
+              # could otherwise sneak in a forbidden file in one commit and
+              # introduce drift in the next.
+              always_run = true;
+              pass_filenames = false;
             };
 
             # Misc
@@ -499,6 +603,7 @@
             rainix-rs-test
             rainix-rs-artifacts
             tauri-release-env
+            prettier-bundle
             ;
         };
 

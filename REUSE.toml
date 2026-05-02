@@ -6,6 +6,7 @@ path = [
   "flake.lock",
   ".gitignore",
   ".gitmodules",
+  ".prettierignore",
   "REUSE.toml",
   "CLAUDE.md",
   "README.md",
@@ -15,6 +16,7 @@ path = [
   "lib/**/",
   "test/**/",
   "audit/**/",
+  "prettier-bundle/**/",
 ]
 SPDX-FileCopyrightText = "Copyright (c) 2020 thedavidmeister"
 SPDX-License-Identifier = "LicenseRef-DCL-1.0"
