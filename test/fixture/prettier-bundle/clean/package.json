@@ -1,0 +1,8 @@
+{
+  "name": "fixture-clean",
+  "version": "0.0.0",
+  "private": true,
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}

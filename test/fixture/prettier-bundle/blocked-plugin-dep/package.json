@@ -1,0 +1,8 @@
+{
+  "name": "fixture-blocked-plugin-dep",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "prettier-plugin-svelte": "^3.0.0"
+  }
+}
