@@ -506,21 +506,44 @@
                 pkgs.writeShellScript "no-consumer-prettier" ''
                   set -e
                   if [ -f package.json ]; then
-                    forbidden="$(${pkgs.jq}/bin/jq -r '
-                      [.dependencies // {}, .devDependencies // {}]
+                    forbidden_deps="$(${pkgs.jq}/bin/jq -r '
+                      [.dependencies // {}, .devDependencies // {}, .optionalDependencies // {}, .peerDependencies // {}]
                       | add // {}
                       | keys[]
                       | select(. == "prettier" or startswith("prettier-plugin-"))
                     ' package.json)"
-                    if [ -n "$forbidden" ]; then
+                    if [ -n "$forbidden_deps" ]; then
                       echo "ERROR: package.json must not declare prettier or prettier-plugin-*." >&2
                       echo "rainix supplies these via the pre-commit hook bundle." >&2
                       echo "Forbidden packages found:" >&2
-                      printf '  - %s\n' $forbidden >&2
+                      printf '  - %s\n' $forbidden_deps >&2
+                      exit 1
+                    fi
+                    if ${pkgs.jq}/bin/jq -e 'has("prettier")' package.json > /dev/null 2>&1; then
+                      echo "ERROR: package.json must not contain a top-level \"prettier\" key." >&2
+                      echo "Prettier config inlined in package.json drifts from the rainix canon; delete the key." >&2
                       exit 1
                     fi
                   fi
-                  for cfg in .prettierrc .prettierrc.json .prettierrc.yaml .prettierrc.yml .prettierrc.toml .prettierrc.js .prettierrc.cjs .prettierrc.mjs prettier.config.js prettier.config.cjs prettier.config.mjs; do
+                  for cfg in \
+                    .prettierrc \
+                    .prettierrc.json \
+                    .prettierrc.json5 \
+                    .prettierrc.yaml \
+                    .prettierrc.yml \
+                    .prettierrc.toml \
+                    .prettierrc.js \
+                    .prettierrc.cjs \
+                    .prettierrc.mjs \
+                    .prettierrc.ts \
+                    .prettierrc.cts \
+                    .prettierrc.mts \
+                    prettier.config.js \
+                    prettier.config.cjs \
+                    prettier.config.mjs \
+                    prettier.config.ts \
+                    prettier.config.cts \
+                    prettier.config.mts; do
                     if [ -e "$cfg" ]; then
                       echo "ERROR: $cfg is present in the repo." >&2
                       echo "rainix supplies the canonical prettier config via the bundle." >&2
@@ -530,7 +553,11 @@
                   done
                 ''
               );
-              files = "(^package\\.json$|^\\.prettierrc(\\.[a-z]+)?$|^prettier\\.config\\.[a-z]+$)";
+              # always_run so the check fires on every commit, not just commits
+              # that happen to stage package.json or a prettierrc. A consumer
+              # could otherwise sneak in a forbidden file in one commit and
+              # introduce drift in the next.
+              always_run = true;
               pass_filenames = false;
             };
 

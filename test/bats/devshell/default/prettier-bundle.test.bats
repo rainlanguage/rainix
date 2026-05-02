@@ -1,7 +1,7 @@
 setup() {
-  pcc="$(grep -v '^#' "$BATS_TEST_DIRNAME/../../../../.pre-commit-config.yaml")"
-  prettier_entry="$(echo "$pcc" | jq -r '.repos[0].hooks[] | select(.name == "prettier") | .entry')"
-  no_consumer_prettier_entry="$(echo "$pcc" | jq -r '.repos[0].hooks[] | select(.name == "no-consumer-prettier") | .entry')"
+  pcc="$BATS_TEST_DIRNAME/../../../../.pre-commit-config.yaml"
+  prettier_entry="$(yq '.repos[0].hooks[] | select(.name == "prettier") | .entry' "$pcc")"
+  no_consumer_prettier_entry="$(yq '.repos[0].hooks[] | select(.name == "no-consumer-prettier") | .entry' "$pcc")"
   fixtures="$BATS_TEST_DIRNAME/../../../fixture/prettier-bundle"
 }
 
@@ -60,6 +60,30 @@ setup() {
   echo "$output" | grep -q "prettier-plugin-svelte"
 }
 
+@test "no-consumer-prettier blocks prettier in optionalDependencies" {
+  tmpdir="$(mktemp -d)"
+  cp "$fixtures/blocked-optional-dep/package.json" "$tmpdir/"
+  cd "$tmpdir"
+
+  run bash -c "$no_consumer_prettier_entry"
+  rm -rf "$tmpdir"
+
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -q "prettier-plugin-tailwindcss"
+}
+
+@test "no-consumer-prettier blocks top-level \"prettier\" key in package.json" {
+  tmpdir="$(mktemp -d)"
+  cp "$fixtures/blocked-prettier-key/package.json" "$tmpdir/"
+  cd "$tmpdir"
+
+  run bash -c "$no_consumer_prettier_entry"
+  rm -rf "$tmpdir"
+
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -q 'top-level "prettier" key'
+}
+
 @test "no-consumer-prettier blocks the presence of any consumer .prettierrc" {
   tmpdir="$(mktemp -d)"
   cp "$fixtures/blocked-prettierrc/.prettierrc.json" "$tmpdir/"
@@ -72,6 +96,18 @@ setup() {
   echo "$output" | grep -q ".prettierrc.json is present"
 }
 
+@test "no-consumer-prettier blocks .prettierrc.ts (TypeScript variant)" {
+  tmpdir="$(mktemp -d)"
+  cp "$fixtures/blocked-prettierrc-ts/.prettierrc.ts" "$tmpdir/"
+  cd "$tmpdir"
+
+  run bash -c "$no_consumer_prettier_entry"
+  rm -rf "$tmpdir"
+
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -q ".prettierrc.ts is present"
+}
+
 @test "no-consumer-prettier passes when package.json is clean and there is no .prettierrc" {
   tmpdir="$(mktemp -d)"
   cp "$fixtures/clean/package.json" "$tmpdir/"
@@ -81,4 +117,9 @@ setup() {
   rm -rf "$tmpdir"
 
   [ "$status" -eq 0 ]
+}
+
+@test "no-consumer-prettier hook is configured with always_run = true" {
+  always_run="$(yq '.repos[0].hooks[] | select(.name == "no-consumer-prettier") | .always_run' "$pcc")"
+  [ "$always_run" = "true" ]
 }

@@ -1,0 +1,8 @@
+{
+  "name": "fixture-blocked-prettier-key",
+  "version": "0.0.0",
+  "private": true,
+  "prettier": {
+    "useTabs": true
+  }
+}
