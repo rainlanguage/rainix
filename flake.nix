@@ -437,6 +437,7 @@
           body = ''
             bats test/bats/devshell/default/solc.test.bats
             bats test/bats/devshell/default/gh.test.bats
+            bats test/bats/devshell/default/chromium.test.bats
             bats test/bats/devshell/default/prettier-bundle.test.bats
             bats test/bats/task/skip-simulation.test.bats
             bats test/bats/task/subgraph-build.test.bats
