@@ -1,0 +1,37 @@
+name: rainix-sol-test
+on:
+  workflow_call:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      DEPLOYMENT_KEY: ${{ github.ref == 'refs/heads/main' && secrets.PRIVATE_KEY || secrets.PRIVATE_KEY_DEV }}
+      ETH_RPC_URL: ${{ secrets.CI_DEPLOY_SEPOLIA_RPC_URL || vars.CI_DEPLOY_SEPOLIA_RPC_URL }}
+      ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY }}
+      CI_DEPLOY_SEPOLIA_RPC_URL: ${{ secrets.CI_DEPLOY_SEPOLIA_RPC_URL || vars.CI_DEPLOY_SEPOLIA_RPC_URL }}
+      CI_FORK_SEPOLIA_BLOCK_NUMBER: ${{ vars.CI_FORK_SEPOLIA_BLOCK_NUMBER }}
+      CI_FORK_SEPOLIA_DEPLOYER_ADDRESS: ${{ vars.CI_FORK_SEPOLIA_DEPLOYER_ADDRESS }}
+      ARBITRUM_RPC_URL: ${{ secrets.RPC_URL_ARBITRUM_FORK || vars.RPC_URL_ARBITRUM_FORK }}
+      BASE_RPC_URL: ${{ secrets.RPC_URL_BASE_FORK || vars.RPC_URL_BASE_FORK }}
+      BASE_SEPOLIA_RPC_URL: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK || vars.RPC_URL_BASE_SEPOLIA_FORK }}
+      FLARE_RPC_URL: ${{ secrets.RPC_URL_FLARE_FORK || vars.RPC_URL_FLARE_FORK }}
+      POLYGON_RPC_URL: ${{ secrets.RPC_URL_POLYGON_FORK || vars.RPC_URL_POLYGON_FORK }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: nixbuild/nix-quick-install-action@v30
+        with:
+          nix_conf: |
+            keep-env-derivations = true
+            keep-outputs = true
+      - name: Restore and save Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 1G
+      - name: Install soldeer dependencies
+        if: hashFiles('soldeer.lock') != ''
+        run: nix develop -c forge soldeer install
+      - run: nix develop -c rainix-sol-test
