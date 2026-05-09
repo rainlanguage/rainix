@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2020 thedavidmeister
 pragma solidity ^0.8.25;
 
-import {Script} from "forge-std/Script.sol";
+import {Script} from "forge-std-1.16.1/src/Script.sol";
 import {Counter} from "../src/Counter.sol";
 
 contract Deploy is Script {

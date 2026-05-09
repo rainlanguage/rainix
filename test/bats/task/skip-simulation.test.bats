@@ -1,5 +1,6 @@
 setup() {
   cd test/fixture || exit
+  forge soldeer install
   forge build
   anvil &
   ANVIL_PID=$!
