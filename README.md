@@ -131,6 +131,23 @@ env vars (`ARBITRUM_RPC_URL`, `BASE_RPC_URL`, `BASE_SEPOLIA_RPC_URL`,
 `ETHERSCAN_API_KEY` and `DEPLOYMENT_KEY` from the consumer org's secrets/vars.
 Repos that do no fork tests can ignore — empty values are harmless.
 
+#### rainix-sol (composite)
+
+`.github/workflows/rainix-sol.yaml` fans out static, legal, and test in parallel
+— each on its own runner. Single wrapper for sol-only repos that want all three:
+
+```yaml
+name: rainix
+on: [push]
+jobs:
+  rainix:
+    uses: rainlanguage/rainix/.github/workflows/rainix-sol.yaml@main
+    secrets: inherit
+```
+
+Consumers needing only one of the three should call the individual reusable
+directly rather than this composite.
+
 ## Pinned Versions
 
 - Rust: 1.94.0
