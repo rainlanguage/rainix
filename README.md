@@ -21,12 +21,13 @@ Add Rainix as a flake input:
 Requires Nix with flakes enabled.
 
 ```sh
-nix develop        # default shell (Solidity + Rust + Node + subgraph tools)
+nix develop                # default shell (Solidity + Rust + Node + subgraph tools)
+nix develop .#sol-shell    # slim Solidity-only shell — no rust, node, chromium, subgraph
 nix develop .#tauri-shell  # Tauri desktop app development
 ```
 
 The default shell auto-sources `.env` if present and runs
-`npm ci --ignore-scripts` if `package.json` exists.
+`npm ci --ignore-scripts` if `package.json` exists. `sol-shell` skips both.
 
 ### Build Tasks
 
@@ -34,7 +35,6 @@ All tasks are Nix packages run via `nix run`. From a consuming repo:
 
 #### Solidity
 
-- `nix run ..#rainix-sol-prelude` — forge install + build
 - `nix run ..#rainix-sol-test` — forge test
 - `nix run ..#rainix-sol-static` — slither + forge fmt check
 - `nix run ..#rainix-sol-legal` — REUSE/DCL-1.0 license compliance
@@ -42,7 +42,6 @@ All tasks are Nix packages run via `nix run`. From a consuming repo:
 
 #### Rust
 
-- `nix run ..#rainix-rs-prelude` — environment prep (currently no-op)
 - `nix run ..#rainix-rs-test` — cargo test
 - `nix run ..#rainix-rs-static` — cargo fmt + clippy
 - `nix run ..#rainix-rs-artifacts` — cargo build --release
@@ -64,7 +63,7 @@ Downstream flakes can compose their own tasks and shells using:
 - Solidity: solc 0.8.25
 - Foundry: via foundry.nix
 - Graph CLI: 0.69.2
-- Goldsky CLI: 8.6.6
+- Goldsky CLI: 13.3.4
 
 ## License
 

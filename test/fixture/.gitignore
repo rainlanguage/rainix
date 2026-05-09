@@ -19,3 +19,6 @@ target
 subgraph/build/
 subgraph/generated/
 subgraph/node_modules/
+
+# Soldeer
+/dependencies

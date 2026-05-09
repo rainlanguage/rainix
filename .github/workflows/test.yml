@@ -44,8 +44,7 @@ jobs:
           # before trying to save a new cache
           # 1G = 1073741824
           gc-max-store-size-linux: 1G
-      - run: nix run ../..#rainix-sol-prelude
-      - run: nix run ../..#rainix-rs-prelude
+      - run: nix develop ../.. --command forge soldeer install
       - name: Run ${{ matrix.task }}
         env:
           ETH_RPC_URL: ${{ secrets.CI_DEPLOY_SEPOLIA_RPC_URL || vars.CI_DEPLOY_SEPOLIA_RPC_URL }}
