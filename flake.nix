@@ -343,8 +343,9 @@
 
         rainix-tasks = sol-tasks ++ rs-tasks;
 
-        # Universal dev tooling shared across every devShell. Toolchains
-        # and tasks are layered on per-shell.
+        # Dev tooling shared between sol-shell and default. tauri-shell
+        # carries its own subset (no gh) for legacy reasons; consolidating
+        # is a separate cleanup.
         common-shell-inputs = [
           pkgs.gh
           pkgs.pre-commit
