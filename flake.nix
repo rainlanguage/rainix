@@ -478,15 +478,18 @@
 
             # Rust
             taplo.enable = true;
-            # Conditional rustfmt - only runs if Cargo.toml exists
+            # Conditional rustfmt — runs only if there is rust source AND
+            # cargo-fmt is on PATH. Resolving cargo-fmt via PATH at runtime
+            # (instead of nix-store interpolation) keeps rust-toolchain out
+            # of the hook's nix closure, so consumers of sol-shell — which
+            # have no rust to format — do not pull the rust toolchain in.
             rustfmt-conditional = {
               enable = true;
               name = "rustfmt";
               entry = "${pkgs.writeShellScript "rustfmt-conditional" ''
+                command -v cargo-fmt >/dev/null 2>&1 || exit 0
                 if [ -f Cargo.toml ] || [ -f */Cargo.toml ]; then
-                  exec ${rust-toolchain}/bin/cargo-fmt fmt
-                else
-                  exit 0
+                  exec cargo-fmt fmt
                 fi
               ''}";
               files = "\\.rs$";
