@@ -83,6 +83,21 @@ Override via the `package_name` input only if the registry name diverges.
 project must already exist on soldeer.xyz — the registry rejects pushes to
 nonexistent projects.
 
+#### rainix-sol-static
+
+`.github/workflows/rainix-sol-static.yaml` runs `rainix-sol-static` (slither) on
+Linux. Wrapper in the consumer repo:
+
+```yaml
+name: rainix-sol-static
+on: [push]
+jobs:
+  static:
+    uses: rainlanguage/rainix/.github/workflows/rainix-sol-static.yaml@main
+```
+
+Runs `forge soldeer install` automatically when a `soldeer.lock` is present.
+
 ## Pinned Versions
 
 - Rust: 1.94.0
