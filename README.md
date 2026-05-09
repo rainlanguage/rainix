@@ -111,6 +111,26 @@ jobs:
     uses: rainlanguage/rainix/.github/workflows/rainix-sol-legal.yaml@main
 ```
 
+#### rainix-sol-test
+
+`.github/workflows/rainix-sol-test.yaml` runs `rainix-sol-test` (`forge test`)
+on Linux. Wrapper:
+
+```yaml
+name: rainix-sol-test
+on: [push]
+jobs:
+  test:
+    uses: rainlanguage/rainix/.github/workflows/rainix-sol-test.yaml@main
+    secrets: inherit
+```
+
+`secrets: inherit` is required because the reusable wires the standard fork RPC
+env vars (`ARBITRUM_RPC_URL`, `BASE_RPC_URL`, `BASE_SEPOLIA_RPC_URL`,
+`FLARE_RPC_URL`, `POLYGON_RPC_URL`, `CI_DEPLOY_SEPOLIA_RPC_URL`) plus
+`ETHERSCAN_API_KEY` and `DEPLOYMENT_KEY` from the consumer org's secrets/vars.
+Repos that do no fork tests can ignore — empty values are harmless.
+
 ## Pinned Versions
 
 - Rust: 1.94.0
