@@ -226,21 +226,6 @@
             postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
           };
 
-        rainix-sol-prelude = mkTask {
-          name = "rainix-sol-prelude";
-          # We do NOT do a shallow clone in the prelude because nix flakes
-          # seem to not be compatible with shallow clones.
-          # The reason we do a forge build here is that the output of the
-          # build is a set of artifacts that other tasks often need to use,
-          # such as the ABI and the bytecode.
-          body = ''
-            set -euxo pipefail
-            forge install
-            forge build
-          '';
-          additionalBuildInputs = sol-build-inputs;
-        };
-
         rainix-sol-static = mkTask {
           name = "rainix-sol-static";
           body = ''
@@ -315,16 +300,6 @@
           additionalBuildInputs = sol-build-inputs;
         };
 
-        rainix-rs-prelude = mkTask {
-          name = "rainix-rs-prelude";
-          # Intentionally empty — exists so downstream consumers can call
-          # rainix-rs-prelude unconditionally alongside rainix-sol-prelude.
-          body = ''
-            set -euxo pipefail
-          '';
-          additionalBuildInputs = rust-build-inputs;
-        };
-
         rainix-rs-static = mkTask {
           name = "rainix-rs-static";
           body = ''
@@ -353,18 +328,28 @@
           additionalBuildInputs = rust-build-inputs;
         };
 
-        rainix-tasks = [
-          rainix-sol-prelude
+        sol-tasks = [
           rainix-sol-static
           rainix-sol-test
           rainix-sol-artifacts
           rainix-sol-legal
+        ];
 
-          rainix-rs-prelude
+        rs-tasks = [
           rainix-rs-static
           rainix-rs-test
           rainix-rs-artifacts
         ];
+
+        rainix-tasks = sol-tasks ++ rs-tasks;
+
+        # Universal dev tooling shared across every devShell. Toolchains
+        # and tasks are layered on per-shell.
+        common-shell-inputs = [
+          pkgs.gh
+          pkgs.pre-commit
+        ]
+        ++ pre-commit.enabledPackages;
 
         subgraph-build = mkTask {
           name = "subgraph-build";
@@ -617,12 +602,10 @@
 
         packages = {
           inherit
-            rainix-sol-prelude
             rainix-sol-static
             rainix-sol-test
             rainix-sol-artifacts
             rainix-sol-legal
-            rainix-rs-prelude
             rainix-rs-static
             rainix-rs-test
             rainix-rs-artifacts
@@ -631,73 +614,85 @@
             ;
         };
 
-        devShells.default = pkgs.mkShell {
-          buildInputs =
-            sol-build-inputs
-            ++ rust-build-inputs
-            ++ node-build-inputs
-            ++ rainix-tasks
-            ++ subgraph-tasks
-            ++ [
-              the-graph
-              goldsky
-              chromium
-              pkgs.sqlite
-              pkgs.yq-go
-              pkgs.gh
-              pkgs.age
-              default-shell-test
-              pkgs.pre-commit
-            ]
-            ++ pre-commit.enabledPackages;
-          shellHook = ''
-            ${pre-commit.shellHook}
-            ${source-dotenv}
+        devShells = {
+          # Slim shell for Solidity-only repos: no chromium, rust, node,
+          # subgraph, sqlite, age. Lets sol-only consumers (rain.solmem,
+          # rain.deploy, rain.datacontract, etc.) avoid the heavy default
+          # closure when their CI is just rainix-sol-{test,static,legal}.
+          sol-shell = pkgs.mkShell {
+            buildInputs = sol-build-inputs ++ sol-tasks ++ common-shell-inputs;
+            shellHook = ''
+              ${pre-commit.shellHook}
+              ${source-dotenv}
+            '';
+          };
 
-            if [ -f ./package.json ]; then
-              npm ci --ignore-scripts;
-            fi
-          '';
-        };
+          default = pkgs.mkShell {
+            buildInputs =
+              sol-build-inputs
+              ++ rust-build-inputs
+              ++ node-build-inputs
+              ++ rainix-tasks
+              ++ subgraph-tasks
+              ++ common-shell-inputs
+              ++ [
+                the-graph
+                goldsky
+                chromium
+                pkgs.sqlite
+                pkgs.yq-go
+                pkgs.age
+                default-shell-test
+              ];
+            shellHook = ''
+              ${pre-commit.shellHook}
+              ${source-dotenv}
 
-        # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
-        devShells.tauri-shell = pkgs.mkShell {
-          packages = [ tauri-shellhook-test ];
-          buildInputs =
-            sol-build-inputs
-            ++ rust-build-inputs
-            ++ node-build-inputs
-            ++ tauri-build-inputs
-            ++ [ pkgs.pre-commit ]
-            ++ pre-commit.enabledPackages;
-          shellHook = ''
-            ${pre-commit.shellHook}
-            ${source-dotenv}
+              if [ -f ./package.json ]; then
+                npm ci --ignore-scripts;
+              fi
+            '';
+          };
 
-            export TMP_BASE64_PATH=$(mktemp -d)
-            cp /usr/bin/base64 "$TMP_BASE64_PATH/base64"
-            export PATH="$TMP_BASE64_PATH:$PATH:/usr/bin"
-            export WEBKIT_DISABLE_COMPOSITING_MODE=1
-            export XDG_DATA_DIRS=${old-pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${old-pkgs.gsettings-desktop-schemas.name}:${old-pkgs.gtk3}/share/gsettings-schemas/${old-pkgs.gtk3.name}:$XDG_DATA_DIRS
-            export GIO_MODULE_DIR="${old-pkgs.glib-networking}/lib/gio/modules/";
-          ''
-          # there is a known issue with nix pkgs new apple_sdk and that since it is now using xcrun,
-          # apple_sdk's setup hook breaks the link to some of '/usr/bin' Xcode command line tools bins
-          # and libs, this mainly is an issue for `tauri-shell` devshell when tauri cli is used to build
-          # a tauri app for macos where it needs one of those bins called `SetFile`, for more details:
-          # https://github.com/NixOS/nixpkgs/issues/355486
-          #
-          # this is a workaround that removes xcrun from devshell PATH and unsets DEVELOPER_DIR so that
-          # those apple bins and libs are accessible normally through `/usr/bin`
-          + (
-            if pkgs.stdenv.isDarwin then
-              ''
-                export PATH=''${PATH//'${pkgs.xcbuild.xcrun}/bin:'/}
-                unset DEVELOPER_DIR
-              ''
-            else
-              ""
-          );
+          # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
+          tauri-shell = pkgs.mkShell {
+            packages = [ tauri-shellhook-test ];
+            buildInputs =
+              sol-build-inputs
+              ++ rust-build-inputs
+              ++ node-build-inputs
+              ++ tauri-build-inputs
+              ++ [ pkgs.pre-commit ]
+              ++ pre-commit.enabledPackages;
+            shellHook = ''
+              ${pre-commit.shellHook}
+              ${source-dotenv}
+
+              export TMP_BASE64_PATH=$(mktemp -d)
+              cp /usr/bin/base64 "$TMP_BASE64_PATH/base64"
+              export PATH="$TMP_BASE64_PATH:$PATH:/usr/bin"
+              export WEBKIT_DISABLE_COMPOSITING_MODE=1
+              export XDG_DATA_DIRS=${old-pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${old-pkgs.gsettings-desktop-schemas.name}:${old-pkgs.gtk3}/share/gsettings-schemas/${old-pkgs.gtk3.name}:$XDG_DATA_DIRS
+              export GIO_MODULE_DIR="${old-pkgs.glib-networking}/lib/gio/modules/";
+            ''
+            # there is a known issue with nix pkgs new apple_sdk and that since it is now using xcrun,
+            # apple_sdk's setup hook breaks the link to some of '/usr/bin' Xcode command line tools bins
+            # and libs, this mainly is an issue for `tauri-shell` devshell when tauri cli is used to build
+            # a tauri app for macos where it needs one of those bins called `SetFile`, for more details:
+            # https://github.com/NixOS/nixpkgs/issues/355486
+            #
+            # this is a workaround that removes xcrun from devshell PATH and unsets DEVELOPER_DIR so that
+            # those apple bins and libs are accessible normally through `/usr/bin`
+            + (
+              if pkgs.stdenv.isDarwin then
+                ''
+                  export PATH=''${PATH//'${pkgs.xcbuild.xcrun}/bin:'/}
+                  unset DEVELOPER_DIR
+                ''
+              else
+                ""
+            );
+          };
         };
       }
     );
