@@ -443,6 +443,7 @@
             bats test/bats/devshell/sol-shell/gh.test.bats
             bats test/bats/devshell/sol-shell/sol-tasks.test.bats
             bats test/bats/devshell/sol-shell/slim.test.bats
+            bats test/bats/devshell/sol-shell/closure.test.bats
           '';
           additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs;
         };
@@ -478,15 +479,18 @@
 
             # Rust
             taplo.enable = true;
-            # Conditional rustfmt - only runs if Cargo.toml exists
+            # Conditional rustfmt — runs only if there is rust source AND
+            # cargo-fmt is on PATH. Resolving cargo-fmt via PATH at runtime
+            # (instead of nix-store interpolation) keeps rust-toolchain out
+            # of the hook's nix closure, so consumers of sol-shell — which
+            # have no rust to format — do not pull the rust toolchain in.
             rustfmt-conditional = {
               enable = true;
               name = "rustfmt";
               entry = "${pkgs.writeShellScript "rustfmt-conditional" ''
+                command -v cargo-fmt >/dev/null 2>&1 || exit 0
                 if [ -f Cargo.toml ] || [ -f */Cargo.toml ]; then
-                  exec ${rust-toolchain}/bin/cargo-fmt fmt
-                else
-                  exit 0
+                  exec cargo-fmt fmt
                 fi
               ''}";
               files = "\\.rs$";
@@ -498,15 +502,30 @@
             # identical formatting rules. `no-consumer-prettier` below blocks
             # consumers from shipping their own prettier, plugins, or
             # prettierrc, so the bundle is the only prettier in play.
-            prettier = {
+            #
+            # The bundle is resolved via $RAINIX_PRETTIER_BUNDLE_DIR rather
+            # than nix-store interpolation. Default shell exports the var;
+            # sol-shell does not, and the hook silently no-ops there. This
+            # keeps prettier-bundle (which transitively brings nodejs) out
+            # of the sol-shell closure for consumers that have no JS to
+            # format.
+            # Custom hook name (rather than overriding the built-in
+            # `prettier` hook) so git-hooks.nix does not splice its default
+            # `package = pkgs.nodePackages.prettier` into enabledPackages —
+            # that default is what kept nodejs in sol-shell's closure.
+            prettier-rainix = {
               enable = true;
+              name = "prettier-rainix";
               entry = toString (
                 pkgs.writeShellScript "prettier-rainix-bundled" ''
                   set -e
-                  exec ${prettier-bundle}/bin/prettier \
-                    --config=${prettier-bundle}/.prettierrc.json \
-                    --plugin=${prettier-bundle}/node_modules/prettier-plugin-svelte/plugin.js \
-                    --plugin=${prettier-bundle}/node_modules/prettier-plugin-tailwindcss/dist/index.mjs \
+                  if [ -z "''${RAINIX_PRETTIER_BUNDLE_DIR:-}" ]; then
+                    exit 0
+                  fi
+                  exec "$RAINIX_PRETTIER_BUNDLE_DIR/bin/prettier" \
+                    --config="$RAINIX_PRETTIER_BUNDLE_DIR/.prettierrc.json" \
+                    --plugin="$RAINIX_PRETTIER_BUNDLE_DIR/node_modules/prettier-plugin-svelte/plugin.js" \
+                    --plugin="$RAINIX_PRETTIER_BUNDLE_DIR/node_modules/prettier-plugin-tailwindcss/dist/index.mjs" \
                     --ignore-unknown --list-different --write "$@"
                 ''
               );
@@ -661,6 +680,7 @@
                 default-shell-test
               ];
             shellHook = ''
+              export RAINIX_PRETTIER_BUNDLE_DIR=${prettier-bundle}
               ${pre-commit.shellHook}
               ${source-dotenv}
 
@@ -681,6 +701,7 @@
               ++ [ pkgs.pre-commit ]
               ++ pre-commit.enabledPackages;
             shellHook = ''
+              export RAINIX_PRETTIER_BUNDLE_DIR=${prettier-bundle}
               ${pre-commit.shellHook}
               ${source-dotenv}
 
