@@ -1,0 +1,11 @@
+name: rainix-sol
+on:
+  workflow_call:
+jobs:
+  static:
+    uses: ./.github/workflows/rainix-sol-static.yaml
+  legal:
+    uses: ./.github/workflows/rainix-sol-legal.yaml
+  test:
+    uses: ./.github/workflows/rainix-sol-test.yaml
+    secrets: inherit
