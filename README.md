@@ -57,6 +57,32 @@ Downstream flakes can compose their own tasks and shells using:
 - `mkTask` — create Nix derivations wrapping shell scripts with dependencies on
   PATH
 
+### Reusable Workflows
+
+#### Publish to Soldeer
+
+`.github/workflows/publish-soldeer.yaml` is a `workflow_call` reusable that
+pushes a Solidity package to soldeer.xyz on every `v*` tag. Consumer repos need
+a five-line wrapper:
+
+```yaml
+name: Publish to Soldeer
+on:
+  push:
+    tags: ["v*"]
+jobs:
+  publish:
+    uses: rainlanguage/rainix/.github/workflows/publish-soldeer.yaml@main
+    secrets: inherit
+```
+
+The package name defaults to the repo name with `.` replaced by `-`
+(`rain.solmem` → `rain-solmem`), since soldeer rejects `.` in package names.
+Override via the `package_name` input only if the registry name diverges.
+`SOLDEER_API_TOKEN` must be set in the consumer repo (or org) secrets, and the
+project must already exist on soldeer.xyz — the registry rejects pushes to
+nonexistent projects.
+
 ## Pinned Versions
 
 - Rust: 1.94.0

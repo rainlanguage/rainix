@@ -1,0 +1,46 @@
+name: Publish to Soldeer
+on:
+  workflow_call:
+    inputs:
+      package_name:
+        type: string
+        required: false
+        description: |
+          Soldeer registry package name. Defaults to the GitHub repo name
+          with `.` replaced by `-` (e.g. rain.solmem -> rain-solmem),
+          which works for every rain.* repo. Override only if the
+          registry name diverges from the repo name.
+    secrets:
+      SOLDEER_API_TOKEN:
+        required: true
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: nixbuild/nix-quick-install-action@v30
+        with:
+          nix_conf: |
+            keep-env-derivations = true
+            keep-outputs = true
+      - name: Restore and save Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 1G
+      - name: Push to Soldeer
+        env:
+          SOLDEER_API_TOKEN: ${{ secrets.SOLDEER_API_TOKEN }}
+          INPUT_PACKAGE_NAME: ${{ inputs.package_name }}
+        run: |
+          if [ -n "$INPUT_PACKAGE_NAME" ]; then
+            PACKAGE="$INPUT_PACKAGE_NAME"
+          else
+            PACKAGE="${GITHUB_REPOSITORY##*/}"
+            PACKAGE="${PACKAGE//./-}"
+          fi
+          VERSION="${GITHUB_REF_NAME#v}"
+          nix develop -c forge soldeer push "${PACKAGE}~${VERSION}"
