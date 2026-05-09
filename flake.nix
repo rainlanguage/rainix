@@ -644,6 +644,7 @@
               pkgs.sqlite
               pkgs.yq-go
               pkgs.gh
+              pkgs.age
               default-shell-test
               pkgs.pre-commit
             ]
