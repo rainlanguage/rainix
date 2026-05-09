@@ -98,6 +98,19 @@ jobs:
 
 Runs `forge soldeer install` automatically when a `soldeer.lock` is present.
 
+#### rainix-sol-legal
+
+`.github/workflows/rainix-sol-legal.yaml` runs `rainix-sol-legal` (`reuse lint`)
+on Linux. Same wrapper shape as the static one:
+
+```yaml
+name: rainix-sol-legal
+on: [push]
+jobs:
+  legal:
+    uses: rainlanguage/rainix/.github/workflows/rainix-sol-legal.yaml@main
+```
+
 ## Pinned Versions
 
 - Rust: 1.94.0
