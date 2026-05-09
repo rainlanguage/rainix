@@ -432,6 +432,20 @@
           additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs ++ node-build-inputs;
         };
 
+        sol-shell-test = mkTask {
+          name = "sol-shell-test";
+          body = ''
+            bats test/bats/devshell/sol-shell/forge.test.bats
+            bats test/bats/devshell/sol-shell/slither.test.bats
+            bats test/bats/devshell/sol-shell/solc.test.bats
+            bats test/bats/devshell/sol-shell/reuse.test.bats
+            bats test/bats/devshell/sol-shell/gh.test.bats
+            bats test/bats/devshell/sol-shell/sol-tasks.test.bats
+            bats test/bats/devshell/sol-shell/slim.test.bats
+          '';
+          additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs;
+        };
+
         tauri-shellhook-test = mkTask {
           name = "tauri-shellhook-test";
           # only run this test for darwin
@@ -611,6 +625,7 @@
             rainix-rs-artifacts
             tauri-release-env
             prettier-bundle
+            sol-shell-test
             ;
         };
 
