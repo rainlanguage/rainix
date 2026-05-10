@@ -226,34 +226,6 @@
             postBuild = "wrapProgram $out/bin/${name} --prefix PATH : $out/bin";
           };
 
-        rainix-sol-static = mkTask {
-          name = "rainix-sol-static";
-          body = ''
-            set -euxo pipefail
-            slither .
-            forge fmt --check
-          '';
-          additionalBuildInputs = sol-build-inputs;
-        };
-
-        rainix-sol-legal = mkTask {
-          name = "rainix-sol-legal";
-          body = ''
-            set -euxo pipefail
-            reuse lint
-          '';
-          additionalBuildInputs = sol-build-inputs;
-        };
-
-        rainix-sol-test = mkTask {
-          name = "rainix-sol-test";
-          body = ''
-            set -euxo pipefail
-            forge test -vvv
-          '';
-          additionalBuildInputs = sol-build-inputs;
-        };
-
         rainix-sol-artifacts = mkTask {
           name = "rainix-sol-artifacts";
           body = ''
@@ -310,35 +282,12 @@
           additionalBuildInputs = rust-build-inputs;
         };
 
-        rainix-rs-test = mkTask {
-          name = "rainix-rs-test";
-          body = ''
-            set -euxo pipefail
-            cargo test
-          '';
-          additionalBuildInputs = rust-build-inputs;
-        };
-
-        rainix-rs-artifacts = mkTask {
-          name = "rainix-rs-artifacts";
-          body = ''
-            set -euxo pipefail
-            cargo build --release
-          '';
-          additionalBuildInputs = rust-build-inputs;
-        };
-
         sol-tasks = [
-          rainix-sol-static
-          rainix-sol-test
           rainix-sol-artifacts
-          rainix-sol-legal
         ];
 
         rs-tasks = [
           rainix-rs-static
-          rainix-rs-test
-          rainix-rs-artifacts
         ];
 
         rainix-tasks = sol-tasks ++ rs-tasks;
@@ -636,13 +585,8 @@
 
         packages = {
           inherit
-            rainix-sol-static
-            rainix-sol-test
             rainix-sol-artifacts
-            rainix-sol-legal
             rainix-rs-static
-            rainix-rs-test
-            rainix-rs-artifacts
             tauri-release-env
             prettier-bundle
             sol-shell-test

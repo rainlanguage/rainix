@@ -5,18 +5,20 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
-        task: [rainix-rs-test, rainix-rs-artifacts]
+        task: ["cargo test", "cargo build --release"]
         include:
-          # Solidity doesn't need to be tested on multiple platforms
+          # Solidity doesn't need to be tested on multiple platforms.
           - os: ubuntu-latest
-            task: rainix-sol-test
+            task: forge test -vvv
           - os: ubuntu-latest
-            task: rainix-sol-static
+            task: slither .
           - os: ubuntu-latest
-            task: rainix-sol-legal
+            task: forge fmt --check
+          - os: ubuntu-latest
+            task: reuse lint
           - os: ubuntu-latest
             task: rainix-sol-artifacts
-          # We don't need to do rust static analysis on multiple platforms
+          # We don't need to do rust static analysis on multiple platforms.
           - os: ubuntu-latest
             task: rainix-rs-static
       fail-fast: false
@@ -36,17 +38,12 @@ jobs:
       - name: Restore and save Nix store
         uses: nix-community/cache-nix-action@v6
         with:
-          # restore and save a cache using this key
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
-          # if there's no cache hit, restore a cache by this prefix
           restore-prefixes-first-match: nix-${{ runner.os }}-
-          # collect garbage until the Nix store size (in bytes) is at most this number
-          # before trying to save a new cache
-          # 1G = 1073741824
           gc-max-store-size-linux: 1G
       - run: nix develop ../.. --command forge soldeer install
       - name: Run ${{ matrix.task }}
         env:
           ETH_RPC_URL: ${{ secrets.CI_DEPLOY_SEPOLIA_RPC_URL || vars.CI_DEPLOY_SEPOLIA_RPC_URL }}
           ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY }}
-        run: nix run ../..#${{ matrix.task }}
+        run: nix develop ../.. --command ${{ matrix.task }}
