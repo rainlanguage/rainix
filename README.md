@@ -167,6 +167,22 @@ jobs:
 Always runs through rainix's `sol-shell` (slim), regardless of the consumer's
 default devShell.
 
+#### rainix-rs-static
+
+`.github/workflows/rainix-rs-static.yaml` runs `rainix-rs-static` (cargo fmt
+check + clippy with `-D clippy::all`) on Linux. Wrapper:
+
+```yaml
+name: rainix-rs-static
+on: [push]
+jobs:
+  rs-static:
+    uses: rainlanguage/rainix/.github/workflows/rainix-rs-static.yaml@main
+```
+
+Always runs through rainix's `rust-shell` (rust toolchain only — no
+chromium/sol/node), regardless of the consumer's default devShell.
+
 ## Pinned Versions
 
 - Rust: 1.94.0
