@@ -200,6 +200,24 @@ Same shape as rs-static — runs through `rust-shell`. Consumers whose rust crat
 compiles standalone (no live forge artifacts at compile time) can drop their
 bespoke rs-test matrix in favour of this.
 
+#### rainix-rs-wasm
+
+`.github/workflows/rainix-rs-wasm.yaml` cross-compiles the workspace to
+`wasm32-unknown-unknown` (release, library targets only). For consumers that
+ship rust crates downstream as WASM (e.g. via wasm-bindgen for JS/TS), this
+catches WASM-incompatible dependencies before they reach the JS build. Wrapper:
+
+```yaml
+name: rainix-rs-wasm
+on: [push]
+jobs:
+  rs-wasm:
+    uses: rainlanguage/rainix/.github/workflows/rainix-rs-wasm.yaml@main
+```
+
+`rust-shell`'s toolchain already includes the `wasm32-unknown-unknown` target,
+so no extra setup is required.
+
 ## Pinned Versions
 
 - Rust: 1.94.0
