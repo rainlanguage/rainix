@@ -662,6 +662,19 @@
             '';
           };
 
+          # Slim shell for Rust-only repos: rust toolchain + cargo + the
+          # rs-tasks, no sol/node/chromium. Mirror of sol-shell for the
+          # Rust side. Consumers like rain.cli that ship a pure rust
+          # binary can alias `default = rust-shell` and skip the heavy
+          # default closure.
+          rust-shell = pkgs.mkShell {
+            buildInputs = rust-build-inputs ++ rs-tasks ++ common-shell-inputs;
+            shellHook = ''
+              ${pre-commit.shellHook}
+              ${source-dotenv}
+            '';
+          };
+
           default = pkgs.mkShell {
             buildInputs =
               sol-build-inputs
