@@ -22,4 +22,4 @@ jobs:
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix#sol-shell -c forge soldeer install
-      - run: nix develop github:rainlanguage/rainix#sol-shell -c rainix-sol-legal
+      - run: nix develop github:rainlanguage/rainix#sol-shell -c reuse lint
