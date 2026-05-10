@@ -277,7 +277,7 @@
           body = ''
             set -euxo pipefail
             cargo fmt --all -- --check
-            cargo clippy --all-targets --all-features -- -D clippy::all
+            cargo clippy --all-targets --all-features -- -D warnings -D clippy::all
           '';
           additionalBuildInputs = rust-build-inputs;
         };
