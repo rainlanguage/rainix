@@ -1,0 +1,10 @@
+name: rainix-rs
+on:
+  workflow_call:
+jobs:
+  static:
+    uses: ./.github/workflows/rainix-rs-static.yaml
+  test:
+    uses: ./.github/workflows/rainix-rs-test.yaml
+  wasm:
+    uses: ./.github/workflows/rainix-rs-wasm.yaml

@@ -218,6 +218,23 @@ jobs:
 `rust-shell`'s toolchain already includes the `wasm32-unknown-unknown` target,
 so no extra setup is required.
 
+#### rainix-rs (composite)
+
+`.github/workflows/rainix-rs.yaml` fans out static, test, and wasm in parallel —
+each on its own runner. Single wrapper for rust-shipping repos that want all
+three:
+
+```yaml
+name: rainix-rs
+on: [push]
+jobs:
+  rainix-rs:
+    uses: rainlanguage/rainix/.github/workflows/rainix-rs.yaml@main
+```
+
+Consumers needing only one of the three should call the individual reusable
+directly rather than this composite.
+
 ## Pinned Versions
 
 - Rust: 1.94.0
