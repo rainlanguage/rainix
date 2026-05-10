@@ -183,6 +183,23 @@ jobs:
 Always runs through rainix's `rust-shell` (rust toolchain only — no
 chromium/sol/node), regardless of the consumer's default devShell.
 
+#### rainix-rs-test
+
+`.github/workflows/rainix-rs-test.yaml` runs `cargo test` on Linux and macOS.
+Wrapper:
+
+```yaml
+name: rainix-rs-test
+on: [push]
+jobs:
+  rs-test:
+    uses: rainlanguage/rainix/.github/workflows/rainix-rs-test.yaml@main
+```
+
+Same shape as rs-static — runs through `rust-shell`. Consumers whose rust crate
+compiles standalone (no live forge artifacts at compile time) can drop their
+bespoke rs-test matrix in favour of this.
+
 ## Pinned Versions
 
 - Rust: 1.94.0
