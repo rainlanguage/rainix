@@ -148,6 +148,25 @@ jobs:
 Consumers needing only one of the three should call the individual reusable
 directly rather than this composite.
 
+#### rainix-build-pointers
+
+`.github/workflows/rainix-build-pointers.yaml` regenerates
+`./script/BuildPointers.sol` artifacts, runs `forge fmt`, then asserts
+`git diff --exit-code` — failing the PR if a maintainer changed
+pointer-affecting source without committing the updated
+`src/generated/*.pointers.sol` files.
+
+```yaml
+name: build-pointers
+on: [push]
+jobs:
+  build-pointers:
+    uses: rainlanguage/rainix/.github/workflows/rainix-build-pointers.yaml@main
+```
+
+Always runs through rainix's `sol-shell` (slim), regardless of the consumer's
+default devShell.
+
 ## Pinned Versions
 
 - Rust: 1.94.0
