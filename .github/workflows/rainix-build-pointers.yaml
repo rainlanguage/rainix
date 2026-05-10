@@ -1,8 +1,8 @@
-name: rainix-sol-static
+name: rainix-build-pointers
 on:
   workflow_call:
 jobs:
-  static:
+  build-pointers:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,7 +19,15 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
           gc-max-store-size-linux: 1G
+      # Use rainix's sol-shell directly (slim — no rust/node/chromium).
+      # Mixed-language consumers can ship their heavy default devShell without
+      # paying for it on this purely Solidity-side check.
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix#sol-shell -c forge soldeer install
-      - run: nix develop github:rainlanguage/rainix#sol-shell -c rainix-sol-static
+      - name: Regenerate pointer artifacts
+        run: nix develop github:rainlanguage/rainix#sol-shell -c forge script ./script/BuildPointers.sol
+      - name: Format (so generated artifacts match committed style)
+        run: nix develop github:rainlanguage/rainix#sol-shell -c forge fmt
+      - name: Assert pointer artifacts match committed
+        run: git diff --exit-code
