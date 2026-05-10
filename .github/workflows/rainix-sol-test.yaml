@@ -33,5 +33,5 @@ jobs:
           gc-max-store-size-linux: 1G
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
-        run: nix develop -c forge soldeer install
-      - run: nix develop -c rainix-sol-test
+        run: nix develop github:rainlanguage/rainix#sol-shell -c forge soldeer install
+      - run: nix develop github:rainlanguage/rainix#sol-shell -c rainix-sol-test
