@@ -41,4 +41,4 @@ jobs:
             PACKAGE="${PACKAGE//./-}"
           fi
           VERSION="${GITHUB_REF_NAME#v}"
-          nix develop -c forge soldeer push "${PACKAGE}~${VERSION}"
+          nix develop github:rainlanguage/rainix#sol-shell -c forge soldeer push "${PACKAGE}~${VERSION}"
