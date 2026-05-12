@@ -1,0 +1,21 @@
+name: rainix-rs-wasm-test
+on:
+  workflow_call:
+jobs:
+  rs-wasm-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: nixbuild/nix-quick-install-action@v30
+        with:
+          nix_conf: |
+            keep-env-derivations = true
+            keep-outputs = true
+      - name: Restore and save Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 1G
+      - uses: Swatinem/rust-cache@v2
+      - run: nix develop github:rainlanguage/rainix#rust-shell -c bash -c "CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner cargo test --target wasm32-unknown-unknown --workspace"

@@ -8,3 +8,5 @@ jobs:
     uses: ./.github/workflows/rainix-rs-test.yaml
   wasm:
     uses: ./.github/workflows/rainix-rs-wasm.yaml
+  wasm-test:
+    uses: ./.github/workflows/rainix-rs-wasm-test.yaml
