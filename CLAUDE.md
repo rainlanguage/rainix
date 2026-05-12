@@ -16,8 +16,9 @@ validation of the flake itself.
 Requires Nix with flakes enabled. Enter the dev shell before working:
 
 ```
-nix develop        # default shell (Solidity + Rust + Node + subgraph tools)
-nix develop .#tauri-shell  # Tauri desktop app development (macOS-specific quirks)
+nix develop          # default shell (Solidity + Rust + Node + subgraph tools)
+nix develop .#sol-shell   # slim Solidity-only shell
+nix develop .#rust-shell  # slim Rust-only shell
 ```
 
 The shell auto-sources `.env` if present and runs `npm ci --ignore-scripts` if
@@ -65,9 +66,9 @@ All tasks are Nix packages run via `nix run`. From a consuming repo use `..#`
 
 The flake exports:
 
-- **`packages`**: All `rainix-*` task derivations plus `tauri-release-env`
-- **`devShells`**: `default` (full toolchain) and `tauri-shell` (Tauri + macOS
-  workarounds)
+- **`packages`**: All `rainix-*` task derivations.
+- **`devShells`**: `default` (full toolchain), `sol-shell` (Solidity only),
+  `rust-shell` (Rust only).
 - **Reusable outputs**: `pkgs`, `rust-toolchain`, `rust-build-inputs`,
   `sol-build-inputs`, `node-build-inputs`, `mkTask` — consumed by downstream
   Rain flakes to compose their own tasks/shells

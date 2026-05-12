@@ -23,7 +23,7 @@ Requires Nix with flakes enabled.
 ```sh
 nix develop                # default shell (Solidity + Rust + Node + subgraph tools)
 nix develop .#sol-shell    # slim Solidity-only shell — no rust, node, chromium, subgraph
-nix develop .#tauri-shell  # Tauri desktop app development
+nix develop .#rust-shell   # slim Rust-only shell — no sol, node, chromium
 ```
 
 The default shell auto-sources `.env` if present and runs
