@@ -45,7 +45,6 @@ All tasks are Nix packages run via `nix run`. From a consuming repo use `..#`
 - `nix run ..#rainix-rs-test` — `cargo test`
 - `nix run ..#rainix-rs-static` —
   `cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D clippy::all`
-- `nix run ..#rainix-rs-artifacts` — `cargo build --release`
 
 ### Subgraph (dev shell only, not `nix run` targets)
 
