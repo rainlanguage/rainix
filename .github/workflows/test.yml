@@ -24,7 +24,7 @@ jobs:
       fail-fast: false
     runs-on: ${{ matrix.os }}
     env:
-      DEPLOYMENT_KEY: ${{ github.ref == 'refs/heads/main' && secrets.PRIVATE_KEY || secrets.PRIVATE_KEY_DEV }}
+      DEPLOYMENT_KEY: ${{ secrets.PRIVATE_KEY }}
     defaults:
       run:
         working-directory: test/fixture
