@@ -7,8 +7,6 @@
     rust-overlay.url = "github:oxalica/rust-overlay";
     foundry.url = "github:shazow/foundry.nix";
     solc.url = "github:hellwolf/solc.nix";
-    # old nixpkgs, pinned for webkitgtk and libsoup-2.4 needed for tauri shell and build
-    nixpkgs-old.url = "github:nixos/nixpkgs?rev=48975d7f9b9960ed33c4e8561bcce20cc0c2de5b";
     git-hooks-nix.url = "github:cachix/git-hooks.nix";
   };
 
@@ -19,7 +17,6 @@
       rust-overlay,
       foundry,
       solc,
-      nixpkgs-old,
       git-hooks-nix,
       ...
     }:
@@ -36,7 +33,6 @@
           wasm-bindgen-overlay
         ];
         pkgs = import nixpkgs { inherit system overlays; };
-        old-pkgs = import nixpkgs-old { inherit system; };
 
         rust-version = "1.94.0";
         rust-toolchain = pkgs.rust-bin.stable.${rust-version}.default.override (previous: {
@@ -178,33 +174,6 @@
           '';
         };
 
-        tauri-build-inputs = [
-          pkgs.cargo-tauri_1
-          pkgs.curl
-          pkgs.wget
-          pkgs.pkg-config
-          pkgs.dbus
-          old-pkgs.glib
-          old-pkgs.gtk3
-          old-pkgs.libsoup_2_4
-          pkgs.librsvg
-          pkgs.gettext
-          pkgs.libiconv
-          old-pkgs.glib-networking
-        ]
-        ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
-          # This is probably needed but is is marked as broken in nixpkgs
-          old-pkgs.webkitgtk
-        ]);
-
-        tauri-release-env = pkgs.buildEnv {
-          name = "Tauri release environment";
-          # Currently we don't use the tauri build inputs as above because
-          # it doesn't seem to be totally supported by the github action, even
-          # though the above is as documented by tauri.
-          paths = [ pkgs.cargo-tauri_1 ] ++ rust-build-inputs ++ node-build-inputs;
-        };
-
         # https://ertt.ca/nix/shell-scripts/
         mkTask =
           {
@@ -292,9 +261,7 @@
 
         rainix-tasks = sol-tasks ++ rs-tasks;
 
-        # Dev tooling shared between sol-shell and default. tauri-shell
-        # carries its own subset (no gh) for legacy reasons; consolidating
-        # is a separate cleanup.
+        # Dev tooling shared between sol-shell and default.
         common-shell-inputs = [
           pkgs.gh
           pkgs.pre-commit
@@ -395,21 +362,6 @@
             bats test/bats/devshell/sol-shell/closure.test.bats
           '';
           additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs;
-        };
-
-        tauri-shellhook-test = mkTask {
-          name = "tauri-shellhook-test";
-          # only run this test for darwin
-          body =
-            if pkgs.stdenv.isDarwin then
-              ''
-                bats test/bats/devshell/tauri/shellhook.test.bats
-              ''
-            else
-              ''
-                # nothing to see here
-              '';
-          additionalBuildInputs = [ pkgs.bats ];
         };
 
         pre-commit = git-hooks-nix.lib.${system}.run {
@@ -575,7 +527,6 @@
 
         inherit
           pkgs
-          old-pkgs
           rust-toolchain
           rust-build-inputs
           sol-build-inputs
@@ -587,7 +538,6 @@
           inherit
             rainix-sol-artifacts
             rainix-rs-static
-            tauri-release-env
             prettier-bundle
             sol-shell-test
             ;
@@ -647,46 +597,6 @@
             '';
           };
 
-          # https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
-          tauri-shell = pkgs.mkShell {
-            packages = [ tauri-shellhook-test ];
-            buildInputs =
-              sol-build-inputs
-              ++ rust-build-inputs
-              ++ node-build-inputs
-              ++ tauri-build-inputs
-              ++ [ pkgs.pre-commit ]
-              ++ pre-commit.enabledPackages;
-            shellHook = ''
-              export RAINIX_PRETTIER_BUNDLE_DIR=${prettier-bundle}
-              ${pre-commit.shellHook}
-              ${source-dotenv}
-
-              export TMP_BASE64_PATH=$(mktemp -d)
-              cp /usr/bin/base64 "$TMP_BASE64_PATH/base64"
-              export PATH="$TMP_BASE64_PATH:$PATH:/usr/bin"
-              export WEBKIT_DISABLE_COMPOSITING_MODE=1
-              export XDG_DATA_DIRS=${old-pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${old-pkgs.gsettings-desktop-schemas.name}:${old-pkgs.gtk3}/share/gsettings-schemas/${old-pkgs.gtk3.name}:$XDG_DATA_DIRS
-              export GIO_MODULE_DIR="${old-pkgs.glib-networking}/lib/gio/modules/";
-            ''
-            # there is a known issue with nix pkgs new apple_sdk and that since it is now using xcrun,
-            # apple_sdk's setup hook breaks the link to some of '/usr/bin' Xcode command line tools bins
-            # and libs, this mainly is an issue for `tauri-shell` devshell when tauri cli is used to build
-            # a tauri app for macos where it needs one of those bins called `SetFile`, for more details:
-            # https://github.com/NixOS/nixpkgs/issues/355486
-            #
-            # this is a workaround that removes xcrun from devshell PATH and unsets DEVELOPER_DIR so that
-            # those apple bins and libs are accessible normally through `/usr/bin`
-            + (
-              if pkgs.stdenv.isDarwin then
-                ''
-                  export PATH=''${PATH//'${pkgs.xcbuild.xcrun}/bin:'/}
-                  unset DEVELOPER_DIR
-                ''
-              else
-                ""
-            );
-          };
         };
       }
     );
