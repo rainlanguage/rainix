@@ -44,7 +44,6 @@ All tasks are Nix packages run via `nix run`. From a consuming repo:
 
 - `nix run ..#rainix-rs-test` — cargo test
 - `nix run ..#rainix-rs-static` — cargo fmt + clippy
-- `nix run ..#rainix-rs-artifacts` — cargo build --release
 
 ### Reusable Outputs
 
