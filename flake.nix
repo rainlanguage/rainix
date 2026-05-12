@@ -364,6 +364,14 @@
           additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs;
         };
 
+        rust-shell-test = mkTask {
+          name = "rust-shell-test";
+          body = ''
+            bats test/bats/devshell/rust-shell/closure.test.bats
+          '';
+          additionalBuildInputs = [ pkgs.bats ];
+        };
+
         pre-commit = git-hooks-nix.lib.${system}.run {
           src = ./.;
           hooks = {
@@ -540,6 +548,7 @@
             rainix-rs-static
             prettier-bundle
             sol-shell-test
+            rust-shell-test
             ;
         };
 
