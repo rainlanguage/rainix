@@ -42,6 +42,7 @@
         rust-build-inputs = [
           rust-toolchain
           pkgs.cargo-release
+          pkgs.cargo-expand
           pkgs.gmp
           pkgs.openssl
           pkgs.libusb1
