@@ -128,28 +128,6 @@
           '';
         };
 
-        # Cross-platform `chromium` binary for headless rendering inside the dev
-        # shell (e.g. dumping rendered DOM of a deployed SPA preview to debug
-        # JS-side errors). On Linux, defer to the nixpkgs chromium build. On
-        # Darwin, nixpkgs has no chromium, so wrap the system Chrome.app — fails
-        # at invocation time with a clear message when Chrome is not installed.
-        chromium = pkgs.writeShellScriptBin "chromium" (
-          if pkgs.stdenv.isDarwin then
-            ''
-              chrome="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-              if [ ! -x "$chrome" ]; then
-                echo "rainix chromium wrapper: Google Chrome.app not found at $chrome" >&2
-                echo "Install Chrome (https://www.google.com/chrome/) or use a Linux dev shell." >&2
-                exit 127
-              fi
-              exec "$chrome" "$@"
-            ''
-          else
-            ''
-              exec ${pkgs.chromium}/bin/chromium "$@"
-            ''
-        );
-
         # rainix-curated prettier bundle: a single nix-built node_modules
         # tree containing prettier + the standardized plugins, plus a
         # .prettierrc.json picked up via PRETTIER_BUNDLE_DIR. Consumers
@@ -338,7 +316,6 @@
             bats test/bats/devshell/default/solc.test.bats
             bats test/bats/devshell/default/gh.test.bats
             bats test/bats/devshell/default/age.test.bats
-            bats test/bats/devshell/default/chromium.test.bats
             bats test/bats/devshell/default/prettier-bundle.test.bats
             bats test/bats/task/skip-simulation.test.bats
             bats test/bats/task/subgraph-build.test.bats
@@ -553,7 +530,7 @@
         };
 
         devShells = {
-          # Slim shell for Solidity-only repos: no chromium, rust, node,
+          # Slim shell for Solidity-only repos: no rust, node,
           # subgraph, sqlite, age. Lets sol-only consumers (rain.solmem,
           # rain.deploy, rain.datacontract, etc.) avoid the heavy default
           # closure when their CI is just rainix-sol-{test,static,legal}.
@@ -566,7 +543,7 @@
           };
 
           # Slim shell for Rust-only repos: rust toolchain + cargo + the
-          # rs-tasks, no sol/node/chromium. Mirror of sol-shell for the
+          # rs-tasks, no sol/node. Mirror of sol-shell for the
           # Rust side. Consumers like rain.cli that ship a pure rust
           # binary can alias `default = rust-shell` and skip the heavy
           # default closure.
@@ -589,7 +566,6 @@
               ++ [
                 the-graph
                 goldsky
-                chromium
                 pkgs.sqlite
                 pkgs.yq-go
                 pkgs.age

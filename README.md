@@ -22,8 +22,8 @@ Requires Nix with flakes enabled.
 
 ```sh
 nix develop                # default shell (Solidity + Rust + Node + subgraph tools)
-nix develop .#sol-shell    # slim Solidity-only shell — no rust, node, chromium, subgraph
-nix develop .#rust-shell   # slim Rust-only shell — no sol, node, chromium
+nix develop .#sol-shell    # slim Solidity-only shell — no rust, node, subgraph
+nix develop .#rust-shell   # slim Rust-only shell — no sol, node
 ```
 
 The default shell auto-sources `.env` if present and runs
@@ -179,8 +179,8 @@ jobs:
     uses: rainlanguage/rainix/.github/workflows/rainix-rs-static.yaml@main
 ```
 
-Always runs through rainix's `rust-shell` (rust toolchain only — no
-chromium/sol/node), regardless of the consumer's default devShell.
+Always runs through rainix's `rust-shell` (rust toolchain only — no sol/node),
+regardless of the consumer's default devShell.
 
 #### rainix-rs-test
 
