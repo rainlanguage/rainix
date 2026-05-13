@@ -7,10 +7,10 @@
 # time CI evaluates the shell.
 #
 # This file inspects rust-shell's full closure (`nix-store -q
-# --requisites`) and fails if any sol toolchain, node/npm, or chromium
-# component shows up. rust-shell is for repos that ship a pure rust
-# binary (rain.cli, rain.metadoc, etc.) and should not pull in foundry,
-# slither, solc, nodejs, or chromium.
+# --requisites`) and fails if slither, solc, node/npm, or chromium
+# show up. rust-shell ships foundry-bin so that alloy's Anvil::new()
+# spawn works in cargo tests, but does not pull in the rest of the
+# Solidity static-analysis toolchain.
 #
 # Skips when `nix` is not on PATH (e.g. running the bats files under a
 # stripped sandbox); CI invokes via nix and so always exercises this.
@@ -28,11 +28,11 @@ setup() {
   CLOSURE="$(nix-store -q --requisites "$RUST_SHELL_OUT")"
 }
 
-@test "rust-shell closure has no foundry toolchain" {
+@test "rust-shell closure has no slither or solc" {
   local hits
-  hits="$(echo "$CLOSURE" | grep -E '/nix/store/[^/]*-(foundry-|solc-static-|slither-analyzer-)' || true)"
+  hits="$(echo "$CLOSURE" | grep -E '/nix/store/[^/]*-(solc-static-|slither-analyzer-)' || true)"
   if [ -n "$hits" ]; then
-    echo "FAIL: rust-shell closure references sol toolchain components:" >&2
+    echo "FAIL: rust-shell closure references sol static-analysis components:" >&2
     echo "$hits" >&2
     return 1
   fi

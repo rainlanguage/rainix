@@ -43,6 +43,7 @@
           rust-toolchain
           pkgs.cargo-release
           pkgs.cargo-expand
+          pkgs.foundry-bin
           pkgs.gmp
           pkgs.openssl
           pkgs.libusb1
@@ -343,6 +344,7 @@
           body = ''
             bats test/bats/devshell/rust-shell/closure.test.bats
             bats test/bats/devshell/rust-shell/cargo-expand.test.bats
+            bats test/bats/devshell/rust-shell/anvil.test.bats
           '';
           additionalBuildInputs = [ pkgs.bats ] ++ rust-build-inputs;
         };
