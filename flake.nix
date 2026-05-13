@@ -365,8 +365,9 @@
           name = "rust-shell-test";
           body = ''
             bats test/bats/devshell/rust-shell/closure.test.bats
+            bats test/bats/devshell/rust-shell/cargo-expand.test.bats
           '';
-          additionalBuildInputs = [ pkgs.bats ];
+          additionalBuildInputs = [ pkgs.bats ] ++ rust-build-inputs;
         };
 
         pre-commit = git-hooks-nix.lib.${system}.run {
