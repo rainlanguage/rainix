@@ -1,6 +1,23 @@
 name: rainix-sol-test
 on:
   workflow_call:
+    secrets:
+      PRIVATE_KEY:
+        required: false
+      EXPLORER_VERIFICATION_KEY:
+        required: false
+      CI_DEPLOY_SEPOLIA_RPC_URL:
+        required: false
+      RPC_URL_ARBITRUM_FORK:
+        required: false
+      RPC_URL_BASE_FORK:
+        required: false
+      RPC_URL_BASE_SEPOLIA_FORK:
+        required: false
+      RPC_URL_FLARE_FORK:
+        required: false
+      RPC_URL_POLYGON_FORK:
+        required: false
 jobs:
   test:
     runs-on: ubuntu-latest
