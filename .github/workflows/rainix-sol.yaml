@@ -1,6 +1,23 @@
 name: rainix-sol
 on:
   workflow_call:
+    secrets:
+      PRIVATE_KEY:
+        required: false
+      EXPLORER_VERIFICATION_KEY:
+        required: false
+      CI_DEPLOY_SEPOLIA_RPC_URL:
+        required: false
+      RPC_URL_ARBITRUM_FORK:
+        required: false
+      RPC_URL_BASE_FORK:
+        required: false
+      RPC_URL_BASE_SEPOLIA_FORK:
+        required: false
+      RPC_URL_FLARE_FORK:
+        required: false
+      RPC_URL_POLYGON_FORK:
+        required: false
 jobs:
   static:
     uses: ./.github/workflows/rainix-sol-static.yaml
@@ -8,4 +25,12 @@ jobs:
     uses: ./.github/workflows/rainix-sol-legal.yaml
   test:
     uses: ./.github/workflows/rainix-sol-test.yaml
-    secrets: inherit
+    secrets:
+      PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+      EXPLORER_VERIFICATION_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY }}
+      CI_DEPLOY_SEPOLIA_RPC_URL: ${{ secrets.CI_DEPLOY_SEPOLIA_RPC_URL }}
+      RPC_URL_ARBITRUM_FORK: ${{ secrets.RPC_URL_ARBITRUM_FORK }}
+      RPC_URL_BASE_FORK: ${{ secrets.RPC_URL_BASE_FORK }}
+      RPC_URL_BASE_SEPOLIA_FORK: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK }}
+      RPC_URL_FLARE_FORK: ${{ secrets.RPC_URL_FLARE_FORK }}
+      RPC_URL_POLYGON_FORK: ${{ secrets.RPC_URL_POLYGON_FORK }}
