@@ -576,7 +576,7 @@
               ${pre-commit.shellHook}
               ${source-dotenv}
 
-              if [ -f ./package.json ]; then
+              if [ -f ./package.json ] && ! cmp -s ./package-lock.json ./node_modules/.package-lock.json 2>/dev/null; then
                 npm ci --ignore-scripts;
               fi
             '';
