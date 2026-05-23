@@ -18,11 +18,11 @@ on:
         default: ''
     secrets:
       PUBLISH_PRIVATE_KEY:
-        required: true
+        required: false
       CI_GIT_EMAIL:
-        required: true
+        required: false
       CI_GIT_USER:
-        required: true
+        required: false
       CARGO_REGISTRY_TOKEN:
         required: true
       NPM_PUBLISH_PRIVATE_TOKEN:
@@ -39,8 +39,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # PUBLISH_PRIVATE_KEY is a deploy key whose push events trigger
+          # downstream workflows (unlike GITHUB_TOKEN pushes which don't).
+          # If the consumer hasn't set it, ssh-key is empty and checkout
+          # falls back to GITHUB_TOKEN over HTTPS — pushes still succeed,
+          # they just won't trigger tag-listening workflows.
           ssh-key: ${{ secrets.PUBLISH_PRIVATE_KEY }}
-          fetch-depth: 0
       - uses: nixbuild/nix-quick-install-action@v30
         with:
           nix_conf: |
@@ -56,8 +60,8 @@ jobs:
         run: nix develop github:rainlanguage/rainix#rust-shell -c cargo test -p ${{ inputs.crate }}
       - name: Git config
         run: |
-          git config --global user.email "${{ secrets.CI_GIT_EMAIL }}"
-          git config --global user.name "${{ secrets.CI_GIT_USER }}"
+          git config --global user.email "${{ secrets.CI_GIT_EMAIL || 'github-actions[bot]@users.noreply.github.com' }}"
+          git config --global user.name "${{ secrets.CI_GIT_USER || 'github-actions[bot]' }}"
       # Detect cargo changes.
       - name: Cargo hashes
         id: cargo
