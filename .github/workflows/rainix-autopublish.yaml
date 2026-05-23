@@ -1,4 +1,4 @@
-name: rainix-rs-autopublish
+name: rainix-autopublish
 on:
   workflow_call:
     inputs:
