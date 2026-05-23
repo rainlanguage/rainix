@@ -45,7 +45,6 @@ jobs:
           # falls back to GITHUB_TOKEN over HTTPS — pushes still succeed,
           # they just won't trigger tag-listening workflows.
           ssh-key: ${{ secrets.PUBLISH_PRIVATE_KEY }}
-          fetch-depth: 0
       - uses: nixbuild/nix-quick-install-action@v30
         with:
           nix_conf: |
