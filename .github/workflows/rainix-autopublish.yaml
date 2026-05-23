@@ -1,0 +1,175 @@
+name: rainix-autopublish
+on:
+  workflow_call:
+    inputs:
+      crate:
+        description: cargo package name to publish (-p target)
+        required: true
+        type: string
+      npm-package:
+        description: optional npm package name (e.g. @rainlanguage/float). When set, the workflow also detects/bumps/publishes an npm package alongside the crate.
+        required: false
+        type: string
+        default: ''
+      soldeer-package:
+        description: optional Soldeer registry package name (e.g. rain-erc). When set, the workflow also publishes the current foundry.toml version to Soldeer when it diverges from the latest registry entry. Soldeer version is read from foundry.toml [package].version; no auto-bump (dev manages soldeer versions explicitly).
+        required: false
+        type: string
+        default: ''
+    secrets:
+      PUBLISH_PRIVATE_KEY:
+        required: true
+      CI_GIT_EMAIL:
+        required: true
+      CI_GIT_USER:
+        required: true
+      CARGO_REGISTRY_TOKEN:
+        required: true
+      NPM_PUBLISH_PRIVATE_TOKEN:
+        required: false
+      SOLDEER_API_TOKEN:
+        required: false
+jobs:
+  release:
+    if: ${{ !startsWith(github.event.head_commit.message, 'Package Release') }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.PUBLISH_PRIVATE_KEY }}
+          fetch-depth: 0
+      - uses: nixbuild/nix-quick-install-action@v30
+        with:
+          nix_conf: |
+            keep-env-derivations = true
+            keep-outputs = true
+      - name: Restore and save Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 1G
+      - name: Cargo test
+        run: nix develop github:rainlanguage/rainix#rust-shell -c cargo test -p ${{ inputs.crate }}
+      - name: Git config
+        run: |
+          git config --global user.email "${{ secrets.CI_GIT_EMAIL }}"
+          git config --global user.name "${{ secrets.CI_GIT_USER }}"
+      # Detect cargo changes.
+      - name: Cargo hashes
+        id: cargo
+        run: |
+          NEW=$(nix develop github:rainlanguage/rainix#rust-shell -c cargo package -p ${{ inputs.crate }} --allow-dirty --quiet --list | LC_ALL=C sort | sha256sum | cut -d' ' -f1)
+          OLD_VERSION=$(curl -fsSL "https://crates.io/api/v1/crates/${{ inputs.crate }}" | python3 -c "import sys, json; print(json.load(sys.stdin)['crate']['max_version'])" 2>/dev/null || echo "none")
+          if [ "$OLD_VERSION" = "none" ]; then
+            OLD="none"
+          else
+            curl -fsSL "https://crates.io/api/v1/crates/${{ inputs.crate }}/$OLD_VERSION/download" -o /tmp/old.crate
+            OLD=$(tar -tzf /tmp/old.crate 2>/dev/null | LC_ALL=C sort | sha256sum | cut -d' ' -f1)
+          fi
+          echo "old=$OLD" >> $GITHUB_OUTPUT
+          echo "new=$NEW" >> $GITHUB_OUTPUT
+          if [ "$OLD" = "$NEW" ]; then echo "changed=false" >> $GITHUB_OUTPUT; else echo "changed=true" >> $GITHUB_OUTPUT; fi
+      # Detect npm changes.
+      - name: NPM hashes
+        if: ${{ inputs.npm-package != '' }}
+        id: npm
+        run: |
+          nix develop github:rainlanguage/rainix#rust-node-shell -c bash -c '
+            OLD=$(npm view ${{ inputs.npm-package }}@latest dist.shasum 2>/dev/null || echo "none")
+            NEW=$(npm pack --silent | xargs shasum | cut -c1-40)
+            rm -f *.tgz
+            echo "old=$OLD" >> $GITHUB_OUTPUT
+            echo "new=$NEW" >> $GITHUB_OUTPUT
+            if [ "$OLD" = "$NEW" ]; then echo "changed=false" >> $GITHUB_OUTPUT; else echo "changed=true" >> $GITHUB_OUTPUT; fi
+          '
+      # Detect soldeer changes (version-divergence only — dev manages
+      # foundry.toml [package].version explicitly).
+      - name: Soldeer version check
+        if: ${{ inputs.soldeer-package != '' }}
+        id: soldeer
+        run: |
+          LOCAL=$(awk -F\" '/^version[[:space:]]*=/ { print $2; exit }' foundry.toml)
+          REMOTE=$(curl -fsSL "https://api.soldeer.xyz/api/v1/revisions/all?package_name=${{ inputs.soldeer-package }}&offset=0&limit=1" \
+            | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['data'][0]['version'] if d.get('data') else 'none')" 2>/dev/null \
+            || echo "none")
+          echo "local=$LOCAL" >> $GITHUB_OUTPUT
+          echo "remote=$REMOTE" >> $GITHUB_OUTPUT
+          if [ "$LOCAL" = "$REMOTE" ]; then echo "changed=false" >> $GITHUB_OUTPUT; else echo "changed=true" >> $GITHUB_OUTPUT; fi
+      # Bump versions (cargo + npm auto-bump on content change; soldeer
+      # uses the dev-set foundry.toml version, no bump here).
+      - name: Bump Cargo version
+        if: ${{ steps.cargo.outputs.changed == 'true' }}
+        run: |
+          nix develop github:rainlanguage/rainix#rust-shell -c cargo release --no-confirm --execute --no-tag --no-push --no-publish -p ${{ inputs.crate }} patch
+          echo "CARGO_VERSION=v$(nix develop github:rainlanguage/rainix#rust-shell -c cargo pkgid -p ${{ inputs.crate }} | cut -d@ -f2)" >> $GITHUB_ENV
+      - name: Bump NPM version
+        if: ${{ inputs.npm-package != '' && steps.npm.outputs.changed == 'true' }}
+        run: |
+          NEW=$(nix develop github:rainlanguage/rainix#rust-node-shell -c npm version patch --no-git-tag-version)
+          echo "NPM_VERSION=$NEW" >> $GITHUB_ENV
+          git add package.json package-lock.json
+          git commit -m "Package Release npm-${NEW}"
+      # Tag + push everything in one shot. Tags only created for items
+      # that actually changed.
+      - name: Tag and push
+        if: ${{ steps.cargo.outputs.changed == 'true' || steps.npm.outputs.changed == 'true' || steps.soldeer.outputs.changed == 'true' }}
+        run: |
+          if [ -n "${{ env.CARGO_VERSION }}" ]; then git tag crate-${{ env.CARGO_VERSION }}; fi
+          if [ -n "${{ env.NPM_VERSION }}" ]; then git tag npm-${{ env.NPM_VERSION }}; fi
+          if [ "${{ steps.soldeer.outputs.changed }}" = "true" ]; then git tag sol-v${{ steps.soldeer.outputs.local }}; fi
+          git push origin HEAD
+          git push origin --tags
+      # Package npm tarball for upload step.
+      - name: NPM pack
+        if: ${{ inputs.npm-package != '' && steps.npm.outputs.changed == 'true' }}
+        run: |
+          TARBALL=$(nix develop github:rainlanguage/rainix#rust-node-shell -c npm pack --silent)
+          mv "$TARBALL" npm_package_${{ env.NPM_VERSION }}.tgz
+      # Publishes.
+      - name: Publish to crates.io
+        if: ${{ steps.cargo.outputs.changed == 'true' }}
+        run: nix develop github:rainlanguage/rainix#rust-shell -c cargo publish -p ${{ inputs.crate }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Publish to NPM
+        if: ${{ inputs.npm-package != '' && steps.npm.outputs.changed == 'true' }}
+        uses: JS-DevTools/npm-publish@v3
+        with:
+          token: ${{ secrets.NPM_PUBLISH_PRIVATE_TOKEN }}
+          access: public
+          package: npm_package_${{ env.NPM_VERSION }}.tgz
+      - name: Publish to Soldeer
+        if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
+        env:
+          SOLDEER_API_TOKEN: ${{ secrets.SOLDEER_API_TOKEN }}
+        run: nix develop github:rainlanguage/rainix#sol-shell -c forge soldeer push "${{ inputs.soldeer-package }}~${{ steps.soldeer.outputs.local }}"
+      # GitHub Releases.
+      - name: GitHub Release (cargo)
+        if: ${{ steps.cargo.outputs.changed == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: crate-${{ env.CARGO_VERSION }}
+          name: Cargo Crate Release crate-${{ env.CARGO_VERSION }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: GitHub Release (npm)
+        if: ${{ inputs.npm-package != '' && steps.npm.outputs.changed == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: npm-${{ env.NPM_VERSION }}
+          name: NPM Package Release ${{ env.NPM_VERSION }}
+          files: npm_package_${{ env.NPM_VERSION }}.tgz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: GitHub Release (soldeer)
+        if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: sol-v${{ steps.soldeer.outputs.local }}
+          name: Soldeer Release sol-v${{ steps.soldeer.outputs.local }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
