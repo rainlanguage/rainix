@@ -555,6 +555,20 @@
             '';
           };
 
+          # Slim shell for repos that ship a Rust crate plus a node/WASM
+          # binding (e.g. rain.math.float's @rainlanguage/float npm
+          # package built from the rust-shell-compiled WASM). Adds node
+          # to rust-shell without dragging in the heavy sol/subgraph
+          # closure. Keeps everything under nix so PATH ordering and
+          # version drift between actions/setup-node and nix go away.
+          rust-node-shell = pkgs.mkShell {
+            buildInputs = rust-build-inputs ++ node-build-inputs ++ rs-tasks ++ common-shell-inputs;
+            shellHook = ''
+              ${pre-commit.shellHook}
+              ${source-dotenv}
+            '';
+          };
+
           default = pkgs.mkShell {
             buildInputs =
               sol-build-inputs
