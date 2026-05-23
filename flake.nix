@@ -64,6 +64,10 @@
           pkgs.slither-analyzer
           pkgs.solc_0_8_25
           pkgs.reuse
+          # jq is the canonical tool for extracting stable subsets of
+          # forge build artifacts via `vm.ffi` in CopyArtifacts.sol-style
+          # scripts.
+          pkgs.jq
         ];
 
         node-build-inputs = [
