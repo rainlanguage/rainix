@@ -3,11 +3,23 @@ on:
   workflow_call:
     inputs:
       crate:
-        description: cargo package name to publish (-p target)
-        required: true
+        description: single cargo package name to publish. Back-compat alias for a one-element `crates`.
+        required: false
         type: string
+        default: ''
+      crates:
+        description: >-
+          Space-separated cargo package names in DEPENDENCY ORDER (dependencies first), e.g. "wasm-bindgen-utils-macros wasm-bindgen-utils". Used as the publish order and the set of crates the change-gate inspects. For a single crate this is just one name (or use `crate`). The workspace releases as a unit: if ANY listed crate's content changed, all are bumped in one `cargo release` commit and published in order — one commit, one push, no chained-job conflicts.
+        required: false
+        type: string
+        default: ''
+      level:
+        description: cargo-release level for the bump (default patch).
+        required: false
+        type: string
+        default: patch
       npm-package:
-        description: optional npm package name (e.g. @rainlanguage/float). When set, the workflow also detects/bumps/publishes an npm package alongside the crate.
+        description: optional npm package name (e.g. @rainlanguage/float). When set, the workflow also detects/bumps/publishes an npm package alongside the crate(s).
         required: false
         type: string
         default: ''
@@ -56,29 +68,34 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
           gc-max-store-size-linux: 1G
+      # Resolve the crate list once (crates, else the back-compat singular crate).
+      - name: Resolve crates
+        run: |
+          CRATES="${{ inputs.crates != '' && inputs.crates || inputs.crate }}"
+          if [ -z "$CRATES" ]; then echo "set inputs.crate or inputs.crates" >&2; exit 1; fi
+          echo "CRATES=$CRATES" >> "$GITHUB_ENV"
       - name: Cargo test
-        run: nix develop github:rainlanguage/rainix#rust-shell -c cargo test -p ${{ inputs.crate }}
+        run: nix develop github:rainlanguage/rainix#rust-shell -c cargo test --workspace
       - name: Git config
         run: |
           git config --global user.email "${{ secrets.CI_GIT_EMAIL || 'github-actions[bot]@users.noreply.github.com' }}"
           git config --global user.name "${{ secrets.CI_GIT_USER || 'github-actions[bot]' }}"
-      # Detect cargo changes by comparing the *normalized content* of the
-      # packaged crate against the latest published version. We must not
-      # compare raw file lists or tarball hashes: the published .crate
-      # prefixes every path with "<name>-<version>/" and adds generated files
-      # (.cargo_vcs_info.json, Cargo.toml.orig), so a naive comparison never
-      # matches and the crate re-bumps on every push. Instead we strip the
-      # version prefix, drop generated/volatile files, blank out the package
-      # version line, and hash the sorted (path, content) stream — so the hash
-      # is identical iff the source is identical modulo version.
+      # Cargo change gate. Compare the *normalized content* of each packaged
+      # crate against its published release — never raw file lists or tarball
+      # hashes (the published .crate prefixes paths with "<name>-<version>/" and
+      # adds generated files, so a naive comparison never matches and the crate
+      # re-bumps every run). Strip the version prefix, drop generated/volatile
+      # files, blank the version line, hash the sorted (path, content) stream.
+      # crates.io 403s default curl UAs, so send a descriptive User-Agent and
+      # distinguish a real 404 (never published) from other errors. The
+      # workspace releases as a unit: changed=true if ANY listed crate differs.
       - name: Cargo hashes
         id: cargo
         run: |
           set -euo pipefail
-          CRATE=${{ inputs.crate }}
+          UA="rainix-autopublish (+https://github.com/rainlanguage/rainix)"
 
           norm_hash() {
-            # $1 = path to a .crate tarball -> prints version-agnostic content hash
             local f="$1" d root
             d=$(mktemp -d)
             tar -xzf "$f" -C "$d"
@@ -91,40 +108,28 @@ jobs:
             rm -rf "$d"
           }
 
-          # Package locally (no build/verify; we only need the tarball).
-          nix develop github:rainlanguage/rainix#rust-shell -c cargo package -p "$CRATE" --allow-dirty --no-verify --quiet
-          LOCAL_CRATE=$(ls -t target/package/"$CRATE"-*.crate | head -1)
-          NEW=$(norm_hash "$LOCAL_CRATE")
-
-          # crates.io requires a descriptive User-Agent and returns 403 to
-          # default curl UAs. Without it the lookup silently fell back to
-          # "none", so OLD never matched NEW and the crate re-bumped on every
-          # run. Send a UA, and distinguish a real 404 (never published) from
-          # other failures so we fail loudly instead of churning versions.
-          UA="rainix-autopublish (+https://github.com/rainlanguage/rainix)"
-          resp=$(curl -sS -H "User-Agent: $UA" -w $'\n%{http_code}' "https://crates.io/api/v1/crates/$CRATE")
-          http=$(printf '%s' "$resp" | tail -n1)
-          body=$(printf '%s' "$resp" | sed '$d')
-          if [ "$http" = "404" ]; then
-            OLD_VERSION="none"
-          elif [ "$http" = "200" ]; then
-            OLD_VERSION=$(printf '%s' "$body" | python3 -c "import sys, json; print(json.load(sys.stdin)['crate']['max_version'])")
-          else
-            echo "crates.io API returned HTTP $http for $CRATE" >&2
-            exit 1
-          fi
-          echo "resolved OLD_VERSION=$OLD_VERSION (http $http)"
-          if [ "$OLD_VERSION" = "none" ]; then
-            OLD="none"
-          else
-            curl -fsSL -H "User-Agent: $UA" "https://crates.io/api/v1/crates/$CRATE/$OLD_VERSION/download" -o /tmp/old.crate
-            OLD=$(norm_hash /tmp/old.crate)
-          fi
-          echo "cargo gate: OLD=$OLD NEW=$NEW"
-
-          echo "old=$OLD" >> $GITHUB_OUTPUT
-          echo "new=$NEW" >> $GITHUB_OUTPUT
-          if [ "$OLD" = "$NEW" ]; then echo "changed=false" >> $GITHUB_OUTPUT; else echo "changed=true" >> $GITHUB_OUTPUT; fi
+          changed=false
+          for CRATE in $CRATES; do
+            nix develop github:rainlanguage/rainix#rust-shell -c cargo package -p "$CRATE" --allow-dirty --no-verify --quiet
+            LOCAL_CRATE=$(ls -t target/package/"$CRATE"-*.crate | head -1)
+            NEW=$(norm_hash "$LOCAL_CRATE")
+            resp=$(curl -sS -H "User-Agent: $UA" -w $'\n%{http_code}' "https://crates.io/api/v1/crates/$CRATE")
+            http=$(printf '%s' "$resp" | tail -n1)
+            body=$(printf '%s' "$resp" | sed '$d')
+            if [ "$http" = "404" ]; then
+              OLD="none"
+            elif [ "$http" = "200" ]; then
+              OLD_VERSION=$(printf '%s' "$body" | python3 -c "import sys, json; print(json.load(sys.stdin)['crate']['max_version'])")
+              curl -fsSL -H "User-Agent: $UA" "https://crates.io/api/v1/crates/$CRATE/$OLD_VERSION/download" -o /tmp/old.crate
+              OLD=$(norm_hash /tmp/old.crate)
+            else
+              echo "crates.io API returned HTTP $http for $CRATE" >&2
+              exit 1
+            fi
+            echo "gate $CRATE: OLD=$OLD NEW=$NEW"
+            if [ "$OLD" != "$NEW" ]; then changed=true; fi
+          done
+          echo "changed=$changed" >> $GITHUB_OUTPUT
       # Detect npm changes.
       - name: NPM hashes
         if: ${{ inputs.npm-package != '' }}
@@ -151,13 +156,15 @@ jobs:
           echo "local=$LOCAL" >> $GITHUB_OUTPUT
           echo "remote=$REMOTE" >> $GITHUB_OUTPUT
           if [ "$LOCAL" = "$REMOTE" ]; then echo "changed=false" >> $GITHUB_OUTPUT; else echo "changed=true" >> $GITHUB_OUTPUT; fi
-      # Bump versions (cargo + npm auto-bump on content change; soldeer
-      # uses the dev-set foundry.toml version, no bump here).
+      # Bump versions. One cargo-release invocation bumps every listed crate and
+      # rewrites their inter-crate version pins atomically in one commit.
       - name: Bump Cargo version
         if: ${{ steps.cargo.outputs.changed == 'true' }}
         run: |
-          nix develop github:rainlanguage/rainix#rust-shell -c cargo release --no-confirm --execute --no-tag --no-push --no-publish -p ${{ inputs.crate }} patch
-          echo "CARGO_VERSION=v$(nix develop github:rainlanguage/rainix#rust-shell -c cargo pkgid -p ${{ inputs.crate }} | cut -d@ -f2)" >> $GITHUB_ENV
+          set -euo pipefail
+          PKGS=""
+          for CRATE in $CRATES; do PKGS="$PKGS -p $CRATE"; done
+          nix develop github:rainlanguage/rainix#rust-shell -c cargo release --no-confirm --execute --no-tag --no-push --no-publish $PKGS ${{ inputs.level }}
       - name: Bump NPM version
         if: ${{ inputs.npm-package != '' && steps.npm.outputs.changed == 'true' }}
         run: |
@@ -165,27 +172,25 @@ jobs:
           echo "NPM_VERSION=$NEW" >> $GITHUB_ENV
           git add package.json package-lock.json
           git commit -m "Package Release npm-${NEW}"
-      # Tag + push everything in one shot. Tags only created for items
-      # that actually changed.
-      #
-      # A repo with several crates wires multiple callers of this workflow
-      # chained via `needs:`. Each job checks out main at the workflow-trigger
-      # sha, so once an earlier job pushes its version-bump commit, a later
-      # job's push is non-fast-forward. Because the jobs are sequential, a
-      # fetch + rebase of our bump onto the latest main lands cleanly. The
-      # only file both bumps touch is the shared Cargo.lock; regenerate it
-      # deterministically if the rebase conflicts. Tags are created after the
-      # rebase so they point at the final commit shas.
+      # Tag + push everything in one shot. cargo tags are namespaced
+      # <crate>-v<version>; rebase onto any concurrent push first (only the
+      # shared Cargo.lock is expected to conflict).
       - name: Tag and push
         if: ${{ steps.cargo.outputs.changed == 'true' || steps.npm.outputs.changed == 'true' || steps.soldeer.outputs.changed == 'true' }}
         run: |
+          set -euo pipefail
           git fetch origin
           if ! git rebase "origin/${{ github.ref_name }}"; then
             nix develop github:rainlanguage/rainix#rust-shell -c cargo generate-lockfile
             git add Cargo.lock
             GIT_EDITOR=true git rebase --continue
           fi
-          if [ -n "${{ env.CARGO_VERSION }}" ]; then git tag ${{ inputs.crate }}-${{ env.CARGO_VERSION }}; fi
+          if [ "${{ steps.cargo.outputs.changed }}" = "true" ]; then
+            for CRATE in $CRATES; do
+              VER=$(nix develop github:rainlanguage/rainix#rust-shell -c cargo pkgid -p "$CRATE" | cut -d@ -f2)
+              git tag "$CRATE-v$VER"
+            done
+          fi
           if [ -n "${{ env.NPM_VERSION }}" ]; then git tag npm-${{ env.NPM_VERSION }}; fi
           if [ "${{ steps.soldeer.outputs.changed }}" = "true" ]; then git tag sol-v${{ steps.soldeer.outputs.local }}; fi
           git push origin HEAD
@@ -196,10 +201,15 @@ jobs:
         run: |
           TARBALL=$(nix develop github:rainlanguage/rainix#rust-node-shell -c npm pack --silent)
           mv "$TARBALL" npm_package_${{ env.NPM_VERSION }}.tgz
-      # Publishes.
+      # Publishes. Crates publish in dependency order so each crate's deps are
+      # already on the registry when it publishes.
       - name: Publish to crates.io
         if: ${{ steps.cargo.outputs.changed == 'true' }}
-        run: nix develop github:rainlanguage/rainix#rust-shell -c cargo publish -p ${{ inputs.crate }}
+        run: |
+          set -euo pipefail
+          for CRATE in $CRATES; do
+            nix develop github:rainlanguage/rainix#rust-shell -c cargo publish -p "$CRATE"
+          done
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
       - name: Publish to NPM
@@ -214,13 +224,15 @@ jobs:
         env:
           SOLDEER_API_TOKEN: ${{ secrets.SOLDEER_API_TOKEN }}
         run: nix develop github:rainlanguage/rainix#sol-shell -c forge soldeer push "${{ inputs.soldeer-package }}~${{ steps.soldeer.outputs.local }}"
-      # GitHub Releases.
+      # GitHub Releases. One per crate (loop), plus npm/soldeer.
       - name: GitHub Release (cargo)
         if: ${{ steps.cargo.outputs.changed == 'true' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.crate }}-${{ env.CARGO_VERSION }}
-          name: Cargo Crate Release ${{ inputs.crate }}-${{ env.CARGO_VERSION }}
+        run: |
+          set -euo pipefail
+          for CRATE in $CRATES; do
+            VER=$(nix develop github:rainlanguage/rainix#rust-shell -c cargo pkgid -p "$CRATE" | cut -d@ -f2)
+            gh release create "$CRATE-v$VER" --title "$CRATE-v$VER" --notes "Automated release of $CRATE $VER." || true
+          done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: GitHub Release (npm)
