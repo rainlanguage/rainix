@@ -110,7 +110,17 @@ jobs:
 
           changed=false
           for CRATE in $CRATES; do
-            nix develop github:rainlanguage/rainix#rust-shell -c cargo package -p "$CRATE" --allow-dirty --no-verify --quiet
+            # cargo package resolves deps against the registry. For a first
+            # interdependent workspace publish, a dependent (e.g. a lib that
+            # pins its sibling proc-macro at the new version) can't be packaged
+            # until that sibling is published — chicken-and-egg. If packaging
+            # fails, treat the crate as changed and let the dependency-ordered
+            # publish step sort it out (the sibling publishes first).
+            if ! nix develop github:rainlanguage/rainix#rust-shell -c cargo package -p "$CRATE" --allow-dirty --no-verify --quiet; then
+              echo "gate $CRATE: cannot package yet (likely an unpublished intra-workspace dep) -> changed"
+              changed=true
+              continue
+            fi
             LOCAL_CRATE=$(ls -t target/package/"$CRATE"-*.crate | head -1)
             NEW=$(norm_hash "$LOCAL_CRATE")
             resp=$(curl -sS -H "User-Agent: $UA" -w $'\n%{http_code}' "https://crates.io/api/v1/crates/$CRATE")
@@ -158,6 +168,13 @@ jobs:
           if [ "$LOCAL" = "$REMOTE" ]; then echo "changed=false" >> $GITHUB_OUTPUT; else echo "changed=true" >> $GITHUB_OUTPUT; fi
       # Bump versions. One cargo-release invocation bumps every listed crate and
       # rewrites their inter-crate version pins atomically in one commit.
+      #
+      # The bump commit is then amended to start with "Package Release" so the
+      # job-level `if: !startsWith(..., 'Package Release')` guard skips the run
+      # this push triggers. Otherwise cargo-release's default message
+      # ("chore: Release") re-triggers the workflow, and concurrent re-runs race
+      # on the same version bump (tag collisions). NPM bumps already commit a
+      # "Package Release npm-…" message, so only the cargo bump needs this.
       - name: Bump Cargo version
         if: ${{ steps.cargo.outputs.changed == 'true' }}
         run: |
@@ -165,6 +182,7 @@ jobs:
           PKGS=""
           for CRATE in $CRATES; do PKGS="$PKGS -p $CRATE"; done
           nix develop github:rainlanguage/rainix#rust-shell -c cargo release --no-confirm --execute --no-tag --no-push --no-publish $PKGS ${{ inputs.level }}
+          git commit --amend -m "Package Release: cargo version bump ($CRATES)"
       - name: Bump NPM version
         if: ${{ inputs.npm-package != '' && steps.npm.outputs.changed == 'true' }}
         run: |
