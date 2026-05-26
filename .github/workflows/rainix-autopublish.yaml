@@ -62,18 +62,48 @@ jobs:
         run: |
           git config --global user.email "${{ secrets.CI_GIT_EMAIL || 'github-actions[bot]@users.noreply.github.com' }}"
           git config --global user.name "${{ secrets.CI_GIT_USER || 'github-actions[bot]' }}"
-      # Detect cargo changes.
+      # Detect cargo changes by comparing the *normalized content* of the
+      # packaged crate against the latest published version. We must not
+      # compare raw file lists or tarball hashes: the published .crate
+      # prefixes every path with "<name>-<version>/" and adds generated files
+      # (.cargo_vcs_info.json, Cargo.toml.orig), so a naive comparison never
+      # matches and the crate re-bumps on every push. Instead we strip the
+      # version prefix, drop generated/volatile files, blank out the package
+      # version line, and hash the sorted (path, content) stream — so the hash
+      # is identical iff the source is identical modulo version.
       - name: Cargo hashes
         id: cargo
         run: |
-          NEW=$(nix develop github:rainlanguage/rainix#rust-shell -c cargo package -p ${{ inputs.crate }} --allow-dirty --quiet --list | LC_ALL=C sort | sha256sum | cut -d' ' -f1)
-          OLD_VERSION=$(curl -fsSL "https://crates.io/api/v1/crates/${{ inputs.crate }}" | python3 -c "import sys, json; print(json.load(sys.stdin)['crate']['max_version'])" 2>/dev/null || echo "none")
+          set -euo pipefail
+          CRATE=${{ inputs.crate }}
+
+          norm_hash() {
+            # $1 = path to a .crate tarball -> prints version-agnostic content hash
+            local f="$1" d root
+            d=$(mktemp -d)
+            tar -xzf "$f" -C "$d"
+            root=$(find "$d" -mindepth 1 -maxdepth 1 -type d)
+            rm -f "$root/.cargo_vcs_info.json" "$root/Cargo.toml.orig" "$root/Cargo.lock"
+            sed -i -E 's/^version = .*/version = "0.0.0"/' "$root/Cargo.toml"
+            ( cd "$root" && find . -type f | LC_ALL=C sort \
+                | while IFS= read -r p; do printf '%s\0' "$p"; cat "$p"; done \
+                | sha256sum | cut -d' ' -f1 )
+            rm -rf "$d"
+          }
+
+          # Package locally (no build/verify; we only need the tarball).
+          nix develop github:rainlanguage/rainix#rust-shell -c cargo package -p "$CRATE" --allow-dirty --no-verify --quiet
+          LOCAL_CRATE=$(ls -t target/package/"$CRATE"-*.crate | head -1)
+          NEW=$(norm_hash "$LOCAL_CRATE")
+
+          OLD_VERSION=$(curl -fsSL "https://crates.io/api/v1/crates/$CRATE" | python3 -c "import sys, json; print(json.load(sys.stdin)['crate']['max_version'])" 2>/dev/null || echo "none")
           if [ "$OLD_VERSION" = "none" ]; then
             OLD="none"
           else
-            curl -fsSL "https://crates.io/api/v1/crates/${{ inputs.crate }}/$OLD_VERSION/download" -o /tmp/old.crate
-            OLD=$(tar -tzf /tmp/old.crate 2>/dev/null | LC_ALL=C sort | sha256sum | cut -d' ' -f1)
+            curl -fsSL "https://crates.io/api/v1/crates/$CRATE/$OLD_VERSION/download" -o /tmp/old.crate
+            OLD=$(norm_hash /tmp/old.crate)
           fi
+
           echo "old=$OLD" >> $GITHUB_OUTPUT
           echo "new=$NEW" >> $GITHUB_OUTPUT
           if [ "$OLD" = "$NEW" ]; then echo "changed=false" >> $GITHUB_OUTPUT; else echo "changed=true" >> $GITHUB_OUTPUT; fi
