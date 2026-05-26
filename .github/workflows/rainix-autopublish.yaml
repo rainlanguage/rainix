@@ -119,9 +119,24 @@ jobs:
           git commit -m "Package Release npm-${NEW}"
       # Tag + push everything in one shot. Tags only created for items
       # that actually changed.
+      #
+      # A repo with several crates wires multiple callers of this workflow
+      # chained via `needs:`. Each job checks out main at the workflow-trigger
+      # sha, so once an earlier job pushes its version-bump commit, a later
+      # job's push is non-fast-forward. Because the jobs are sequential, a
+      # fetch + rebase of our bump onto the latest main lands cleanly. The
+      # only file both bumps touch is the shared Cargo.lock; regenerate it
+      # deterministically if the rebase conflicts. Tags are created after the
+      # rebase so they point at the final commit shas.
       - name: Tag and push
         if: ${{ steps.cargo.outputs.changed == 'true' || steps.npm.outputs.changed == 'true' || steps.soldeer.outputs.changed == 'true' }}
         run: |
+          git fetch origin
+          if ! git rebase "origin/${{ github.ref_name }}"; then
+            nix develop github:rainlanguage/rainix#rust-shell -c cargo generate-lockfile
+            git add Cargo.lock
+            GIT_EDITOR=true git rebase --continue
+          fi
           if [ -n "${{ env.CARGO_VERSION }}" ]; then git tag crate-${{ env.CARGO_VERSION }}; fi
           if [ -n "${{ env.NPM_VERSION }}" ]; then git tag npm-${{ env.NPM_VERSION }}; fi
           if [ "${{ steps.soldeer.outputs.changed }}" = "true" ]; then git tag sol-v${{ steps.soldeer.outputs.local }}; fi
