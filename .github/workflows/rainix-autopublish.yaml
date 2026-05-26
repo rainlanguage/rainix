@@ -62,6 +62,12 @@ jobs:
         run: |
           git config --global user.email "${{ secrets.CI_GIT_EMAIL || 'github-actions[bot]@users.noreply.github.com' }}"
           git config --global user.name "${{ secrets.CI_GIT_USER || 'github-actions[bot]' }}"
+          # cargo-release makes its own commit to bump the version. If the
+          # consumer installs pre-commit hooks (via its nix devshell), those
+          # fire on that commit and reformat files (e.g. taplo on Cargo.toml),
+          # so cargo-release sees "files modified by hook" and bails. The bump
+          # only changes a version value, so disable hooks for this job.
+          git config --global core.hooksPath /dev/null
       # Detect cargo changes by comparing the *normalized content* of the
       # packaged crate against the latest published version. We must not
       # compare raw file lists or tarball hashes: the published .crate
