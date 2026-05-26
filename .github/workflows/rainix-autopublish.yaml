@@ -74,12 +74,15 @@ jobs:
           CRATES="${{ inputs.crates != '' && inputs.crates || inputs.crate }}"
           if [ -z "$CRATES" ]; then echo "set inputs.crate or inputs.crates" >&2; exit 1; fi
           echo "CRATES=$CRATES" >> "$GITHUB_ENV"
-      - name: Cargo test
-        run: nix develop github:rainlanguage/rainix#rust-shell -c cargo test --workspace
       - name: Git config
         run: |
           git config --global user.email "${{ secrets.CI_GIT_EMAIL || 'github-actions[bot]@users.noreply.github.com' }}"
           git config --global user.name "${{ secrets.CI_GIT_USER || 'github-actions[bot]' }}"
+          # Entering the rainix devShell writes a generated .pre-commit-config.yaml
+          # into the tree. cargo-release refuses to run with any uncommitted change
+          # (including untracked files), so hide it from git via the local exclude
+          # — repo-agnostic, no consumer needs to remember to .gitignore it.
+          echo ".pre-commit-config.yaml" >> .git/info/exclude
       # Cargo change gate. Compare the *normalized content* of each packaged
       # crate against its published release — never raw file lists or tarball
       # hashes (the published .crate prefixes paths with "<name>-<version>/" and
@@ -166,6 +169,16 @@ jobs:
           echo "local=$LOCAL" >> $GITHUB_OUTPUT
           echo "remote=$REMOTE" >> $GITHUB_OUTPUT
           if [ "$LOCAL" = "$REMOTE" ]; then echo "changed=false" >> $GITHUB_OUTPUT; else echo "changed=true" >> $GITHUB_OUTPUT; fi
+      # Run the test suite only when something is actually going to publish. The
+      # change gates above are cheap (cargo package --no-verify + a hash compare,
+      # an npm/soldeer version lookup); the full workspace test is the expensive
+      # step. Gating it here means a no-op push to main (CI/doc changes, an empty
+      # re-trigger commit, an unchanged crate) short-circuits without paying for
+      # it. PR CI already tested the code before merge; this is the pre-publish
+      # gate on the exact merged commit.
+      - name: Cargo test
+        if: ${{ steps.cargo.outputs.changed == 'true' || steps.npm.outputs.changed == 'true' || steps.soldeer.outputs.changed == 'true' }}
+        run: nix develop github:rainlanguage/rainix#rust-shell -c cargo test --workspace
       # Bump versions. One cargo-release invocation bumps every listed crate and
       # rewrites their inter-crate version pins atomically in one commit.
       #
