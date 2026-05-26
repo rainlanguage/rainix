@@ -59,7 +59,9 @@ All tasks are Nix packages run via `nix run`. From a consuming repo use `..#`
 - Foundry: via foundry.nix
 - Graph CLI: 0.69.2
 - Goldsky CLI: 8.6.6
-- wasm-bindgen-cli: nixpkgs default (0.2.117 as of 2026-05)
+- wasm-bindgen-cli: 0.2.122 (pinned via `buildWasmBindgenCli` in flake.nix; must
+  match the `wasm-bindgen` crate version downstream lockfiles resolve to, or
+  `wasm-bindgen` over the wasm file fails)
 
 ## Architecture
 

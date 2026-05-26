@@ -39,6 +39,23 @@
           ];
         });
 
+        # wasm-bindgen CLI and crate versions must match exactly or
+        # `wasm-bindgen` over the wasm file fails. nixpkgs' default lags behind
+        # what current lockfiles resolve to, so pin the CLI to that version via
+        # the nixpkgs builder (no nixpkgs bump, no other tool churn).
+        wasm-bindgen-cli = pkgs.buildWasmBindgenCli rec {
+          src = pkgs.fetchCrate {
+            pname = "wasm-bindgen-cli";
+            version = "0.2.122";
+            hash = "sha256-vO4RSxi/sMWxmsEs3GuljdMfIRSu75A+Q+c5wgYToRU=";
+          };
+          cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
+            inherit src;
+            inherit (src) pname version;
+            hash = "sha256-Inup6vvJSG5ghNyeDPyZbfZo4d0LsMG2OJfStoaeDBs=";
+          };
+        };
+
         rust-build-inputs = [
           rust-toolchain
           pkgs.cargo-release
@@ -48,7 +65,7 @@
           pkgs.openssl
           pkgs.libusb1
           pkgs.pkg-config
-          pkgs.wasm-bindgen-cli
+          wasm-bindgen-cli
           pkgs.gettext
           pkgs.libiconv
           pkgs.cargo-flamegraph
