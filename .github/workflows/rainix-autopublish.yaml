@@ -185,7 +185,7 @@ jobs:
             git add Cargo.lock
             GIT_EDITOR=true git rebase --continue
           fi
-          if [ -n "${{ env.CARGO_VERSION }}" ]; then git tag crate-${{ env.CARGO_VERSION }}; fi
+          if [ -n "${{ env.CARGO_VERSION }}" ]; then git tag ${{ inputs.crate }}-${{ env.CARGO_VERSION }}; fi
           if [ -n "${{ env.NPM_VERSION }}" ]; then git tag npm-${{ env.NPM_VERSION }}; fi
           if [ "${{ steps.soldeer.outputs.changed }}" = "true" ]; then git tag sol-v${{ steps.soldeer.outputs.local }}; fi
           git push origin HEAD
@@ -219,8 +219,8 @@ jobs:
         if: ${{ steps.cargo.outputs.changed == 'true' }}
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: crate-${{ env.CARGO_VERSION }}
-          name: Cargo Crate Release crate-${{ env.CARGO_VERSION }}
+          tag_name: ${{ inputs.crate }}-${{ env.CARGO_VERSION }}
+          name: Cargo Crate Release ${{ inputs.crate }}-${{ env.CARGO_VERSION }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: GitHub Release (npm)
