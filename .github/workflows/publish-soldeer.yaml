@@ -32,6 +32,10 @@ jobs:
         with:
           name: rainlanguage
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          # No store-watching daemon: it checkpoints the nix DB
+          # concurrently with cache-nix-action and corrupts it ("database
+          # disk image is malformed"). Push happens once in the post step.
+          useDaemon: false
       - name: Restore and save Nix store
         uses: nix-community/cache-nix-action@v7
         with:
