@@ -28,7 +28,7 @@ jobs:
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
-          gc-max-store-size-linux: 1G
+          gc-max-store-size-linux: 8G
       - name: Push to Soldeer
         env:
           SOLDEER_API_TOKEN: ${{ secrets.SOLDEER_API_TOKEN }}

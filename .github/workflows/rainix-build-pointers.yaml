@@ -16,7 +16,7 @@ jobs:
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
-          gc-max-store-size-linux: 1G
+          gc-max-store-size-linux: 8G
       # Use rainix's sol-shell directly (slim — no rust/node/chromium).
       # Mixed-language consumers can ship their heavy default devShell without
       # paying for it on this purely Solidity-side check.
