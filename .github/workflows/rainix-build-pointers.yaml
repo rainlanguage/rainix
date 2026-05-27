@@ -30,6 +30,17 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
           gc-max-store-size-linux: 8G
+      # Cache Foundry's incremental compilation cache + artifacts so unchanged
+      # contracts aren't recompiled (forge build is the dominant CI cost).
+      - name: Cache Foundry build
+        uses: actions/cache@v4
+        with:
+          path: |
+            cache
+            out
+          key: foundry-${{ runner.os }}-${{ hashFiles('src/**/*.sol', 'test/**/*.sol', 'script/**/*.sol', 'foundry.toml', 'soldeer.lock', 'remappings.txt') }}
+          restore-keys: |
+            foundry-${{ runner.os }}-
       # Use rainix's sol-shell directly (slim — no rust/node/chromium).
       # Mixed-language consumers can ship their heavy default devShell without
       # paying for it on this purely Solidity-side check.
