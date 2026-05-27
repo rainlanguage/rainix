@@ -29,21 +29,10 @@ jobs:
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix#sol-shell -c forge soldeer install
-      # Regenerate generated inputs (e.g. CBOR meta) before building, by
-      # convention: a consumer whose artifacts depend on a pre-build step
-      # exposes a `prelude` flake app/package. Run it only if defined, so repos
-      # without one skip cleanly and a real prelude failure still surfaces.
-      - name: Prelude
-        run: |
-          set -euo pipefail
-          sys=$(nix eval --impure --raw --expr 'builtins.currentSystem')
-          if nix eval --impure --expr \
-            "let f = builtins.getFlake (toString ./.); in ((f.apps.\"$sys\" or {}) ? prelude) || ((f.packages.\"$sys\" or {}) ? prelude)" \
-            2>/dev/null | grep -qx true; then
-            nix run .#prelude
-          else
-            echo "no .#prelude in this flake; skipping"
-          fi
+      # No prelude/codegen step on purpose: committing the generated artifacts
+      # (meta, pointers, abi) is exactly what lets consumers build without a
+      # prelude. This job rebuilds from the committed sources and asserts the
+      # committed artifacts still match — it does not regenerate meta inputs.
       - name: Regenerate pointer artifacts
         if: hashFiles('script/BuildPointers.sol') != ''
         run: nix develop github:rainlanguage/rainix#sol-shell -c forge script ./script/BuildPointers.sol
