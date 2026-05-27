@@ -43,27 +43,31 @@
         # `wasm-bindgen` over the wasm file fails. nixpkgs' default lags behind
         # what current lockfiles resolve to, so pin the CLI to that version via
         # the nixpkgs builder (no nixpkgs bump, no other tool churn).
-        wasm-bindgen-cli = pkgs.buildWasmBindgenCli rec {
-          # `fetchCrate` defaults to the crates.io API endpoint
-          # (`/api/v1/crates/.../download`), which 403s generic User-Agents —
-          # including nix's fetcher — so any build that has to fetch this crate
-          # (i.e. a nix store cache miss) fails with "cannot download ... from
-          # any mirror". Override the URL to the static.crates.io CDN, which
-          # serves the byte-identical .crate with no User-Agent gate. fetchCrate
-          # still unpacks the tarball and sets pname/version passthru, so the
-          # NAR hash and all downstream usage are unchanged.
-          src = pkgs.fetchCrate {
+        wasm-bindgen-cli =
+          let
             pname = "wasm-bindgen-cli";
             version = "0.2.122";
-            url = "https://static.crates.io/crates/wasm-bindgen-cli/wasm-bindgen-cli-0.2.122.crate";
-            hash = "sha256-vO4RSxi/sMWxmsEs3GuljdMfIRSu75A+Q+c5wgYToRU=";
+          in
+          pkgs.buildWasmBindgenCli rec {
+            # `fetchCrate` defaults to the crates.io API endpoint
+            # (`/api/v1/crates/.../download`), which 403s generic User-Agents —
+            # including nix's fetcher — so any build that has to fetch this crate
+            # (i.e. a nix store cache miss) fails with "cannot download ... from
+            # any mirror". Override the URL to the static.crates.io CDN, which
+            # serves the byte-identical .crate with no User-Agent gate. fetchCrate
+            # still unpacks the tarball and sets pname/version passthru, so the
+            # NAR hash and all downstream usage are unchanged.
+            src = pkgs.fetchCrate {
+              inherit pname version;
+              url = "https://static.crates.io/crates/${pname}/${pname}-${version}.crate";
+              hash = "sha256-vO4RSxi/sMWxmsEs3GuljdMfIRSu75A+Q+c5wgYToRU=";
+            };
+            cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
+              inherit src;
+              inherit (src) pname version;
+              hash = "sha256-Inup6vvJSG5ghNyeDPyZbfZo4d0LsMG2OJfStoaeDBs=";
+            };
           };
-          cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
-            inherit src;
-            inherit (src) pname version;
-            hash = "sha256-Inup6vvJSG5ghNyeDPyZbfZo4d0LsMG2OJfStoaeDBs=";
-          };
-        };
 
         rust-build-inputs = [
           rust-toolchain
