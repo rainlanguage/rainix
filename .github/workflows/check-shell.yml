@@ -35,7 +35,7 @@ jobs:
           # collect garbage until the Nix store size (in bytes) is at most this number
           # before trying to save a new cache
           # 1G = 1073741824
-          gc-max-store-size-linux: 1G
+          gc-max-store-size-linux: 8G
       - run: NIXPKGS_ALLOW_INSECURE=1 nix flake check --impure
       - run: nix develop --command cargo release --version
       - run: nix develop --command flamegraph --help
