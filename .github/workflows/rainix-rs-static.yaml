@@ -19,3 +19,13 @@ jobs:
           gc-max-store-size-linux: 1G
       - uses: Swatinem/rust-cache@v2
       - run: nix develop github:rainlanguage/rainix#rust-shell -c rainix-rs-static
+      # Run the rainix pre-commit hook bundle (taplo, the nix hooks, yamlfmt,
+      # shellcheck, rustfmt) over all files — the same hooks a local commit
+      # runs. rainix-rs-static only covers rustfmt + clippy, so a file that is
+      # hook-dirty but rustfmt-clean (e.g. a non-canonical Cargo.toml) used to
+      # pass PR CI and only blow up later in the autopublish bump commit. Folded
+      # in as a step (not a separate job) to reuse this job's warm Nix store
+      # rather than re-paying runner setup. Reuses rust-shell, so prettier-rainix
+      # (which needs the default shell's RAINIX_PRETTIER_BUNDLE_DIR) no-ops here;
+      # frontend repos format svelte/ts via their own pipeline.
+      - run: nix develop github:rainlanguage/rainix#rust-shell -c pre-commit run --all-files --show-diff-on-failure --color always
