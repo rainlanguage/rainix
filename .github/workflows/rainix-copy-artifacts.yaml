@@ -29,16 +29,11 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
           gc-max-store-size-linux: 8G
-      # Cache Foundry's incremental compilation cache only (NOT out/): out/ is
-      # regenerated fresh each run so the committed-artifact assert stays a true
-      # clean-build check, while cache/ still speeds recompilation.
-      - name: Cache Foundry build
-        uses: actions/cache@v4
-        with:
-          path: cache
-          key: foundry-co-${{ runner.os }}-${{ hashFiles('src/**/*.sol', 'test/**/*.sol', 'script/**/*.sol', 'foundry.toml', 'soldeer.lock', 'remappings.txt') }}
-          restore-keys: |
-            foundry-co-${{ runner.os }}-
+      # No Foundry build cache here on purpose: this is a clean-build determinism
+      # check, so out/ must be regenerated fresh — and caching only cache/ (not
+      # out/) gives no real speedup, since forge recompiles to rebuild the
+      # missing out/ artifacts anyway. The cache+out workflows (sol-test etc.)
+      # keep the cache; copy-artifacts skips the save/restore overhead.
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix#sol-shell -c forge soldeer install
