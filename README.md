@@ -147,24 +147,31 @@ jobs:
 Consumers needing only one of the three should call the individual reusable
 directly rather than this composite.
 
-#### rainix-build-pointers
+#### rainix-copy-artifacts
 
-`.github/workflows/rainix-build-pointers.yaml` regenerates
-`./script/BuildPointers.sol` artifacts, runs `forge fmt`, then asserts
-`git diff --exit-code` — failing the PR if a maintainer changed
-pointer-affecting source without committing the updated
-`src/generated/*.pointers.sol` files.
+`.github/workflows/rainix-copy-artifacts.yaml` regenerates committed generated
+Solidity artifacts from source and asserts `git diff --exit-code` — failing the
+PR if a maintainer changed source without committing the regenerated files. In a
+single job it runs whichever of these the repo has:
+
+- `./script/BuildPointers.sol` → `src/generated/*.pointers.sol`
+- `forge build` + `./script/CopyArtifacts.sol --ffi` → committed ABI JSON
+
+then `forge fmt` and the `git diff` assert.
 
 ```yaml
-name: build-pointers
+name: copy-artifacts
 on: [push]
 jobs:
-  build-pointers:
-    uses: rainlanguage/rainix/.github/workflows/rainix-build-pointers.yaml@main
+  copy-artifacts:
+    uses: rainlanguage/rainix/.github/workflows/rainix-copy-artifacts.yaml@main
+    secrets: inherit
 ```
 
+This replaces the former `rainix-build-pointers` reusable — a pointer-only repo
+just omits `CopyArtifacts.sol` (the copy step is skipped via `hashFiles`).
 Always runs through rainix's `sol-shell` (slim), regardless of the consumer's
-default devShell.
+default devShell. `secrets: inherit` carries `CACHIX_AUTH_TOKEN`.
 
 #### rainix-rs-static
 
