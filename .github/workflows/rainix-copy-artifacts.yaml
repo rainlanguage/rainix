@@ -37,10 +37,14 @@ jobs:
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix#sol-shell -c forge soldeer install
-      # No prelude/codegen step on purpose: committing the generated artifacts
-      # (meta, pointers, abi) is exactly what lets consumers build without a
-      # prelude. This job rebuilds from the committed sources and asserts the
-      # committed artifacts still match — it does not regenerate meta inputs.
+      # Currency-check every committed generated artifact by re-running each
+      # consumer-provided codegen step. The final git diff fails if any
+      # committed file has drifted from its source. The build-meta.sh hook is
+      # consumer-supplied because rain meta build's invocation (input/output
+      # filenames, meta type) varies per repo.
+      - name: Regenerate meta artifacts
+        if: hashFiles('script/build-meta.sh') != ''
+        run: nix develop github:rainlanguage/rainix#sol-shell -c ./script/build-meta.sh
       - name: Regenerate pointer artifacts
         if: hashFiles('script/BuildPointers.sol') != ''
         run: nix develop github:rainlanguage/rainix#sol-shell -c forge script ./script/BuildPointers.sol
@@ -54,6 +58,6 @@ jobs:
       - name: Assert committed artifacts match freshly built
         run: |
           if ! git diff --exit-code; then
-            echo "::error::Committed meta/pointer/abi artifacts are stale. Regenerate (.#prelude, BuildPointers.sol, CopyArtifacts.sol, forge fmt) and commit."
+            echo "::error::Committed meta/pointer/abi artifacts are stale. Regenerate (script/build-meta.sh, script/BuildPointers.sol, script/CopyArtifacts.sol, forge fmt) and commit."
             exit 1
           fi
