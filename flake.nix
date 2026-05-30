@@ -611,11 +611,7 @@
           # wasm-pack. No sol-tasks, no subgraph, no sqlite/yq/age.
           wasm-shell = pkgs.mkShell {
             buildInputs =
-              rust-build-inputs
-              ++ node-build-inputs
-              ++ rs-tasks
-              ++ common-shell-inputs
-              ++ [ pkgs.wasm-pack ];
+              rust-build-inputs ++ node-build-inputs ++ rs-tasks ++ common-shell-inputs ++ [ pkgs.wasm-pack ];
             shellHook = ''
               ${pre-commit.shellHook}
               ${source-dotenv}
