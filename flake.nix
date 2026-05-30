@@ -604,6 +604,22 @@
             '';
           };
 
+          # Slim shell for repos that ship a wasm-pack browser test or an
+          # npm wrapper around the rust-compiled WASM. rust-node-shell +
+          # wasm-pack. No sol-tasks, no subgraph, no sqlite/yq/age.
+          wasm-shell = pkgs.mkShell {
+            buildInputs =
+              rust-build-inputs
+              ++ node-build-inputs
+              ++ rs-tasks
+              ++ common-shell-inputs
+              ++ [ pkgs.wasm-pack ];
+            shellHook = ''
+              ${pre-commit.shellHook}
+              ${source-dotenv}
+            '';
+          };
+
           # Slim shell for subgraph repos: node + the-graph + goldsky +
           # subgraph-tasks. No rust, no foundry, no sqlite/yq/age. Lets
           # consumers avoid the heavy default closure when CI is just
