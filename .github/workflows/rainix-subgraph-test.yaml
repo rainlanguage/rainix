@@ -1,0 +1,31 @@
+name: rainix-subgraph-test
+on:
+  workflow_call:
+jobs:
+  subgraph-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: nixbuild/nix-quick-install-action@v30
+        with:
+          nix_conf: |
+            keep-env-derivations = true
+            keep-outputs = true
+      # Substitute prebuilt rainix derivations from the shared Cachix binary
+      # cache. Pushes new paths when CACHIX_AUTH_TOKEN is set; continue-on-error
+      # so a missing cache/token or a Cachix outage degrades to a normal build.
+      - uses: cachix/cachix-action@v15
+        continue-on-error: true
+        with:
+          name: rainlanguage
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          # No store-watching daemon: it checkpoints the nix DB concurrently
+          # with cache-nix-action and corrupts it. Push happens in the post step.
+          useDaemon: false
+      - name: Restore and save Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 8G
+      - run: nix develop github:rainlanguage/rainix#subgraph-shell -c subgraph-test

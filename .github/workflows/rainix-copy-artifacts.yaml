@@ -53,11 +53,14 @@ jobs:
       - name: Copy forge artifacts into committed location
         if: hashFiles('script/CopyArtifacts.sol') != ''
         run: nix develop github:rainlanguage/rainix#sol-shell -c forge script ./script/CopyArtifacts.sol --ffi
+      - name: Regenerate subgraph artifacts
+        if: hashFiles('script/build-subgraph.sh') != ''
+        run: nix develop github:rainlanguage/rainix#subgraph-shell -c ./script/build-subgraph.sh
       - name: Format (so generated artifacts match committed style)
         run: nix develop github:rainlanguage/rainix#sol-shell -c forge fmt
       - name: Assert committed artifacts match freshly built
         run: |
           if ! git diff --exit-code; then
-            echo "::error::Committed meta/pointer/abi artifacts are stale. Regenerate (script/build-meta.sh, script/BuildPointers.sol, script/CopyArtifacts.sol, forge fmt) and commit."
+            echo "::error::Committed meta/pointer/abi/subgraph artifacts are stale. Regenerate (script/build-meta.sh, script/BuildPointers.sol, script/CopyArtifacts.sol, script/build-subgraph.sh, forge fmt) and commit."
             exit 1
           fi

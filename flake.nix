@@ -604,6 +604,25 @@
             '';
           };
 
+          # Slim shell for subgraph repos: node + the-graph + goldsky +
+          # subgraph-tasks. No rust, no foundry, no sqlite/yq/age. Lets
+          # consumers avoid the heavy default closure when CI is just
+          # subgraph-test.
+          subgraph-shell = pkgs.mkShell {
+            buildInputs =
+              node-build-inputs
+              ++ subgraph-tasks
+              ++ common-shell-inputs
+              ++ [
+                the-graph
+                goldsky
+              ];
+            shellHook = ''
+              ${pre-commit.shellHook}
+              ${source-dotenv}
+            '';
+          };
+
           default = pkgs.mkShell {
             buildInputs =
               sol-build-inputs
