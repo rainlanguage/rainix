@@ -299,7 +299,7 @@
           name = "subgraph-test";
           body = ''
             set -euxo pipefail
-            (cd ./subgraph && docker compose up --abort-on-container-exit)
+            (cd ./subgraph && ${pkgs.nodejs_22}/bin/npm ci && docker compose up --abort-on-container-exit)
           '';
         };
 
