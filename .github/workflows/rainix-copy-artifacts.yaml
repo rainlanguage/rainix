@@ -53,14 +53,17 @@ jobs:
       - name: Copy forge artifacts into committed location
         if: hashFiles('script/CopyArtifacts.sol') != ''
         run: nix develop github:rainlanguage/rainix#sol-shell -c forge script ./script/CopyArtifacts.sol --ffi
-      - name: Regenerate subgraph artifacts
-        if: hashFiles('script/build-subgraph.sh') != ''
-        run: nix develop github:rainlanguage/rainix#subgraph-shell -c ./script/build-subgraph.sh
+      # Catch-all post-forge regen hook: consumer-supplied. Runs outside any
+      # nix devshell so the script picks shells per command (subgraph-shell,
+      # sol-shell, etc.) for whatever derived artifacts it emits.
+      - name: Regenerate derived artifacts
+        if: hashFiles('script/build.sh') != ''
+        run: ./script/build.sh
       - name: Format (so generated artifacts match committed style)
         run: nix develop github:rainlanguage/rainix#sol-shell -c forge fmt
       - name: Assert committed artifacts match freshly built
         run: |
           if ! git diff --exit-code; then
-            echo "::error::Committed meta/pointer/abi/subgraph artifacts are stale. Regenerate (script/build-meta.sh, script/BuildPointers.sol, script/CopyArtifacts.sol, script/build-subgraph.sh, forge fmt) and commit."
+            echo "::error::Committed artifacts are stale. Regenerate (script/build-meta.sh, script/BuildPointers.sol, script/CopyArtifacts.sol, script/build.sh, forge fmt) and commit."
             exit 1
           fi
