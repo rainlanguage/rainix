@@ -77,6 +77,7 @@
           pkgs.gmp
           pkgs.openssl
           pkgs.libusb1
+          pkgs.sqlite
           pkgs.pkg-config
           wasm-bindgen-cli
           pkgs.gettext
@@ -298,7 +299,7 @@
           name = "subgraph-test";
           body = ''
             set -euxo pipefail
-            (cd ./subgraph && docker compose up --abort-on-container-exit)
+            (cd ./subgraph && ${pkgs.nodejs_22}/bin/npm ci && docker compose up --abort-on-container-exit)
           '';
         };
 
@@ -380,6 +381,7 @@
             bats test/bats/devshell/rust-shell/closure.test.bats
             bats test/bats/devshell/rust-shell/cargo-expand.test.bats
             bats test/bats/devshell/rust-shell/anvil.test.bats
+            bats test/bats/devshell/rust-shell/sqlite.test.bats
           '';
           additionalBuildInputs = [ pkgs.bats ] ++ rust-build-inputs;
         };
@@ -609,11 +611,7 @@
           # wasm-pack. No sol-tasks, no subgraph, no sqlite/yq/age.
           wasm-shell = pkgs.mkShell {
             buildInputs =
-              rust-build-inputs
-              ++ node-build-inputs
-              ++ rs-tasks
-              ++ common-shell-inputs
-              ++ [ pkgs.wasm-pack ];
+              rust-build-inputs ++ node-build-inputs ++ rs-tasks ++ common-shell-inputs ++ [ pkgs.wasm-pack ];
             shellHook = ''
               ${pre-commit.shellHook}
               ${source-dotenv}
