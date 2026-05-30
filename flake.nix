@@ -77,6 +77,7 @@
           pkgs.gmp
           pkgs.openssl
           pkgs.libusb1
+          pkgs.sqlite
           pkgs.pkg-config
           wasm-bindgen-cli
           pkgs.gettext
