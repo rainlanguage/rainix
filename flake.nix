@@ -381,6 +381,7 @@
             bats test/bats/devshell/rust-shell/closure.test.bats
             bats test/bats/devshell/rust-shell/cargo-expand.test.bats
             bats test/bats/devshell/rust-shell/anvil.test.bats
+            bats test/bats/devshell/rust-shell/sqlite.test.bats
           '';
           additionalBuildInputs = [ pkgs.bats ] ++ rust-build-inputs;
         };
