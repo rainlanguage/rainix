@@ -182,7 +182,7 @@ jobs:
         id: soldeer
         run: |
           LOCAL=$(awk -F\" '/^version[[:space:]]*=/ { print $2; exit }' foundry.toml)
-          REMOTE=$(curl -fsSL "https://api.soldeer.xyz/api/v1/revisions/all?package_name=${{ inputs.soldeer-package }}&offset=0&limit=1" \
+          REMOTE=$(curl -fsSL "https://api.soldeer.xyz/api/v1/revision?project_name=${{ inputs.soldeer-package }}&offset=0&limit=1" \
             | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['data'][0]['version'] if d.get('data') else 'none')" 2>/dev/null \
             || echo "none")
           echo "local=$LOCAL" >> $GITHUB_OUTPUT
