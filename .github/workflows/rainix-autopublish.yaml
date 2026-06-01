@@ -36,7 +36,7 @@ on:
       CI_GIT_USER:
         required: false
       CARGO_REGISTRY_TOKEN:
-        required: true
+        required: false
       NPM_PUBLISH_PRIVATE_TOKEN:
         required: false
       SOLDEER_API_TOKEN:
@@ -85,7 +85,12 @@ jobs:
       - name: Resolve crates
         run: |
           CRATES="${{ inputs.crates != '' && inputs.crates || inputs.crate }}"
-          if [ -z "$CRATES" ]; then echo "set inputs.crate or inputs.crates" >&2; exit 1; fi
+          # A crate is required only when nothing else is being published; npm-
+          # and soldeer-only callers legitimately have no crate.
+          if [ -z "$CRATES" ] && [ -z "${{ inputs.npm-package }}" ] && [ -z "${{ inputs.soldeer-package }}" ]; then
+            echo "set inputs.crate/crates, or inputs.npm-package, or inputs.soldeer-package" >&2
+            exit 1
+          fi
           echo "CRATES=$CRATES" >> "$GITHUB_ENV"
       - name: Git config
         run: |
@@ -107,6 +112,7 @@ jobs:
       # workspace releases as a unit: changed=true if ANY listed crate differs.
       - name: Cargo hashes
         id: cargo
+        if: ${{ inputs.crates != '' || inputs.crate != '' }}
         run: |
           set -euo pipefail
           UA="rainix-autopublish (+https://github.com/rainlanguage/rainix)"
@@ -190,7 +196,7 @@ jobs:
       # it. PR CI already tested the code before merge; this is the pre-publish
       # gate on the exact merged commit.
       - name: Cargo test
-        if: ${{ steps.cargo.outputs.changed == 'true' || steps.npm.outputs.changed == 'true' || steps.soldeer.outputs.changed == 'true' }}
+        if: ${{ (inputs.crates != '' || inputs.crate != '') && (steps.cargo.outputs.changed == 'true' || steps.npm.outputs.changed == 'true' || steps.soldeer.outputs.changed == 'true') }}
         run: nix develop github:rainlanguage/rainix#rust-shell -c cargo test --workspace
       # Bump versions. One cargo-release invocation bumps every listed crate and
       # rewrites their inter-crate version pins atomically in one commit.
