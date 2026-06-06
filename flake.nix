@@ -309,8 +309,11 @@
             set -euxo pipefail
             source ${./lib/subgraph.sh}
 
-            ${pkgs.foundry-bin}/bin/forge build
-            (cd ./subgraph && ${pkgs.nodejs_22}/bin/npm ci && ${the-graph}/bin/graph codegen)
+            # subgraph/abis and subgraph/generated are committed, so the deploy
+            # builds the subgraph directly from them with just the graph +
+            # goldsky toolchain — the same committed-artifact path as
+            # subgraph-test, slim enough for the subgraph shell.
+            (cd ./subgraph && ${pkgs.nodejs_22}/bin/npm ci)
 
             commit="$(${pkgs.git}/bin/git rev-parse --short HEAD)"
             for network in $(subgraph_networks ./subgraph/networks.json); do
@@ -328,7 +331,7 @@
               fi
             done
           '';
-          additionalBuildInputs = sol-build-inputs ++ node-build-inputs;
+          additionalBuildInputs = node-build-inputs;
         };
 
         subgraph-tasks = [
