@@ -24,7 +24,7 @@ on:
         type: string
         default: ''
       soldeer-package:
-        description: optional Soldeer registry package name (e.g. rain-erc). When set, the workflow also publishes the current foundry.toml version to Soldeer when it diverges from the latest registry entry. Soldeer version is read from foundry.toml [package].version; no auto-bump (dev manages soldeer versions explicitly).
+        description: optional Soldeer registry package name (e.g. rain-erc). When set, the workflow content-gates the Soldeer package (dry-run zip vs the latest published revision) and AUTO-BUMPS foundry.toml [package].version on a content change, then publishes — same merge-driven model as the crates (no manual version bump needed).
         required: false
         type: string
         default: ''
@@ -175,19 +175,39 @@ jobs:
             echo "new=$NEW" >> $GITHUB_OUTPUT
             if [ "$OLD" = "$NEW" ]; then echo "changed=false" >> $GITHUB_OUTPUT; else echo "changed=true" >> $GITHUB_OUTPUT; fi
           '
-      # Detect soldeer changes (version-divergence only — dev manages
-      # foundry.toml [package].version explicitly).
-      - name: Soldeer version check
+      # Soldeer content gate + auto-bump. Mirror the cargo gate: compare the
+      # NORMALIZED content of what `forge soldeer push --dry-run` would upload
+      # against the latest published revision's zip (the registry returns a
+      # download URL). foundry.toml's version line is blanked in the hash so a
+      # version bump alone is never seen as a content change (no infinite
+      # re-bump). On a content change the next step bumps foundry.toml
+      # [package].version (patch on the greater of local/registry, kept
+      # monotonic) so Soldeer publishes on merge like the crates — no manual
+      # version bump. The hash helper is base64'd to avoid YAML heredoc fragility.
+      - name: Soldeer content gate
         if: ${{ inputs.soldeer-package != '' }}
         id: soldeer
         run: |
+          set -euo pipefail
+          PKG="${{ inputs.soldeer-package }}"
+          echo 'aW1wb3J0IHN5cywgemlwZmlsZSwgaGFzaGxpYiwgcmUKaCA9IGhhc2hsaWIuc2hhMjU2KCkKd2l0aCB6aXBmaWxlLlppcEZpbGUoc3lzLmFyZ3ZbMV0pIGFzIHo6CiAgICBmb3IgbiBpbiBzb3J0ZWQoeCBmb3IgeCBpbiB6Lm5hbWVsaXN0KCkgaWYgbm90IHguZW5kc3dpdGgoIi8iKSk6CiAgICAgICAgZCA9IHoucmVhZChuKQogICAgICAgIGlmIG4gPT0gImZvdW5kcnkudG9tbCI6CiAgICAgICAgICAgIGQgPSByZS5zdWIocmIiKD9tKV52ZXJzaW9uXHMqPS4qIiwgcmIndmVyc2lvbiA9ICIwLjAuMCInLCBkKQogICAgICAgIGgudXBkYXRlKG4uZW5jb2RlKCkpOyBoLnVwZGF0ZShiIlwwIik7IGgudXBkYXRlKGQpCnByaW50KGguaGV4ZGlnZXN0KCkpCg==' | base64 -d > /tmp/soldeer_normhash.py
+          nh() { python3 /tmp/soldeer_normhash.py "$1"; }
+          META=$(curl -fsSL "https://api.soldeer.xyz/api/v1/revision?project_name=$PKG&offset=0&limit=1" || echo '{}')
+          REMOTE=$(printf '%s' "$META" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['data'][0]['version'] if d.get('data') else 'none')")
+          URL=$(printf '%s' "$META" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['data'][0]['url'] if d.get('data') else '')")
           LOCAL=$(awk -F\" '/^version[[:space:]]*=/ { print $2; exit }' foundry.toml)
-          REMOTE=$(curl -fsSL "https://api.soldeer.xyz/api/v1/revision?project_name=${{ inputs.soldeer-package }}&offset=0&limit=1" \
-            | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['data'][0]['version'] if d.get('data') else 'none')" 2>/dev/null \
-            || echo "none")
-          echo "local=$LOCAL" >> $GITHUB_OUTPUT
-          echo "remote=$REMOTE" >> $GITHUB_OUTPUT
-          if [ "$LOCAL" = "$REMOTE" ]; then echo "changed=false" >> $GITHUB_OUTPUT; else echo "changed=true" >> $GITHUB_OUTPUT; fi
+          # Local package content: dry-run writes <cwd-basename>.zip into the cwd.
+          rm -f ./*.zip
+          nix develop github:rainlanguage/rainix#sol-shell -c forge soldeer push "$PKG~$LOCAL" --dry-run
+          NEW=$(nh "$(ls -t ./*.zip | head -1)"); rm -f ./*.zip
+          if [ -z "$URL" ] || [ "$REMOTE" = "none" ]; then OLD="none"; else
+            curl -fsSL "$URL" -o /tmp/soldeer_pub.zip; OLD=$(nh /tmp/soldeer_pub.zip); fi
+          echo "soldeer gate: remote=$REMOTE local=$LOCAL OLD=$OLD NEW=$NEW"
+          BASE="$REMOTE"; [ "$BASE" = "none" ] && BASE="$LOCAL"
+          NEXT=$(python3 -c "p=[int(x) for x in (('$BASE'.split('.')+['0','0','0'])[:3])]; p[2]+=1; print('.'.join(map(str,p)))")
+          if [ "$OLD" != "$NEW" ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; else echo "changed=false" >> "$GITHUB_OUTPUT"; fi
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "remote=$REMOTE" >> "$GITHUB_OUTPUT"
       # Run the test suite only when something is actually going to publish. The
       # change gates above are cheap (cargo package --no-verify + a hash compare,
       # an npm/soldeer version lookup); the full workspace test is the expensive
@@ -222,6 +242,17 @@ jobs:
           echo "NPM_VERSION=$NEW" >> $GITHUB_ENV
           git add package.json package-lock.json
           git commit -m "Package Release npm-${NEW}"
+      # Auto-bump the Soldeer package version when its content changed, so it
+      # publishes on merge like the crates. The "Package Release" prefix makes
+      # the job-level skip guard ignore the push this commit triggers.
+      - name: Bump Soldeer version
+        if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
+        run: |
+          set -euo pipefail
+          NEXT="${{ steps.soldeer.outputs.next }}"
+          sed -i -E "0,/^version[[:space:]]*=.*/s//version = \"$NEXT\"/" foundry.toml
+          git add foundry.toml
+          git commit -m "Package Release: soldeer ${{ inputs.soldeer-package }} $NEXT"
       # Tag + push everything in one shot. cargo tags are namespaced
       # <crate>-v<version>; rebase onto any concurrent push first (only the
       # shared Cargo.lock is expected to conflict).
@@ -242,7 +273,7 @@ jobs:
             done
           fi
           if [ -n "${{ env.NPM_VERSION }}" ]; then git tag npm-${{ env.NPM_VERSION }}; fi
-          if [ "${{ steps.soldeer.outputs.changed }}" = "true" ]; then git tag sol-v${{ steps.soldeer.outputs.local }}; fi
+          if [ "${{ steps.soldeer.outputs.changed }}" = "true" ]; then git tag sol-v${{ steps.soldeer.outputs.next }}; fi
           git push origin HEAD
           git push origin --tags
       # Package npm tarball for upload step.
@@ -273,7 +304,7 @@ jobs:
         if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
         env:
           SOLDEER_API_TOKEN: ${{ secrets.SOLDEER_API_TOKEN }}
-        run: nix develop github:rainlanguage/rainix#sol-shell -c forge soldeer push "${{ inputs.soldeer-package }}~${{ steps.soldeer.outputs.local }}"
+        run: nix develop github:rainlanguage/rainix#sol-shell -c forge soldeer push "${{ inputs.soldeer-package }}~${{ steps.soldeer.outputs.next }}"
       # GitHub Releases. One per crate (loop), plus npm/soldeer.
       - name: GitHub Release (cargo)
         if: ${{ steps.cargo.outputs.changed == 'true' }}
@@ -298,7 +329,7 @@ jobs:
         if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: sol-v${{ steps.soldeer.outputs.local }}
-          name: Soldeer Release sol-v${{ steps.soldeer.outputs.local }}
+          tag_name: sol-v${{ steps.soldeer.outputs.next }}
+          name: Soldeer Release sol-v${{ steps.soldeer.outputs.next }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
