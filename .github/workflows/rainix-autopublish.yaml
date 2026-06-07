@@ -203,8 +203,15 @@ jobs:
           if [ -z "$URL" ] || [ "$REMOTE" = "none" ]; then OLD="none"; else
             curl -fsSL "$URL" -o /tmp/soldeer_pub.zip; OLD=$(nh /tmp/soldeer_pub.zip); fi
           echo "soldeer gate: remote=$REMOTE local=$LOCAL OLD=$OLD NEW=$NEW"
-          BASE="$REMOTE"; [ "$BASE" = "none" ] && BASE="$LOCAL"
-          NEXT=$(python3 -c "p=[int(x) for x in (('$BASE'.split('.')+['0','0','0'])[:3])]; p[2]+=1; print('.'.join(map(str,p)))")
+          # Next version: a first publish (never on the registry) uses LOCAL
+          # as-is; otherwise patch-bump the GREATER of local/remote so NEXT is
+          # always > LOCAL — foundry.toml left ahead of the registry by a prior
+          # bumped-but-unpublished run must not yield a no-op bump.
+          if [ "$REMOTE" = "none" ]; then
+            NEXT="$LOCAL"
+          else
+            NEXT=$(python3 -c "t=lambda v:[int(x) for x in (v.split('.')+['0','0','0'])[:3]]; b=max(t('$LOCAL'),t('$REMOTE')); b[2]+=1; print('.'.join(map(str,b)))")
+          fi
           if [ "$OLD" != "$NEW" ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; else echo "changed=false" >> "$GITHUB_OUTPUT"; fi
           echo "next=$NEXT" >> "$GITHUB_OUTPUT"
           echo "remote=$REMOTE" >> "$GITHUB_OUTPUT"
@@ -252,7 +259,15 @@ jobs:
           NEXT="${{ steps.soldeer.outputs.next }}"
           sed -i -E "0,/^version[[:space:]]*=.*/s//version = \"$NEXT\"/" foundry.toml
           git add foundry.toml
-          git commit -m "Package Release: soldeer ${{ inputs.soldeer-package }} $NEXT"
+          # A first publish (NEXT == the current foundry.toml version) stages
+          # nothing — only commit when the version actually changed, so the bump
+          # step never fails with "nothing to commit". --no-verify: an automated
+          # version bump must not be gated on the repo's pre-commit hooks.
+          if git diff --cached --quiet; then
+            echo "foundry.toml already at $NEXT; nothing to commit"
+          else
+            git commit --no-verify -m "Package Release: soldeer ${{ inputs.soldeer-package }} $NEXT"
+          fi
       # Tag + push everything in one shot. cargo tags are namespaced
       # <crate>-v<version>; rebase onto any concurrent push first (only the
       # shared Cargo.lock is expected to conflict).
