@@ -1,0 +1,129 @@
+##
+## Reusable Vercel deploy for rainlanguage webapp repos.
+##
+## The caller owns the build via a fixed-path build script (default
+## `./script/vercel-build.sh`) that emits the Vercel *prebuilt* output; this
+## workflow owns the generic wrapper: checkout, nix, the nix-store / cargo / npm
+## caches, and the Vercel pull + deploy. Drives both preview and production via
+## the `environment` / `production` inputs.
+##
+## SECURITY MODEL (preserve when editing):
+##  - Secrets are referenced only by the Vercel CLI steps, never by the build
+##    step (the build runs caller-branch content; it gets only the public
+##    WalletConnect id).
+##  - The Vercel CLI is installed locally and invoked via an absolute path in
+##    $VERCEL_BIN to avoid PATH hijacking; those steps run with a hardened shell.
+##  - Inputs come from the trusted caller workflow, never from PR content.
+## Fork/PR-target preview deploys belong in a separate, isolated workflow.
+##
+name: rainix-vercel
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: Vercel environment to pull and deploy (preview | production).
+        required: true
+        type: string
+      production:
+        description: Deploy as a production deployment (adds --prod).
+        required: false
+        default: false
+        type: boolean
+      build-script:
+        description: Caller-repo build script that emits the Vercel prebuilt output.
+        required: false
+        default: ./script/vercel-build.sh
+        type: string
+      deploy-path:
+        description: Directory passed to `vercel deploy --prebuilt`.
+        required: false
+        default: packages/webapp
+        type: string
+      vercel-version:
+        description: vercel CLI version, installed locally and invoked by absolute path.
+        required: false
+        default: 51.8.0
+        type: string
+    secrets:
+      VERCEL_TOKEN:
+        required: true
+      VERCEL_ORG_ID:
+        required: true
+      VERCEL_PROJECT_ID:
+        required: true
+      WALLETCONNECT_PROJECT_ID:
+        required: false
+      CACHIX_AUTH_TOKEN:
+        required: false
+      TELEGRAM_BOT_TOKEN:
+        required: false
+      TELEGRAM_CHAT_ID:
+        required: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+      - uses: nixbuild/nix-quick-install-action@v30
+        with:
+          nix_conf: |
+            keep-env-derivations = true
+            keep-outputs = true
+      - uses: cachix/cachix-action@v15
+        continue-on-error: true
+        with:
+          name: rainlanguage
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          useDaemon: false
+      - name: Restore and save Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 8G
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: rust-${{ github.workflow }}
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ github.workflow }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
+      - name: Build Vercel prebuilt output
+        run: ${{ inputs.build-script }}
+        env:
+          PUBLIC_WALLETCONNECT_PROJECT_ID: ${{ secrets.WALLETCONNECT_PROJECT_ID }}
+      - name: Install Vercel CLI (local, pinned)
+        shell: bash --noprofile --norc -euo pipefail {0}
+        run: |
+          VERCEL_DIR="$(mktemp -d)"
+          npm install --no-audit --no-fund --no-save --prefix "$VERCEL_DIR" "vercel@${{ inputs.vercel-version }}"
+          echo "VERCEL_BIN=$VERCEL_DIR/node_modules/.bin/vercel" >> "$GITHUB_ENV"
+      - name: Pull Vercel environment information
+        shell: bash --noprofile --norc -euo pipefail {0}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          "$VERCEL_BIN" pull --yes --environment="${{ inputs.environment }}" --token="$VERCEL_TOKEN"
+      - name: Deploy to Vercel
+        shell: bash --noprofile --norc -euo pipefail {0}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          "$VERCEL_BIN" deploy --prebuilt ${{ inputs.production && '--prod' || '' }} --token="$VERCEL_TOKEN" "${{ inputs.deploy-path }}"
+      - name: Forward CI Status
+        if: always()
+        uses: rainlanguage/github-chore/.github/actions/telegram-status-report@main
+        with:
+          status: ${{ job.status }}
+          telegram-bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          telegram-chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}
