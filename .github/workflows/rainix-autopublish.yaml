@@ -183,14 +183,22 @@ jobs:
       # re-bump). On a content change the next step bumps foundry.toml
       # [package].version (patch on the greater of local/registry, kept
       # monotonic) so Soldeer publishes on merge like the crates — no manual
-      # version bump. The hash helper is base64'd to avoid YAML heredoc fragility.
+      # version bump. The hash helper also strips pinned
+      # `*_DEPLOYED_{ADDRESS,CODEHASH}_<x>_<y>_<z>` deploy-constant blocks from
+      # .sol files before hashing: a repo that records a published version's
+      # deployed addresses back into its own source (e.g. raindex's
+      # LibRaindexDeploy) would otherwise self-trigger an endless
+      # bump -> pin-constants -> bump loop, since pinning the constants is itself
+      # a source change. The un-versioned current constants (no _x_y_z suffix)
+      # are kept, so real bytecode changes still register.
+      # The hash helper is base64'd to avoid YAML heredoc fragility.
       - name: Soldeer content gate
         if: ${{ inputs.soldeer-package != '' }}
         id: soldeer
         run: |
           set -euo pipefail
           PKG="${{ inputs.soldeer-package }}"
-          echo 'aW1wb3J0IHN5cywgemlwZmlsZSwgaGFzaGxpYiwgcmUKaCA9IGhhc2hsaWIuc2hhMjU2KCkKd2l0aCB6aXBmaWxlLlppcEZpbGUoc3lzLmFyZ3ZbMV0pIGFzIHo6CiAgICBmb3IgbiBpbiBzb3J0ZWQoeCBmb3IgeCBpbiB6Lm5hbWVsaXN0KCkgaWYgbm90IHguZW5kc3dpdGgoIi8iKSk6CiAgICAgICAgZCA9IHoucmVhZChuKQogICAgICAgIGlmIG4gPT0gImZvdW5kcnkudG9tbCI6CiAgICAgICAgICAgIGQgPSByZS5zdWIocmIiKD9tKV52ZXJzaW9uXHMqPS4qIiwgcmIndmVyc2lvbiA9ICIwLjAuMCInLCBkKQogICAgICAgIGgudXBkYXRlKG4uZW5jb2RlKCkpOyBoLnVwZGF0ZShiIlwwIik7IGgudXBkYXRlKGQpCnByaW50KGguaGV4ZGlnZXN0KCkpCg==' | base64 -d > /tmp/soldeer_normhash.py
+          echo 'aW1wb3J0IHN5cywgemlwZmlsZSwgaGFzaGxpYiwgcmUKaCA9IGhhc2hsaWIuc2hhMjU2KCkKIyBTdHJpcCBwaW5uZWQgYCpfREVQTE9ZRURfe0FERFJFU1MsQ09ERUhBU0h9Xzx4Pl88eT5fPHo+YCBjb25zdGFudCBibG9ja3MgKGFuZAojIHRoZWlyIGRvYyBjb21tZW50cykgZnJvbSAuc29sIGZpbGVzLCB0aGVuIGNvbGxhcHNlIHRoZSBibGFuay1saW5lIGdhcHMgdGhleQojIGxlYXZlLCBzbyBwaW5uaW5nIGEgcHVibGlzaGVkIHZlcnNpb24ncyBkZXBsb3kgY29uc3RhbnRzIGlzIE5PVCBzZWVuIGFzIGEKIyBjb250ZW50IGNoYW5nZSAoaXQgd291bGQgb3RoZXJ3aXNlIHNlbGYtdHJpZ2dlciBhbiBlbmRsZXNzIGJ1bXAtPnBpbi0+YnVtcAojIGxvb3ApLiBUaGUgdW4tdmVyc2lvbmVkIGN1cnJlbnQgY29uc3RhbnRzIGhhdmUgbm8gX3hfeV96IHN1ZmZpeCBhbmQgYXJlIGtlcHQsCiMgc28gcmVhbCBieXRlY29kZSBjaGFuZ2VzIHN0aWxsIGZsaXAgdGhlIGhhc2guClBJTiA9IHJlLmNvbXBpbGUocmIiKD9tKV4oPzpbIFx0XSovLy8uKlxuKSpbIFx0XSooPzphZGRyZXNzfGJ5dGVzMzIpIGNvbnN0YW50IFtBLVowLTlfXStfREVQTE9ZRURfKD86QUREUkVTU3xDT0RFSEFTSClfXGQrX1xkK19cZCtccyo9W1xzXFNdKj87WyBcdF0qXG4iKQp3aXRoIHppcGZpbGUuWmlwRmlsZShzeXMuYXJndlsxXSkgYXMgejoKICAgIGZvciBuIGluIHNvcnRlZCh4IGZvciB4IGluIHoubmFtZWxpc3QoKSBpZiBub3QgeC5lbmRzd2l0aCgiLyIpKToKICAgICAgICBkID0gei5yZWFkKG4pCiAgICAgICAgaWYgbiA9PSAiZm91bmRyeS50b21sIjoKICAgICAgICAgICAgZCA9IHJlLnN1YihyYiIoP20pXnZlcnNpb25ccyo9LioiLCByYid2ZXJzaW9uID0gIjAuMC4wIicsIGQpCiAgICAgICAgaWYgbi5lbmRzd2l0aCgiLnNvbCIpOgogICAgICAgICAgICBkID0gUElOLnN1YihiIiIsIGQpCiAgICAgICAgICAgIGQgPSByZS5zdWIocmIiXG57Mix9IiwgYiJcbiIsIGQpCiAgICAgICAgaC51cGRhdGUobi5lbmNvZGUoKSk7IGgudXBkYXRlKGIiXDAiKTsgaC51cGRhdGUoZCkKcHJpbnQoaC5oZXhkaWdlc3QoKSkK' | base64 -d > /tmp/soldeer_normhash.py
           nh() { python3 /tmp/soldeer_normhash.py "$1"; }
           META=$(curl -fsSL "https://api.soldeer.xyz/api/v1/revision?project_name=$PKG&offset=0&limit=1" || echo '{}')
           REMOTE=$(printf '%s' "$META" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['data'][0]['version'] if d.get('data') else 'none')")
