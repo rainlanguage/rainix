@@ -46,3 +46,5 @@ jobs:
         run: nix develop github:rainlanguage/rainix#sol-shell -c forge soldeer install
       - run: nix develop github:rainlanguage/rainix#sol-shell -c slither .
       - run: nix develop github:rainlanguage/rainix#sol-shell -c forge fmt --check
+      # Enforce Rain's one-contract-per-.sol-file convention (rainix#214).
+      - run: nix develop github:rainlanguage/rainix#sol-shell -c rainix-sol-single-contract

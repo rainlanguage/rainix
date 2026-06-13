@@ -252,6 +252,20 @@
           additionalBuildInputs = sol-build-inputs;
         };
 
+        # Enforces Rain's one-contract-per-file convention (rainix#214). Runs
+        # over git-tracked .sol files so it works the same locally and in CI.
+        # `library`/`interface` are not counted; only `contract` and
+        # `abstract contract` declarations.
+        rainix-sol-single-contract = mkTask {
+          name = "rainix-sol-single-contract";
+          body = ''
+            set -euo pipefail
+            source ${./lib/sol-single-contract.sh}
+            sol_single_contract_check_tracked
+          '';
+          additionalBuildInputs = [ pkgs.git ];
+        };
+
         rainix-rs-static = mkTask {
           name = "rainix-rs-static";
           body = ''
@@ -264,6 +278,7 @@
 
         sol-tasks = [
           rainix-sol-artifacts
+          rainix-sol-single-contract
         ];
 
         rs-tasks = [
@@ -358,6 +373,7 @@
             bats test/bats/task/skip-simulation.test.bats
             bats test/bats/task/subgraph-build.test.bats
             bats test/bats/task/subgraph-deploy-version.test.bats
+            bats test/bats/task/sol-single-contract.test.bats
           '';
           additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs ++ node-build-inputs;
         };
@@ -562,6 +578,7 @@
         packages = {
           inherit
             rainix-sol-artifacts
+            rainix-sol-single-contract
             rainix-rs-static
             prettier-bundle
             sol-shell-test
