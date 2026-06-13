@@ -10,7 +10,6 @@ teardown() {
 
 @test "sol_count_contracts counts a single contract" {
   cat > "$TESTDIR/Counter.sol" <<'EOF'
-// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
 contract Counter {
