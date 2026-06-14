@@ -62,8 +62,13 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # `pull-requests: write` is needed for the sticky preview-URL comment on PRs.
+    # As a reusable workflow this declares the permission it uses; callers must
+    # also grant `pull-requests: write` to the job that calls this reusable
+    # (a called workflow can only narrow, never widen, the caller's grant).
     permissions:
       contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v6
       - name: Free disk space
@@ -113,13 +118,44 @@ jobs:
         run: |
           "$VERCEL_BIN" pull --yes --environment="${{ inputs.environment }}" --token="$VERCEL_TOKEN"
       - name: Deploy to Vercel
+        id: deploy
         shell: bash --noprofile --norc -euo pipefail {0}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          "$VERCEL_BIN" deploy --prebuilt ${{ inputs.production && '--prod' || '' }} --token="$VERCEL_TOKEN" "${{ inputs.deploy-path }}"
+          # `vercel deploy` prints the bare deployment URL to stdout and the
+          # human-readable "Preview:"/"Inspect:" lines to stderr. Capture all of
+          # it (tee back to the log so the URLs stay visible there) and parse the
+          # URLs robustly from the combined output.
+          deploy_log="$(mktemp)"
+          "$VERCEL_BIN" deploy --prebuilt ${{ inputs.production && '--prod' || '' }} --token="$VERCEL_TOKEN" "${{ inputs.deploy-path }}" 2>&1 | tee "$deploy_log"
+
+          # Preview URL: prefer the "Preview: <url>" line; fall back to the last
+          # bare https://*.vercel.app URL the CLI emitted (the deployment URL).
+          preview_url="$(grep -oE 'Preview: https://[^[:space:]]+' "$deploy_log" | tail -n1 | sed 's/^Preview: //')"
+          if [ -z "$preview_url" ]; then
+            preview_url="$(grep -oE 'https://[a-zA-Z0-9.-]+\.vercel\.app[^[:space:]]*' "$deploy_log" | tail -n1)"
+          fi
+          # Inspect (dashboard) URL, if present.
+          inspect_url="$(grep -oE 'Inspect: https://[^[:space:]]+' "$deploy_log" | tail -n1 | sed 's/^Inspect: //')"
+
+          echo "url=$preview_url" >> "$GITHUB_OUTPUT"
+          echo "inspect=$inspect_url" >> "$GITHUB_OUTPUT"
+          echo "Captured preview URL: ${preview_url:-<none>}"
+      - name: Comment preview URL on PR
+        # Only on PR events with a preview deploy — never on production/main
+        # pushes. Skipped if the deploy produced no preview URL.
+        if: ${{ github.event_name == 'pull_request' && !inputs.production && steps.deploy.outputs.url != '' }}
+        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+        with:
+          header: webapp-preview-${{ inputs.deploy-path }}
+          message: |
+            🔗 Webapp preview: ${{ steps.deploy.outputs.url }}
+
+            🔍 Inspect: ${{ steps.deploy.outputs.inspect }}
+            Deployed commit: `${{ github.event.pull_request.head.sha }}`
       - name: Forward CI Status
         if: always()
         uses: rainlanguage/github-chore/.github/actions/telegram-status-report@main
