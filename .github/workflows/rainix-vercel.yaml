@@ -76,18 +76,18 @@ jobs:
       # cache-nix-action. The pinned action SHAs for those still live once in the
       # composite. Fully qualified ref: a bare `./` would resolve against the
       # calling repo.
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: rainlanguage/rainix/.github/actions/checkout@main
       - name: Free disk space
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
       - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
           checkout: 'false'
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: rainlanguage/rainix/.github/actions/rust-cache@main
         with:
           prefix-key: rust-${{ github.workflow }}
       - name: Cache npm
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: rainlanguage/rainix/.github/actions/cache@main
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ github.workflow }}-${{ hashFiles('**/package-lock.json') }}

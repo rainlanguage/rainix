@@ -49,13 +49,12 @@ jobs:
       id-token: write
       contents: write
     steps:
-      # This job pins a different checkout (v4, for the ssh-key deploy-key
-      # checkout) and a different cache-nix-action (v6) than the rest of the
-      # reusables, so it keeps those two steps inline and routes only the
-      # nix-quick-install + Cachix pair (whose SHAs ARE shared) through the
-      # composite via `checkout: 'false'` / `cache-nix: 'false'`. Fully
+      # This job needs a deploy-key (ssh-key) checkout, so it runs the shared
+      # `checkout` composite itself with the key, then calls the nix+cachix
+      # preamble with `checkout: 'false'`. The pinned checkout / cache-nix /
+      # nix-quick-install / Cachix SHAs all live once in the composites. Fully
       # qualified ref: a bare `./` would resolve against the calling repo.
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: rainlanguage/rainix/.github/actions/checkout@main
         with:
           # PUBLISH_PRIVATE_KEY is a deploy key whose push events trigger
           # downstream workflows (unlike GITHUB_TOKEN pushes which don't).
@@ -67,13 +66,6 @@ jobs:
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
           checkout: 'false'
-          cache-nix: 'false'
-      - name: Restore and save Nix store
-        uses: nix-community/cache-nix-action@135667ec418502fa5a3598af6fb9eb733888ce6a # v6
-        with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
-          gc-max-store-size-linux: 8G
       # Resolve the crate list once (crates, else the back-compat singular crate).
       - name: Resolve crates
         run: |
@@ -334,18 +326,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: GitHub Release (npm)
         if: ${{ inputs.npm-package != '' && steps.npm.outputs.changed == 'true' }}
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        uses: rainlanguage/rainix/.github/actions/gh-release@main
         with:
-          tag_name: npm-${{ env.NPM_VERSION }}
+          tag-name: npm-${{ env.NPM_VERSION }}
           name: NPM Package Release ${{ env.NPM_VERSION }}
           files: npm_package_${{ env.NPM_VERSION }}.tgz
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: GitHub Release (soldeer)
         if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        uses: rainlanguage/rainix/.github/actions/gh-release@main
         with:
-          tag_name: sol-v${{ steps.soldeer.outputs.next }}
+          tag-name: sol-v${{ steps.soldeer.outputs.next }}
           name: Soldeer Release sol-v${{ steps.soldeer.outputs.next }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}

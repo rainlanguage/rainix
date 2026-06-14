@@ -39,7 +39,7 @@ jobs:
       # Cache Foundry's incremental compilation cache + artifacts so unchanged
       # contracts aren't recompiled (forge build is the dominant CI cost).
       - name: Cache Foundry build
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: rainlanguage/rainix/.github/actions/cache@main
         with:
           path: |
             cache
