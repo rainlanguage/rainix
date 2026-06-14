@@ -10,13 +10,30 @@ jobs:
       fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
-      # Shared nix + cachix CI preamble (checkout, nix-quick-install, Cachix,
-      # cache-nix-action) — pinned action SHAs live in the composite. This is a
-      # local workflow (not a reusable), so a `./` ref would also work, but the
-      # fully qualified ref keeps every call site consistent.
-      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
+      # Bootstrap checkout. This is a LOCAL self-test workflow (it tests the
+      # composites that live in THIS repo), so the steps below reference them by
+      # `./` path. A `./` action only resolves once the repo is on disk, so this
+      # one checkout has to run first and can't itself be a `./` composite
+      # (chicken-and-egg). It pins the same `actions/checkout` SHA the `checkout`
+      # composite wraps (.github/actions/checkout/action.yml) — keep the two in
+      # lockstep; the composite stays the single source for every NON-bootstrap
+      # checkout (reusables + downstream consumers).
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      # Shared nix + cachix CI preamble (nix-quick-install, Cachix,
+      # cache-nix-action) — pinned action SHAs live in the composite. Referenced
+      # by `./` so the self-test exercises the composite exactly as THIS branch
+      # defines it; a `rainlanguage/rainix/...@main` ref would resolve against
+      # the tip of main (the pre-change / missing version) — the original cause
+      # of the red self-test here. `checkout: 'false'` because the bootstrap
+      # above already checked the repo out, and because the preamble's own
+      # internal checkout ref must stay a fully qualified
+      # `rainlanguage/rainix/...@main` (a `./` inside a composite resolves
+      # against the CALLER repo, breaking downstream consumers) which is
+      # unresolvable on this branch until the composite lands on main.
+      - uses: ./.github/actions/nix-cachix-setup
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          checkout: 'false'
       - run: NIXPKGS_ALLOW_INSECURE=1 nix flake check --impure
       - run: nix develop --command cargo release --version
       - run: nix develop --command flamegraph --help

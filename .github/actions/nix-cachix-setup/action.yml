@@ -41,6 +41,14 @@ inputs:
 runs:
   using: composite
   steps:
+    # Fully qualified `rainlanguage/rainix/...@main`, NOT a `./` path: inside a
+    # composite a `./` ref resolves against the *caller's* repository (the
+    # downstream consumer running this preamble), where this `checkout`
+    # composite does not exist. The ref must name this repo explicitly. `@main`
+    # is correct for real consumers (they run against merged main). The rainix
+    # self-test workflows can't resolve this `@main` line until the composite
+    # has landed on main, so they pass `checkout: 'false'` and run the
+    # `./.github/actions/checkout` composite themselves instead.
     - uses: rainlanguage/rainix/.github/actions/checkout@main
       if: ${{ inputs.checkout == 'true' }}
     - uses: nixbuild/nix-quick-install-action@5bb6a3b3abe66fd09bbf250dce8ada94f856a703 # v30
