@@ -29,33 +29,34 @@ jobs:
       run:
         working-directory: test/fixture
     steps:
-      # Bootstrap checkout. This is a LOCAL self-test workflow that exercises the
-      # composites living in THIS repo, so the steps below reference them by `./`
-      # path (which pins them to THIS commit — what the branch actually changed —
-      # instead of `rainlanguage/rainix/...@main`, which resolves against the tip
-      # of main and on a bootstrap PR is the pre-change / missing version: the
-      # original cause of the red self-test). A `./` action only resolves after
-      # the repo is on disk, so this checkout runs first and can't itself be the
-      # `./` composite (chicken-and-egg). It pins the SAME `actions/checkout` SHA
-      # the `checkout` composite wraps (.github/actions/checkout/action.yml);
-      # keep the two in lockstep. The composite remains the single source for
-      # every non-bootstrap checkout (reusables + downstream consumers).
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      # Shared nix + cachix CI preamble (nix-quick-install, Cachix,
-      # cache-nix-action) — pinned third-party SHAs live once in the composite.
-      # `checkout: 'false'`: the bootstrap above already checked out, and the
-      # composite's own internal checkout ref stays a fully qualified
-      # `rainlanguage/rainix/...@main` (a `./` inside a composite resolves
-      # against the CALLER repo, breaking downstream consumers) which can't
-      # resolve on this branch until the composite lands on main.
-      - uses: ./.github/actions/nix-cachix-setup
+      # Shared nix + cachix CI preamble (checkout, nix-quick-install, Cachix,
+      # cache-nix-action). The pinned third-party action SHAs live ONCE in the
+      # composites; every call site — this self-test included — references them
+      # fully qualified at `rainlanguage/rainix/...@main`, exactly as downstream
+      # consumers do, so the self-test covers what consumers actually run and no
+      # third-party SHA is duplicated.
+      #
+      # BOOTSTRAP CAVEAT: the PR that first adds these composites is RED here
+      # until it merges. `@main` resolves against the tip of main, which does
+      # not yet contain `.github/actions/*`, so "Prepare all required actions"
+      # fails. This cannot be worked around on-branch without a regression:
+      #   - `./` would resolve a composite's *internal* refs against the
+      #     consumer repo, breaking every downstream caller;
+      #   - a branch pin (`@<branch>`) dangles the instant the branch is deleted
+      #     post-merge;
+      #   - GitHub downloads every transitively-referenced action up front, so
+      #     even `checkout: 'false'` cannot dodge the preamble's internal
+      #     `checkout@main` download.
+      # Once this PR lands on main the `@main` actions exist and every job here
+      # is green — zero version skew, each third-party action still single-
+      # sourced. See the PR thread for the full analysis.
+      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          checkout: 'false'
       # Cache Foundry's incremental compilation cache + artifacts so unchanged
       # contracts aren't recompiled (forge build is the dominant CI cost).
       - name: Cache Foundry build
-        uses: ./.github/actions/cache
+        uses: rainlanguage/rainix/.github/actions/cache@main
         with:
           path: |
             cache
