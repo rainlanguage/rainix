@@ -5,8 +5,8 @@ jobs:
   copy-artifacts:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: nixbuild/nix-quick-install-action@v30
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: nixbuild/nix-quick-install-action@5bb6a3b3abe66fd09bbf250dce8ada94f856a703 # v30
         with:
           nix_conf: |
             keep-env-derivations = true
@@ -15,7 +15,7 @@ jobs:
       # toolchain + any prelude build don't refetch crates from crates.io (whose
       # download endpoint 403s nix's User-Agent). Pushes new paths when
       # CACHIX_AUTH_TOKEN is set; continue-on-error degrades gracefully.
-      - uses: cachix/cachix-action@v15
+      - uses: cachix/cachix-action@ad2ddac53f961de1989924296a1f236fcfbaa4fc # v15
         continue-on-error: true
         with:
           name: rainlanguage
@@ -24,7 +24,7 @@ jobs:
           # with cache-nix-action and corrupts it. Push happens in the post step.
           useDaemon: false
       - name: Restore and save Nix store
-        uses: nix-community/cache-nix-action@v7
+        uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-

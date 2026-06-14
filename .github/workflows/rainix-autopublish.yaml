@@ -49,7 +49,7 @@ jobs:
       id-token: write
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           # PUBLISH_PRIVATE_KEY is a deploy key whose push events trigger
           # downstream workflows (unlike GITHUB_TOKEN pushes which don't).
@@ -57,7 +57,7 @@ jobs:
           # falls back to GITHUB_TOKEN over HTTPS — pushes still succeed,
           # they just won't trigger tag-listening workflows.
           ssh-key: ${{ secrets.PUBLISH_PRIVATE_KEY }}
-      - uses: nixbuild/nix-quick-install-action@v30
+      - uses: nixbuild/nix-quick-install-action@5bb6a3b3abe66fd09bbf250dce8ada94f856a703 # v30
         with:
           nix_conf: |
             keep-env-derivations = true
@@ -66,7 +66,7 @@ jobs:
       # cache instead of rebuilding toolchain crates from source (rainix#196).
       # Pushes new paths when CACHIX_AUTH_TOKEN is set; continue-on-error so a
       # missing cache/token or a Cachix outage degrades to a normal build.
-      - uses: cachix/cachix-action@v15
+      - uses: cachix/cachix-action@ad2ddac53f961de1989924296a1f236fcfbaa4fc # v15
         continue-on-error: true
         with:
           name: rainlanguage
@@ -76,7 +76,7 @@ jobs:
           # disk image is malformed"). Push happens once in the post step.
           useDaemon: false
       - name: Restore and save Nix store
-        uses: nix-community/cache-nix-action@v6
+        uses: nix-community/cache-nix-action@135667ec418502fa5a3598af6fb9eb733888ce6a # v6
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
@@ -318,7 +318,7 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
       - name: Publish to NPM
         if: ${{ inputs.npm-package != '' && steps.npm.outputs.changed == 'true' }}
-        uses: JS-DevTools/npm-publish@v3
+        uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3
         with:
           token: ${{ secrets.NPM_PUBLISH_PRIVATE_TOKEN }}
           access: public
@@ -341,7 +341,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: GitHub Release (npm)
         if: ${{ inputs.npm-package != '' && steps.npm.outputs.changed == 'true' }}
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: npm-${{ env.NPM_VERSION }}
           name: NPM Package Release ${{ env.NPM_VERSION }}
@@ -350,7 +350,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: GitHub Release (soldeer)
         if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: sol-v${{ steps.soldeer.outputs.next }}
           name: Soldeer Release sol-v${{ steps.soldeer.outputs.next }}
