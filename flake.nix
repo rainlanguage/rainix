@@ -89,6 +89,13 @@
         ])
         ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [ pkgs.darwin.DarwinTools ]);
 
+        # The Solidity toolchain shared by sol-shell and default. sol-only
+        # repos (rain.solmem, rain.deploy, rain.datacontract, etc.) consume
+        # this set via `nix develop github:rainlanguage/rainix#sol-shell` and
+        # nothing else, so it carries no browser (chromium/playwright), node,
+        # rust, or wasm dependency — keeping the sol-shell closure slim. The
+        # sol-shell closure test asserts chromium, node, and the rust
+        # toolchain stay absent.
         sol-build-inputs = [
           pkgs.git
           pkgs.foundry-bin
