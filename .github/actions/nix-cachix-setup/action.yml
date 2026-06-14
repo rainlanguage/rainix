@@ -1,0 +1,71 @@
+name: nix-cachix-setup
+description: >-
+  Shared 'nix + cachix CI' preamble for the rainix reusable workflows: checkout,
+  nix-quick-install, the Cachix substituter/pusher, and the cache-nix-action Nix
+  store restore/save. This composite is the single source of truth for the
+  pinned third-party action SHAs used by that preamble — each SHA lives here once
+  instead of being copy-pasted across the reusables.
+inputs:
+  cachix-auth-token:
+    description: >-
+      Cachix auth token. A composite action cannot read `secrets.*`, so the
+      caller reusable must plumb `secrets.CACHIX_AUTH_TOKEN` through to here.
+      Empty (the default) degrades to a read-only/anonymous Cachix pull.
+    required: false
+    default: ''
+  cachix-name:
+    description: Cachix binary cache name to substitute from / push to.
+    required: false
+    default: rainlanguage
+  checkout:
+    description: >-
+      Run the bundled `actions/checkout` (default). Set to 'false' if the
+      caller needs a non-default checkout (e.g. an ssh-key deploy-key checkout)
+      and runs `actions/checkout` itself before calling this composite.
+    required: false
+    default: 'true'
+  cache-nix:
+    description: >-
+      Run the bundled `cache-nix-action` Nix store restore/save (default). Set
+      to 'false' if the caller pins a different cache-nix-action version and runs
+      it itself.
+    required: false
+    default: 'true'
+  gc-max-store-size-macos:
+    description: >-
+      Optional `gc-max-store-size-macos` for the bundled cache-nix-action. Left
+      empty (the action's own default) unless a caller needs to cap the macOS
+      store before saving.
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      if: ${{ inputs.checkout == 'true' }}
+    - uses: nixbuild/nix-quick-install-action@5bb6a3b3abe66fd09bbf250dce8ada94f856a703 # v30
+      with:
+        nix_conf: |
+          keep-env-derivations = true
+          keep-outputs = true
+    # Substitute prebuilt rainix derivations from the shared Cachix binary
+    # cache instead of rebuilding toolchain crates from source (rainix#196).
+    # Pushes new paths when the auth token is set; continue-on-error so a
+    # missing cache/token or a Cachix outage degrades to a normal build.
+    - uses: cachix/cachix-action@ad2ddac53f961de1989924296a1f236fcfbaa4fc # v15
+      continue-on-error: true
+      with:
+        name: ${{ inputs.cachix-name }}
+        authToken: ${{ inputs.cachix-auth-token }}
+        # No store-watching daemon: it checkpoints the nix DB
+        # concurrently with cache-nix-action and corrupts it ("database
+        # disk image is malformed"). Push happens once in the post step.
+        useDaemon: false
+    - name: Restore and save Nix store
+      if: ${{ inputs.cache-nix == 'true' }}
+      uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+      with:
+        primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
+        restore-prefixes-first-match: nix-${{ runner.os }}-
+        gc-max-store-size-linux: 8G
+        gc-max-store-size-macos: ${{ inputs.gc-max-store-size-macos }}

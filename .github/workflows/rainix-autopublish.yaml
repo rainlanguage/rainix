@@ -49,6 +49,12 @@ jobs:
       id-token: write
       contents: write
     steps:
+      # This job pins a different checkout (v4, for the ssh-key deploy-key
+      # checkout) and a different cache-nix-action (v6) than the rest of the
+      # reusables, so it keeps those two steps inline and routes only the
+      # nix-quick-install + Cachix pair (whose SHAs ARE shared) through the
+      # composite via `checkout: 'false'` / `cache-nix: 'false'`. Fully
+      # qualified ref: a bare `./` would resolve against the calling repo.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           # PUBLISH_PRIVATE_KEY is a deploy key whose push events trigger
@@ -57,24 +63,11 @@ jobs:
           # falls back to GITHUB_TOKEN over HTTPS — pushes still succeed,
           # they just won't trigger tag-listening workflows.
           ssh-key: ${{ secrets.PUBLISH_PRIVATE_KEY }}
-      - uses: nixbuild/nix-quick-install-action@5bb6a3b3abe66fd09bbf250dce8ada94f856a703 # v30
+      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
         with:
-          nix_conf: |
-            keep-env-derivations = true
-            keep-outputs = true
-      # Substitute prebuilt rainix derivations from the shared Cachix binary
-      # cache instead of rebuilding toolchain crates from source (rainix#196).
-      # Pushes new paths when CACHIX_AUTH_TOKEN is set; continue-on-error so a
-      # missing cache/token or a Cachix outage degrades to a normal build.
-      - uses: cachix/cachix-action@ad2ddac53f961de1989924296a1f236fcfbaa4fc # v15
-        continue-on-error: true
-        with:
-          name: rainlanguage
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          # No store-watching daemon: it checkpoints the nix DB
-          # concurrently with cache-nix-action and corrupts it ("database
-          # disk image is malformed"). Push happens once in the post step.
-          useDaemon: false
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          checkout: 'false'
+          cache-nix: 'false'
       - name: Restore and save Nix store
         uses: nix-community/cache-nix-action@135667ec418502fa5a3598af6fb9eb733888ce6a # v6
         with:
