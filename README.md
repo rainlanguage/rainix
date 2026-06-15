@@ -29,6 +29,22 @@ nix develop .#rust-shell   # slim Rust-only shell — no sol, node
 The default shell auto-sources `.env` if present and runs
 `npm ci --ignore-scripts` if `package.json` exists. `sol-shell` skips both.
 
+### Updating a consumer to the latest rainix
+
+`lib/update-rainix.sh` bumps a consuming repo to the latest rainix and re-locks
+Soldeer. Run it from the repo root (it makes local changes only — review and
+commit yourself):
+
+```sh
+/path/to/rainix/lib/update-rainix.sh
+```
+
+It bumps the `rainix` flake input to the latest default branch and — for
+Solidity repos — re-locks Soldeer and runs a sanity `forge build`. Soldeer
+dependency _version_ bumps are left to the developer (edit `foundry.toml`, run
+`forge soldeer update`, fix the version-suffixed imports), since bumping blindly
+can break builds when a transitive dependency pins an older version.
+
 ### Build Tasks
 
 All tasks are Nix packages run via `nix run`. From a consuming repo:
