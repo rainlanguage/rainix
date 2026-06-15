@@ -31,6 +31,14 @@ inputs:
       it itself.
     required: false
     default: 'true'
+  gc-max-store-size-linux:
+    description: >-
+      `gc-max-store-size-linux` for the bundled cache-nix-action: the store is
+      garbage-collected down to this size before a new cache is saved. Defaults
+      to `8G`; a caller running a smaller or larger build passes its own budget
+      (e.g. `1G` for a docs/subgraph build, `10G` for a webapp build).
+    required: false
+    default: 8G
   gc-max-store-size-macos:
     description: >-
       Optional `gc-max-store-size-macos` for the bundled cache-nix-action. Left
@@ -80,5 +88,5 @@ runs:
       with:
         primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
         restore-prefixes-first-match: nix-${{ runner.os }}-
-        gc-max-store-size-linux: 8G
+        gc-max-store-size-linux: ${{ inputs.gc-max-store-size-linux }}
         gc-max-store-size-macos: ${{ inputs.gc-max-store-size-macos }}
