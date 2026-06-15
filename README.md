@@ -39,10 +39,8 @@ commit yourself):
 /path/to/rainix/lib/update-rainix.sh
 ```
 
-It points the `rainix` flake input at `github:rainlanguage/rainix` and updates
-the lock, normalises `flake.nix` for the current lint hooks (ensures the
-`outputs` argument set ends with `...`, then runs deadnix/statix/nixfmt), and —
-for Solidity repos — re-locks Soldeer and runs a sanity `forge build`. Soldeer
+It bumps the `rainix` flake input to the latest default branch and — for
+Solidity repos — re-locks Soldeer and runs a sanity `forge build`. Soldeer
 dependency _version_ bumps are left to the developer (edit `foundry.toml`, run
 `forge soldeer update`, fix the version-suffixed imports), since bumping blindly
 can break builds when a transitive dependency pins an older version.
