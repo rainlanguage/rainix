@@ -1,0 +1,67 @@
+##
+## Reusable npm-package blacklist security gate for rainlanguage repos.
+##
+## Scans the INSTALLED npm dependency tree of one or more workspace packages for
+## known-malicious packages, using the shared blacklist data in the
+## `rainlanguage/github-chore` `npm-blacklist` composite action. The check reads
+## `npm ls --all`, so it must run AFTER dependencies are installed — this
+## workflow installs once via the caller's `install-command`, then scans every
+## listed directory from that single installed tree.
+##
+## Consumers replace an inline blacklist job with a short caller that supplies
+## the `install-command` and the `working-directories` to scan.
+##
+name: rainix-npm-blacklist
+on:
+  workflow_call:
+    inputs:
+      install-command:
+        description: >-
+          Command that installs the npm dependency tree before the scan, e.g.
+          `nix develop .#wasm-shell -c npm install --no-check`. The blacklist
+          checker runs `npm ls --all`, so every directory in
+          `working-directories` must have its `node_modules` populated by this
+          command.
+        required: true
+        type: string
+      working-directories:
+        description: >-
+          Whitespace-separated list of NPM project directories to scan, e.g. a
+          YAML multiline of ". packages/raindex packages/ui-components". Each
+          must contain a `package.json` and installed `node_modules` after
+          `install-command` runs. Defaults to the repository root.
+        required: false
+        default: '.'
+        type: string
+      cachix-name:
+        description: Cachix binary cache name to substitute from / push to.
+        required: false
+        default: rainlanguage
+        type: string
+    secrets:
+      CACHIX_AUTH_TOKEN:
+        required: false
+jobs:
+  npm-blacklist:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Shared nix + cachix CI preamble (checkout, nix-quick-install, Cachix,
+      # cache-nix-action). The pinned third-party action SHAs live ONCE in the
+      # composite; this reusable references it fully qualified at
+      # `rainlanguage/rainix/...@main`, exactly as downstream consumers do.
+      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          cachix-name: ${{ inputs.cachix-name }}
+      # Install the dependency tree once; the blacklist checker inspects it but
+      # never installs, so a single install feeds every directory scanned below.
+      - name: Install npm dependencies
+        run: ${{ inputs.install-command }}
+      # One call scans every directory from the single installed tree
+      # (`working-directories` is whitespace-separated). The check fails if any
+      # listed directory resolves a blacklisted package.
+      - uses: rainlanguage/github-chore/.github/actions/npm-blacklist@main
+        with:
+          working-directories: ${{ inputs.working-directories }}
