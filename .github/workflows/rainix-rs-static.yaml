@@ -5,32 +5,15 @@ jobs:
   rs-static:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: nixbuild/nix-quick-install-action@v30
+      # Shared nix + cachix CI preamble (checkout, nix-quick-install, Cachix,
+      # cache-nix-action). The pinned action SHAs live in the composite. A
+      # reusable workflow must reference a sibling local action by its fully
+      # qualified owner/repo path (a bare `./` would resolve against the calling
+      # repo, not rainix), mirroring the github-chore action ref below.
+      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
         with:
-          nix_conf: |
-            keep-env-derivations = true
-            keep-outputs = true
-      # Substitute prebuilt rainix derivations from the shared Cachix binary
-      # cache instead of rebuilding toolchain crates from source (rainix#196).
-      # Pushes new paths when CACHIX_AUTH_TOKEN is set; continue-on-error so a
-      # missing cache/token or a Cachix outage degrades to a normal build.
-      - uses: cachix/cachix-action@v15
-        continue-on-error: true
-        with:
-          name: rainlanguage
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          # No store-watching daemon: it checkpoints the nix DB
-          # concurrently with cache-nix-action and corrupts it ("database
-          # disk image is malformed"). Push happens once in the post step.
-          useDaemon: false
-      - name: Restore and save Nix store
-        uses: nix-community/cache-nix-action@v7
-        with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
-          gc-max-store-size-linux: 8G
-      - uses: Swatinem/rust-cache@v2
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: rainlanguage/rainix/.github/actions/rust-cache@main
       - run: nix develop github:rainlanguage/rainix#rust-shell -c rainix-rs-static
       # Run the rainix pre-commit hook bundle (taplo, the nix hooks, yamlfmt,
       # shellcheck, rustfmt) over all files — the same hooks a local commit

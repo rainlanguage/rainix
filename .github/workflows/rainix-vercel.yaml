@@ -70,31 +70,24 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v6
+      # This workflow needs a Free-disk-space step between checkout and the nix
+      # install, so it runs its own checkout (composite `checkout: false`) and
+      # then calls the shared preamble for nix-quick-install + Cachix +
+      # cache-nix-action. The pinned action SHAs for those still live once in the
+      # composite. Fully qualified ref: a bare `./` would resolve against the
+      # calling repo.
+      - uses: rainlanguage/rainix/.github/actions/checkout@main
       - name: Free disk space
-        uses: jlumbroso/free-disk-space@v1.3.1
-      - uses: nixbuild/nix-quick-install-action@v30
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
         with:
-          nix_conf: |
-            keep-env-derivations = true
-            keep-outputs = true
-      - uses: cachix/cachix-action@v15
-        continue-on-error: true
-        with:
-          name: rainlanguage
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          useDaemon: false
-      - name: Restore and save Nix store
-        uses: nix-community/cache-nix-action@v7
-        with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
-          gc-max-store-size-linux: 8G
-      - uses: Swatinem/rust-cache@v2
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          checkout: 'false'
+      - uses: rainlanguage/rainix/.github/actions/rust-cache@main
         with:
           prefix-key: rust-${{ github.workflow }}
       - name: Cache npm
-        uses: actions/cache@v4
+        uses: rainlanguage/rainix/.github/actions/cache@main
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ github.workflow }}-${{ hashFiles('**/package-lock.json') }}

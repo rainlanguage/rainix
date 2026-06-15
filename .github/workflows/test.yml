@@ -29,35 +29,34 @@ jobs:
       run:
         working-directory: test/fixture
     steps:
-      - uses: actions/checkout@v6
-      - uses: nixbuild/nix-quick-install-action@v30
+      # Shared nix + cachix CI preamble (checkout, nix-quick-install, Cachix,
+      # cache-nix-action). The pinned third-party action SHAs live ONCE in the
+      # composites; every call site — this self-test included — references them
+      # fully qualified at `rainlanguage/rainix/...@main`, exactly as downstream
+      # consumers do, so the self-test covers what consumers actually run and no
+      # third-party SHA is duplicated.
+      #
+      # BOOTSTRAP CAVEAT: the PR that first adds these composites is RED here
+      # until it merges. `@main` resolves against the tip of main, which does
+      # not yet contain `.github/actions/*`, so "Prepare all required actions"
+      # fails. This cannot be worked around on-branch without a regression:
+      #   - `./` would resolve a composite's *internal* refs against the
+      #     consumer repo, breaking every downstream caller;
+      #   - a branch pin (`@<branch>`) dangles the instant the branch is deleted
+      #     post-merge;
+      #   - GitHub downloads every transitively-referenced action up front, so
+      #     even `checkout: 'false'` cannot dodge the preamble's internal
+      #     `checkout@main` download.
+      # Once this PR lands on main the `@main` actions exist and every job here
+      # is green — zero version skew, each third-party action still single-
+      # sourced. See the PR thread for the full analysis.
+      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
         with:
-          nix_conf: |
-            keep-env-derivations = true
-            keep-outputs = true
-      # Substitute prebuilt rainix derivations from the shared Cachix binary
-      # cache instead of rebuilding toolchain crates from source (rainix#196).
-      # Pushes new paths when CACHIX_AUTH_TOKEN is set; continue-on-error so a
-      # missing cache/token or a Cachix outage degrades to a normal build.
-      - uses: cachix/cachix-action@v15
-        continue-on-error: true
-        with:
-          name: rainlanguage
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          # No store-watching daemon: it checkpoints the nix DB
-          # concurrently with cache-nix-action and corrupts it ("database
-          # disk image is malformed"). Push happens once in the post step.
-          useDaemon: false
-      - name: Restore and save Nix store
-        uses: nix-community/cache-nix-action@v7
-        with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
-          gc-max-store-size-linux: 8G
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       # Cache Foundry's incremental compilation cache + artifacts so unchanged
       # contracts aren't recompiled (forge build is the dominant CI cost).
       - name: Cache Foundry build
-        uses: actions/cache@v4
+        uses: rainlanguage/rainix/.github/actions/cache@main
         with:
           path: |
             cache

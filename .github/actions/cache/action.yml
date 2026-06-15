@@ -1,0 +1,28 @@
+name: cache
+description: >-
+  Single-source wrapper around `actions/cache`. GitHub Actions can't
+  parameterize a `uses:` ref, so wrapping the step in a composite is the only
+  way to pin the action's SHA in ONE place across every rainix workflow that
+  caches build outputs. Each call site passes its own `path` / `key` /
+  `restore-keys` (the Foundry build cache, the npm cache, etc.).
+inputs:
+  path:
+    description: A list of files, directories, and patterns to cache and restore.
+    required: true
+  key:
+    description: An explicit key for restoring and saving the cache.
+    required: true
+  restore-keys:
+    description: >-
+      An ordered multiline string listing the prefix-matched keys used to
+      restore a stale cache if no cache hit occurred for `key`.
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ inputs.key }}
+        restore-keys: ${{ inputs.restore-keys }}
