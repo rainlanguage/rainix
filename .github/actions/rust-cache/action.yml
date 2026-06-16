@@ -1,17 +1,10 @@
 name: rust-cache
 description: >-
-  Single-source wrapper around `Swatinem/rust-cache`. GitHub Actions can't
-  parameterize a `uses:` ref, so wrapping the step in a composite is the only
-  way to pin the action's SHA in ONE place across every rainix workflow that
-  caches Rust build artifacts. The `prefix-key` input covers the one call site
-  (vercel) that namespaces its cache per-workflow; every other site uses the
-  action's default key.
+  Single-source wrapper around `Swatinem/rust-cache`. GitHub Actions can't parameterize a `uses:` ref, so wrapping the step in a composite is the only way to pin the action's SHA in ONE place across every rainix workflow that caches Rust build artifacts. The `prefix-key` input covers the one call site (vercel) that namespaces its cache per-workflow; every other site uses the action's default key.
 inputs:
   prefix-key:
     description: >-
-      Optional `prefix-key` for `Swatinem/rust-cache` (e.g. one namespaced per
-      workflow via the github context). Empty (the default) leaves the action's
-      own default prefix in place.
+      Optional `prefix-key` for `Swatinem/rust-cache` (e.g. one namespaced per workflow via the github context). Empty (the default) leaves the action's own default prefix in place.
     required: false
     default: ''
 runs:
