@@ -17,19 +17,12 @@ on:
     inputs:
       install-command:
         description: >-
-          Command that installs the npm dependency tree before the scan, e.g.
-          `nix develop .#wasm-shell -c npm install --no-check`. The blacklist
-          checker runs `npm ls --all`, so every directory in
-          `working-directories` must have its `node_modules` populated by this
-          command.
+          Command that installs the npm dependency tree before the scan, e.g. `nix develop .#wasm-shell -c npm install --no-check`. The blacklist checker runs `npm ls --all`, so every directory in `working-directories` must have its `node_modules` populated by this command.
         required: true
         type: string
       working-directories:
         description: >-
-          Whitespace-separated list of NPM project directories to scan, e.g. a
-          YAML multiline of ". packages/raindex packages/ui-components". Each
-          must contain a `package.json` and installed `node_modules` after
-          `install-command` runs. Defaults to the repository root.
+          Whitespace-separated list of NPM project directories to scan, e.g. a YAML multiline of ". packages/raindex packages/ui-components". Each must contain a `package.json` and installed `node_modules` after `install-command` runs. Defaults to the repository root.
         required: false
         default: '.'
         type: string

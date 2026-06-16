@@ -1,17 +1,10 @@
 name: checkout
 description: >-
-  Single-source wrapper around `actions/checkout`. GitHub Actions can't
-  parameterize a `uses:` ref with an env expression, so the only way to pin
-  the checkout SHA in ONE place across every rainix workflow is to wrap it in a
-  composite. The `ssh-key` input covers the one call site (autopublish) that
-  needs a deploy-key checkout; every other site uses the default token checkout.
+  Single-source wrapper around `actions/checkout`. GitHub Actions can't parameterize a `uses:` ref with an env expression, so the only way to pin the checkout SHA in ONE place across every rainix workflow is to wrap it in a composite. The `ssh-key` input covers the one call site (autopublish) that needs a deploy-key checkout; every other site uses the default token checkout.
 inputs:
   ssh-key:
     description: >-
-      Optional deploy key (e.g. `secrets.PUBLISH_PRIVATE_KEY`) for a checkout
-      whose pushes should trigger downstream workflows. A composite action
-      cannot read `secrets.*`, so the caller must plumb the secret through here.
-      Empty (the default) falls back to the standard GITHUB_TOKEN checkout.
+      Optional deploy key (e.g. `secrets.PUBLISH_PRIVATE_KEY`) for a checkout whose pushes should trigger downstream workflows. A composite action cannot read `secrets.*`, so the caller must plumb the secret through here. Empty (the default) falls back to the standard GITHUB_TOKEN checkout.
     required: false
     default: ''
 runs:

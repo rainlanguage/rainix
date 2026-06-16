@@ -1,16 +1,10 @@
 name: nix-cachix-setup
 description: >-
-  Shared 'nix + cachix CI' preamble for the rainix reusable workflows: checkout,
-  nix-quick-install, the Cachix substituter/pusher, and the cache-nix-action Nix
-  store restore/save. This composite is the single source of truth for the
-  pinned third-party action SHAs used by that preamble — each SHA lives here once
-  instead of being copy-pasted across the reusables.
+  Shared 'nix + cachix CI' preamble for the rainix reusable workflows: checkout, nix-quick-install, the Cachix substituter/pusher, and the cache-nix-action Nix store restore/save. This composite is the single source of truth for the pinned third-party action SHAs used by that preamble — each SHA lives here once instead of being copy-pasted across the reusables.
 inputs:
   cachix-auth-token:
     description: >-
-      Cachix auth token. A composite action cannot read `secrets.*`, so the
-      caller reusable must plumb `secrets.CACHIX_AUTH_TOKEN` through to here.
-      Empty (the default) degrades to a read-only/anonymous Cachix pull.
+      Cachix auth token. A composite action cannot read `secrets.*`, so the caller reusable must plumb `secrets.CACHIX_AUTH_TOKEN` through to here. Empty (the default) degrades to a read-only/anonymous Cachix pull.
     required: false
     default: ''
   cachix-name:
@@ -19,23 +13,17 @@ inputs:
     default: rainlanguage
   checkout:
     description: >-
-      Run the bundled `actions/checkout` (default). Set to 'false' if the
-      caller needs a non-default checkout (e.g. an ssh-key deploy-key checkout)
-      and runs `actions/checkout` itself before calling this composite.
+      Run the bundled `actions/checkout` (default). Set to 'false' if the caller needs a non-default checkout (e.g. an ssh-key deploy-key checkout) and runs `actions/checkout` itself before calling this composite.
     required: false
     default: 'true'
   cache-nix:
     description: >-
-      Run the bundled `cache-nix-action` Nix store restore/save (default). Set
-      to 'false' if the caller pins a different cache-nix-action version and runs
-      it itself.
+      Run the bundled `cache-nix-action` Nix store restore/save (default). Set to 'false' if the caller pins a different cache-nix-action version and runs it itself.
     required: false
     default: 'true'
   gc-max-store-size-macos:
     description: >-
-      Optional `gc-max-store-size-macos` for the bundled cache-nix-action. Left
-      empty (the action's own default) unless a caller needs to cap the macOS
-      store before saving.
+      Optional `gc-max-store-size-macos` for the bundled cache-nix-action. Left empty (the action's own default) unless a caller needs to cap the macOS store before saving.
     required: false
     default: ''
 runs:
