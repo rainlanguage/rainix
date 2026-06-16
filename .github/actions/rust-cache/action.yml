@@ -9,8 +9,8 @@ description: >-
 inputs:
   prefix-key:
     description: >-
-      Optional `prefix-key` for `Swatinem/rust-cache` (e.g.
-      `rust-${{ github.workflow }}`). Empty (the default) leaves the action's
+      Optional `prefix-key` for `Swatinem/rust-cache` (e.g. one namespaced per
+      workflow via the github context). Empty (the default) leaves the action's
       own default prefix in place.
     required: false
     default: ''
