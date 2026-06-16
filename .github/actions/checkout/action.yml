@@ -1,7 +1,7 @@
 name: checkout
 description: >-
   Single-source wrapper around `actions/checkout`. GitHub Actions can't
-  parameterize a `uses:` ref (no `uses: ${{ env.X }}`), so the only way to pin
+  parameterize a `uses:` ref with an env expression, so the only way to pin
   the checkout SHA in ONE place across every rainix workflow is to wrap it in a
   composite. The `ssh-key` input covers the one call site (autopublish) that
   needs a deploy-key checkout; every other site uses the default token checkout.
