@@ -1,10 +1,6 @@
 name: gh-release
 description: >-
-  Single-source wrapper around `softprops/action-gh-release`. GitHub Actions
-  can't parameterize a `uses:` ref, so wrapping the step in a composite is the
-  only way to pin the action's SHA in ONE place across the (npm / soldeer)
-  GitHub Release steps in the autopublish workflow. Each call site passes its
-  own `tag-name` / `name` / `files`.
+  Single-source wrapper around `softprops/action-gh-release`. GitHub Actions can't parameterize a `uses:` ref, so wrapping the step in a composite is the only way to pin the action's SHA in ONE place across the (npm / soldeer) GitHub Release steps in the autopublish workflow. Each call site passes its own `tag-name` / `name` / `files`.
 inputs:
   tag-name:
     description: The git tag to create the release against (passed to `tag_name`).
@@ -15,14 +11,12 @@ inputs:
     default: ''
   files:
     description: >-
-      Newline- or comma-separated globs of files to upload as release assets.
-      Empty (the default) creates a release with no attached assets.
+      Newline- or comma-separated globs of files to upload as release assets. Empty (the default) creates a release with no attached assets.
     required: false
     default: ''
   github-token:
     description: >-
-      GitHub token used to create the release. A composite action cannot read
-      `secrets.*`, so the caller must plumb `secrets.GITHUB_TOKEN` through here.
+      GitHub token used to create the release. A composite action cannot read `secrets.*`, so the caller must plumb `secrets.GITHUB_TOKEN` through here.
     required: true
 runs:
   using: composite
