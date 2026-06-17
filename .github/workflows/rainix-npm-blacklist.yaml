@@ -57,4 +57,4 @@ jobs:
       # listed directory resolves a blacklisted package.
       - uses: rainlanguage/github-chore/.github/actions/npm-blacklist@main
         with:
-          working-directories: ${{ inputs.working-directories }}
+          working-directory: ${{ inputs.working-directories }}
