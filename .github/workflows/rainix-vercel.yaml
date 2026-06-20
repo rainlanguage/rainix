@@ -125,14 +125,18 @@ jobs:
           deploy_log="$(mktemp)"
           "$VERCEL_BIN" deploy --prebuilt ${{ inputs.production && '--prod' || '' }} --token="$VERCEL_TOKEN" "${{ inputs.deploy-path }}" 2>&1 | tee "$deploy_log"
 
-          # Preview URL: prefer the "Preview: <url>" line; fall back to the last
-          # bare https://*.vercel.app URL the CLI emitted (the deployment URL).
-          preview_url="$(grep -oE 'Preview: https://[^[:space:]]+' "$deploy_log" | tail -n1 | sed 's/^Preview: //')"
+          # Deployment URL: prefer the "Preview:"/"Production:" line (the CLI
+          # prints "Production:" for --prod and "Preview:" otherwise); fall back
+          # to the last bare https://*.vercel.app URL. Guard every grep with
+          # `|| true` so a no-match never aborts the step under `set -euo
+          # pipefail` — this was the bug: on a --prod deploy the "Preview:"-only
+          # grep matched nothing and set -e killed an otherwise-successful deploy.
+          preview_url="$(grep -oE '(Preview|Production): https://[^[:space:]]+' "$deploy_log" | tail -n1 | sed -E 's/^(Preview|Production): //' || true)"
           if [ -z "$preview_url" ]; then
-            preview_url="$(grep -oE 'https://[a-zA-Z0-9.-]+\.vercel\.app[^[:space:]]*' "$deploy_log" | tail -n1)"
+            preview_url="$(grep -oE 'https://[a-zA-Z0-9.-]+\.vercel\.app[^[:space:]]*' "$deploy_log" | tail -n1 || true)"
           fi
           # Inspect (dashboard) URL, if present.
-          inspect_url="$(grep -oE 'Inspect: https://[^[:space:]]+' "$deploy_log" | tail -n1 | sed 's/^Inspect: //')"
+          inspect_url="$(grep -oE 'Inspect: https://[^[:space:]]+' "$deploy_log" | tail -n1 | sed 's/^Inspect: //' || true)"
 
           echo "url=$preview_url" >> "$GITHUB_OUTPUT"
           echo "inspect=$inspect_url" >> "$GITHUB_OUTPUT"
