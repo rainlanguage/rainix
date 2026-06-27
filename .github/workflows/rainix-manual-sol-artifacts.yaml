@@ -8,6 +8,39 @@ on:
         description: |
           Passed through as `DEPLOYMENT_SUITE`. `script/Deploy.sol` dispatches
           on this to select what to deploy.
+    # Secrets consumed by the deploy step. Declared here so callers in a
+    # different organization can pass them explicitly — `secrets: inherit`
+    # only forwards a caller's secrets within the same org, so a cross-org
+    # caller cannot reach them otherwise. All optional: an unset secret falls
+    # back to the `|| vars.* || ''` chain in the job `env`. Mirrors the
+    # declaration in `rainix-sol.yaml`.
+    secrets:
+      PRIVATE_KEY:
+        required: false
+      CACHIX_AUTH_TOKEN:
+        required: false
+      EXPLORER_VERIFICATION_KEY:
+        required: false
+      RPC_URL_ARBITRUM_FORK:
+        required: false
+      RPC_URL_BASE_FORK:
+        required: false
+      RPC_URL_BASE_SEPOLIA_FORK:
+        required: false
+      RPC_URL_FLARE_FORK:
+        required: false
+      RPC_URL_POLYGON_FORK:
+        required: false
+      CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY:
+        required: false
+      CI_DEPLOY_BASE_ETHERSCAN_API_KEY:
+        required: false
+      CI_DEPLOY_BASE_SEPOLIA_ETHERSCAN_API_KEY:
+        required: false
+      CI_DEPLOY_POLYGON_ETHERSCAN_API_KEY:
+        required: false
+      CI_DEPLOY_FLARE_ETHERSCAN_API_KEY:
+        required: false
 jobs:
   deploy:
     runs-on: ubuntu-latest
