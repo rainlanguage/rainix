@@ -89,6 +89,26 @@ Defined in `.github/workflows/`:
 - **check-shell.yml** — verifies dev shell tools are available
 - **pr-assessment.yaml** — PR size assessment
 
+### Flake-ref pinning in reusable workflows
+
+The reusable workflows (`.github/workflows/rainix-*.yaml`) invoke the dev shells
+via `nix develop github:rainlanguage/rainix/<sha>#<devshell>` — pinned to an
+explicit commit **sha**, never the bare `github:rainlanguage/rainix#…` (HEAD)
+form. Unpinned, nix resolves HEAD through `api.github.com/.../commits/HEAD`,
+which GitHub **burst-rate-limits (429)** under CI load (the error body comes back
+gzipped and nix mis-parses it as JSON) — this was the dominant org-wide CI flake.
+A full sha makes nix skip that API call and fetch the tarball directly.
+Authenticating the call does NOT help (it's a secondary limit, not missing auth);
+pinning is the fix.
+
+**Every flake ref across every reusable shares ONE sha.** To bump the toolchain,
+find-replace the old sha with the new across `.github/workflows/*.yaml`, then
+sanity-check with `nix flake show github:rainlanguage/rainix/<new-sha>` that the
+referenced devshells (`sol-shell`, `rust-shell`, `rust-node-shell`,
+`subgraph-shell`) still resolve at it. Never add a bare unpinned
+`github:rainlanguage/rainix#…` ref — it reintroduces the 429. (Single-sourcing
+this repeated sha so a bump is one line is tracked in #248.)
+
 ## Code Style
 
 - Rust: `cargo fmt` and `cargo clippy` with all warnings denied
