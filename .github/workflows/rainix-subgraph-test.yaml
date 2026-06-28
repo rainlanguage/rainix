@@ -11,5 +11,4 @@ jobs:
       - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          github-token: ${{ github.token }}
       - run: nix develop github:rainlanguage/rainix#subgraph-shell -c subgraph-test

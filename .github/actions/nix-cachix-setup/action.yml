@@ -26,16 +26,6 @@ inputs:
       Optional `gc-max-store-size-macos` for the bundled cache-nix-action. Left empty (the action's own default) unless a caller needs to cap the macOS store before saving.
     required: false
     default: ''
-  github-token:
-    description: >-
-      GitHub token used to authenticate nix's GitHub API calls (flake
-      resolution), so they use the run-token rate limit (~1000/hr) instead of
-      the unauthenticated 60/hr/IP cap that 429s under CI bursts. `github.token`
-      does NOT populate inside a composite invoked across the org boundary, so a
-      cross-org reusable caller MUST pass its own `github.token` here;
-      same-org callers may omit it and fall back to the composite's own token.
-    required: false
-    default: ''
 runs:
   using: composite
   steps:
@@ -59,18 +49,6 @@ runs:
         nix_conf: |
           keep-env-derivations = true
           keep-outputs = true
-          # Authenticate nix GitHub API calls (flake resolution) so they
-          # use the run token rate limit (~1000/hr) instead of the
-          # unauthenticated 60/hr/IP cap, which 429s under CI bursts.
-          access-tokens = github.com=${{ inputs.github-token || github.token }}
-    # TEMPORARY: log token lengths (never values) to diagnose the cross-org
-    # flake-fetch 429. Remove once the wiring is confirmed.
-    - name: Debug token wiring
-      shell: bash
-      env:
-        INPUT_TOK: ${{ inputs.github-token }}
-        BARE_TOK: ${{ github.token }}
-      run: echo "WIRING inputs.github-token len=${#INPUT_TOK} bare-github.token len=${#BARE_TOK}"
     # Substitute prebuilt rainix derivations from the shared Cachix binary
     # cache instead of rebuilding toolchain crates from source (rainix#196).
     # Pushes new paths when the auth token is set; continue-on-error so a
