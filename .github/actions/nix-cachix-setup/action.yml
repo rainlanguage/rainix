@@ -59,21 +59,23 @@ runs:
         nix_conf: |
           keep-env-derivations = true
           keep-outputs = true
-          # Authenticate nix GitHub API calls (flake resolution) so they
-          # use the run token rate limit (~1000/hr) instead of the
-          # unauthenticated 60/hr/IP cap, which 429s under CI bursts.
-          access-tokens = github.com=${{ inputs.github-token || github.token }}
-    # TEMPORARY: log token lengths (never values) to diagnose the cross-org
-    # flake-fetch 429. Remove once the wiring is confirmed.
-    - name: Debug token wiring
+    # Authenticate nix's GitHub API calls (flake resolution) so they use the run
+    # token rate limit (~1000/hr) instead of the unauthenticated 60/hr/IP cap
+    # that 429s under CI bursts. Exported via NIX_CONFIG to $GITHUB_ENV so every
+    # subsequent nix command in the job (incl. `nix develop github:...`) reads
+    # it — the access-tokens line in nix-quick-install's nix_conf does NOT land
+    # in the effective nix.conf.
+    - name: Authenticate nix GitHub API calls
       shell: bash
       env:
-        INPUT_TOK: ${{ inputs.github-token }}
-        BARE_TOK: ${{ github.token }}
+        GH_API_TOKEN: ${{ inputs.github-token || github.token }}
+      run: echo "NIX_CONFIG=access-tokens = github.com=$GH_API_TOKEN" >> "$GITHUB_ENV"
+    # TEMPORARY verification — remove before merge.
+    - name: VERIFY access-tokens applied
+      shell: bash
       run: |
-        echo "WIRING len=${#INPUT_TOK} prefix=${INPUT_TOK:0:4}"
-        echo "WIRING ratelimit=$(curl -s -H "Authorization: Bearer $INPUT_TOK" https://api.github.com/rate_limit | grep -oE '"limit":[0-9]+' | head -1)"
-        echo "WIRING nixconf_access_tokens=$(grep -c access-tokens /etc/nix/nix.conf 2>/dev/null || echo missing)"
+        echo "VERIFY config_count=$(nix config show 2>/dev/null | grep -c access-tokens)"
+        echo "VERIFY flake=$(nix flake metadata github:rainlanguage/rainix --no-write-lock-file 2>&1 | grep -aoiE 'resolved|429|http error|forbidden' | head -1)"
     # Substitute prebuilt rainix derivations from the shared Cachix binary
     # cache instead of rebuilding toolchain crates from source (rainix#196).
     # Pushes new paths when the auth token is set; continue-on-error so a
