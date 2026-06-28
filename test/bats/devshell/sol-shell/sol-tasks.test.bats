@@ -8,3 +8,8 @@
   run command -v rainix-sol-artifacts
   [ "$status" -eq 0 ]
 }
+
+@test "check-published-deploy-constants should be available on PATH" {
+  run command -v check-published-deploy-constants
+  [ "$status" -eq 0 ]
+}
