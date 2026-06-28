@@ -279,7 +279,10 @@
             set -euo pipefail
             exec ${./lib/check-published-deploy-constants.sh} "$@"
           '';
-          additionalBuildInputs = [ pkgs.curl pkgs.gnugrep ];
+          additionalBuildInputs = [
+            pkgs.curl
+            pkgs.gnugrep
+          ];
         };
 
         rainix-rs-static = mkTask {
