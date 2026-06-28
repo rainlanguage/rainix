@@ -12,4 +12,4 @@ jobs:
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - uses: rainlanguage/rainix/.github/actions/rust-cache@main
-      - run: nix develop github:rainlanguage/rainix#rust-shell -c cargo build -r --target wasm32-unknown-unknown --lib --workspace
+      - run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#rust-shell -c cargo build -r --target wasm32-unknown-unknown --lib --workspace
