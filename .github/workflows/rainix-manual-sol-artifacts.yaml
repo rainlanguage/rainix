@@ -65,9 +65,9 @@ jobs:
             foundry-full-${{ runner.os }}-
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
-        run: nix develop github:rainlanguage/rainix#sol-shell -c forge soldeer install
-      - run: nix develop github:rainlanguage/rainix#sol-shell -c forge selectors up --all
-      - run: nix develop github:rainlanguage/rainix#sol-shell -c forge script script/Deploy.sol:Deploy -vvvvv --slow --broadcast --verify
+        run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c forge soldeer install
+      - run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c forge selectors up --all
+      - run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c forge script script/Deploy.sol:Deploy -vvvvv --slow --broadcast --verify
         env:
           DEPLOYMENT_SUITE: ${{ inputs.suite }}
           DEPLOYMENT_KEY: ${{ secrets.PRIVATE_KEY }}
