@@ -11,6 +11,7 @@ jobs:
       - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          github-token: ${{ github.token }}
       # No Foundry build cache here on purpose: this is a clean-build determinism
       # check, so out/ must be regenerated fresh — and caching only cache/ (not
       # out/) gives no real speedup, since forge recompiles to rebuild the

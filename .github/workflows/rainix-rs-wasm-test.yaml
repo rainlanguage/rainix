@@ -11,5 +11,6 @@ jobs:
       - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          github-token: ${{ github.token }}
       - uses: rainlanguage/rainix/.github/actions/rust-cache@main
       - run: nix develop github:rainlanguage/rainix#rust-shell -c bash -c "CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner cargo test --target wasm32-unknown-unknown --workspace"

@@ -13,6 +13,7 @@ jobs:
       - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          github-token: ${{ github.token }}
       - uses: rainlanguage/rainix/.github/actions/rust-cache@main
       - run: nix develop github:rainlanguage/rainix#rust-shell -c rainix-rs-static
       # Run the rainix pre-commit hook bundle (taplo, the nix hooks, yamlfmt,

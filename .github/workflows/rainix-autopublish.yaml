@@ -65,6 +65,7 @@ jobs:
       - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          github-token: ${{ github.token }}
           checkout: 'false'
       # Resolve the crate list once (crates, else the back-compat singular crate).
       - name: Resolve crates
