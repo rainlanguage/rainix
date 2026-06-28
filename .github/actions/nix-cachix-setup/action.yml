@@ -62,7 +62,7 @@ runs:
           # Authenticate nix GitHub API calls (flake resolution) so they
           # use the run token rate limit (~1000/hr) instead of the
           # unauthenticated 60/hr/IP cap, which 429s under CI bursts.
-          access-tokens = github.com=${{ inputs["github-token"] || github.token }}
+          access-tokens = github.com=${{ inputs.github-token || github.token }}
     # Substitute prebuilt rainix derivations from the shared Cachix binary
     # cache instead of rebuilding toolchain crates from source (rainix#196).
     # Pushes new paths when the auth token is set; continue-on-error so a
