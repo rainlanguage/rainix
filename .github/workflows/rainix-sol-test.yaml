@@ -40,6 +40,7 @@ jobs:
       - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          github-token: ${{ github.token }}
       # Cache Foundry's incremental compilation cache + artifacts so unchanged
       # contracts aren't recompiled (forge build is the dominant CI cost).
       - name: Cache Foundry build
