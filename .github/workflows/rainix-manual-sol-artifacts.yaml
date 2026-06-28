@@ -48,7 +48,7 @@ jobs:
       # Shared nix + cachix CI preamble (checkout, nix-quick-install, Cachix,
       # cache-nix-action) — pinned action SHAs live in the composite. Fully
       # qualified ref: a bare `./` would resolve against the calling repo.
-      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
+      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@debug/token-wiring-2
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
           github-token: ${{ github.token }}
