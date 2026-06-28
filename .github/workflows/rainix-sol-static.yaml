@@ -24,8 +24,8 @@ jobs:
             foundry-full-${{ runner.os }}-
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
-        run: nix develop github:rainlanguage/rainix#sol-shell -c forge soldeer install
-      - run: nix develop github:rainlanguage/rainix#sol-shell -c slither .
-      - run: nix develop github:rainlanguage/rainix#sol-shell -c forge fmt --check
+        run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c forge soldeer install
+      - run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c slither .
+      - run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c forge fmt --check
       # Enforce Rain's one-contract-per-.sol-file convention (rainix#214).
-      - run: nix develop github:rainlanguage/rainix#sol-shell -c rainix-sol-single-contract
+      - run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c rainix-sol-single-contract

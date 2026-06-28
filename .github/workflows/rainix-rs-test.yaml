@@ -18,4 +18,4 @@ jobs:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
           gc-max-store-size-macos: 1G
       - uses: rainlanguage/rainix/.github/actions/rust-cache@main
-      - run: nix develop github:rainlanguage/rainix#rust-shell -c cargo test
+      - run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#rust-shell -c cargo test

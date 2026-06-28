@@ -14,7 +14,7 @@ jobs:
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - uses: rainlanguage/rainix/.github/actions/rust-cache@main
-      - run: nix develop github:rainlanguage/rainix#rust-shell -c rainix-rs-static
+      - run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#rust-shell -c rainix-rs-static
       # Run the rainix pre-commit hook bundle (taplo, the nix hooks, yamlfmt,
       # shellcheck, rustfmt) over all files — the same hooks a local commit
       # runs. rainix-rs-static only covers rustfmt + clippy, so a file that is
@@ -24,4 +24,4 @@ jobs:
       # rather than re-paying runner setup. Reuses rust-shell, so prettier-rainix
       # (which needs the default shell's RAINIX_PRETTIER_BUNDLE_DIR) no-ops here;
       # frontend repos format svelte/ts via their own pipeline.
-      - run: nix develop github:rainlanguage/rainix#rust-shell -c pre-commit run --all-files --show-diff-on-failure --color always
+      - run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#rust-shell -c pre-commit run --all-files --show-diff-on-failure --color always
