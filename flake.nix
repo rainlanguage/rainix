@@ -273,6 +273,18 @@
           additionalBuildInputs = [ pkgs.git ];
         };
 
+        rainix-check-deploy-constants = mkTask {
+          name = "check-published-deploy-constants";
+          body = ''
+            set -euo pipefail
+            exec ${./lib/check-published-deploy-constants.sh} "$@"
+          '';
+          additionalBuildInputs = [
+            pkgs.curl
+            pkgs.gnugrep
+          ];
+        };
+
         rainix-rs-static = mkTask {
           name = "rainix-rs-static";
           body = ''
@@ -286,6 +298,7 @@
         sol-tasks = [
           rainix-sol-artifacts
           rainix-sol-single-contract
+          rainix-check-deploy-constants
         ];
 
         rs-tasks = [
@@ -586,6 +599,7 @@
           inherit
             rainix-sol-artifacts
             rainix-sol-single-contract
+            rainix-check-deploy-constants
             rainix-rs-static
             prettier-bundle
             sol-shell-test
