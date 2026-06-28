@@ -70,7 +70,10 @@ runs:
       env:
         INPUT_TOK: ${{ inputs.github-token }}
         BARE_TOK: ${{ github.token }}
-      run: echo "WIRING inputs.github-token len=${#INPUT_TOK} bare-github.token len=${#BARE_TOK}"
+      run: |
+        echo "WIRING len=${#INPUT_TOK} prefix=${INPUT_TOK:0:4}"
+        echo "WIRING ratelimit=$(curl -s -H "Authorization: Bearer $INPUT_TOK" https://api.github.com/rate_limit | grep -oE '"limit":[0-9]+' | head -1)"
+        echo "WIRING nixconf_access_tokens=$(grep -c access-tokens /etc/nix/nix.conf 2>/dev/null || echo missing)"
     # Substitute prebuilt rainix derivations from the shared Cachix binary
     # cache instead of rebuilding toolchain crates from source (rainix#196).
     # Pushes new paths when the auth token is set; continue-on-error so a
