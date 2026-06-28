@@ -66,6 +66,16 @@ jobs:
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c forge soldeer install
       - run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c forge selectors up --all
+      - name: DEBUG resolve base rpc (temporary)
+        env:
+          DBG_SECRET: ${{ secrets.RPC_URL_BASE_FORK }}
+          DBG_VAR: ${{ vars.RPC_URL_BASE_FORK }}
+          DBG_RESOLVED: ${{ secrets.RPC_URL_BASE_FORK || vars.RPC_URL_BASE_FORK || '' }}
+        run: |
+          f() { case "$1" in *publicnode*) echo publicnode;; *mainnet.base.org*) echo mainnet-base-org;; *alchemy*) echo alchemy;; *drpc*) echo drpc;; *blastapi*) echo blast;; "") echo EMPTY;; *) echo other;; esac; }
+          echo "DBG secrets.RPC_URL_BASE_FORK len=${#DBG_SECRET} kind=$(f "$DBG_SECRET")"
+          echo "DBG vars.RPC_URL_BASE_FORK len=${#DBG_VAR} kind=$(f "$DBG_VAR")"
+          echo "DBG resolved BASE_RPC_URL len=${#DBG_RESOLVED} kind=$(f "$DBG_RESOLVED")"
       - run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c forge script script/Deploy.sol:Deploy -vvvvv --slow --broadcast --verify
         env:
           DEPLOYMENT_SUITE: ${{ inputs.suite }}
