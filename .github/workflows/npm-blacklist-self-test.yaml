@@ -1,0 +1,19 @@
+##
+## Self-test for the `rainix-npm-blacklist.yaml` reusable workflow.
+##
+## Exercises the reusable end to end against a real npm project in this repo's
+## fixture: it installs the fixture's dependency tree and runs the blacklist
+## scan over it, exactly as a downstream consumer does. The install command
+## populates `node_modules` under `test/fixture/subgraph`, and that same
+## directory is the one scanned.
+##
+name: npm-blacklist-self-test
+on: [push]
+jobs:
+  npm-blacklist:
+    uses: ./.github/workflows/rainix-npm-blacklist.yaml
+    with:
+      install-command: nix develop .#wasm-shell -c bash -c "cd test/fixture/subgraph && npm ci"
+      working-directories: test/fixture/subgraph
+    secrets:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
