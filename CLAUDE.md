@@ -109,8 +109,8 @@ To bump the toolchain, find-replace the old sha with the new in
 `env.RAINIX_SHA:` across all 11 `rainix-*.yaml` files, then sanity-check with
 `nix flake show github:rainlanguage/rainix/<new-sha>` that the referenced
 devshells (`sol-shell`, `rust-shell`, `rust-node-shell`, `subgraph-shell`) still
-resolve at it. Never add a bare unpinned `github:rainlanguage/rainix#…` ref —
-it reintroduces the 429.
+resolve at it. Never add a bare unpinned `github:rainlanguage/rainix#…` ref — it
+reintroduces the 429.
 
 ## Code Style
 
