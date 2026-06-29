@@ -1,6 +1,8 @@
 name: rainix-rs-wasm-test
 on:
   workflow_call:
+env:
+  RAINIX_SHA: 307bf27fcc5a410994f5a6a6a96527a64625c3da
 jobs:
   rs-wasm-test:
     runs-on: ubuntu-latest
@@ -12,4 +14,4 @@ jobs:
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - uses: rainlanguage/rainix/.github/actions/rust-cache@main
-      - run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#rust-shell -c bash -c "CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner cargo test --target wasm32-unknown-unknown --workspace"
+      - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#rust-shell -c bash -c "CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner cargo test --target wasm32-unknown-unknown --workspace"

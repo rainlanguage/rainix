@@ -1,6 +1,8 @@
 name: rainix-copy-artifacts
 on:
   workflow_call:
+env:
+  RAINIX_SHA: 307bf27fcc5a410994f5a6a6a96527a64625c3da
 jobs:
   copy-artifacts:
     runs-on: ubuntu-latest
@@ -18,7 +20,7 @@ jobs:
       # keep the cache; copy-artifacts skips the save/restore overhead.
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
-        run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c forge soldeer install
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
       # Currency-check every committed generated artifact by re-running each
       # consumer-provided codegen step. The final git diff fails if any
       # committed file has drifted from its source. The build-meta.sh hook is
@@ -26,15 +28,15 @@ jobs:
       # filenames, meta type) varies per repo.
       - name: Regenerate meta artifacts
         if: hashFiles('script/build-meta.sh') != ''
-        run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c ./script/build-meta.sh
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c ./script/build-meta.sh
       - name: Regenerate pointer artifacts
         if: hashFiles('script/BuildPointers.sol') != ''
-        run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c forge script ./script/BuildPointers.sol
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ./script/BuildPointers.sol
       - name: Build Solidity
-        run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c forge build
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge build
       - name: Copy forge artifacts into committed location
         if: hashFiles('script/CopyArtifacts.sol') != ''
-        run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c forge script ./script/CopyArtifacts.sol --ffi
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ./script/CopyArtifacts.sol --ffi
       # Catch-all post-forge regen hook: consumer-supplied. Runs outside any
       # nix devshell so the script picks shells per command (subgraph-shell,
       # sol-shell, etc.) for whatever derived artifacts it emits.
@@ -42,7 +44,7 @@ jobs:
         if: hashFiles('script/build.sh') != ''
         run: ./script/build.sh
       - name: Format (so generated artifacts match committed style)
-        run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c forge fmt
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge fmt
       - name: Assert committed artifacts match freshly built
         run: |
           if ! git diff --exit-code; then
