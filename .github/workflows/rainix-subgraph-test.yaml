@@ -1,6 +1,8 @@
 name: rainix-subgraph-test
 on:
   workflow_call:
+env:
+  RAINIX_SHA: 307bf27fcc5a410994f5a6a6a96527a64625c3da
 jobs:
   subgraph-test:
     runs-on: ubuntu-latest
@@ -11,4 +13,4 @@ jobs:
       - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      - run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#subgraph-shell -c subgraph-test
+      - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#subgraph-shell -c subgraph-test

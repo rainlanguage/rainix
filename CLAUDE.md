@@ -101,13 +101,16 @@ flake. A full sha makes nix skip that API call and fetch the tarball directly.
 Authenticating the call does NOT help (it's a secondary limit, not missing
 auth); pinning is the fix.
 
-**Every flake ref across every reusable shares ONE sha.** To bump the toolchain,
-find-replace the old sha with the new across `.github/workflows/*.yaml`, then
-sanity-check with `nix flake show github:rainlanguage/rainix/<new-sha>` that the
-referenced devshells (`sol-shell`, `rust-shell`, `rust-node-shell`,
-`subgraph-shell`) still resolve at it. Never add a bare unpinned
-`github:rainlanguage/rainix#…` ref — it reintroduces the 429. (Single-sourcing
-this repeated sha so a bump is one line is tracked in #248.)
+**Every flake ref across every reusable shares ONE sha**, single-sourced via a
+top-level `env: RAINIX_SHA:` in each reusable workflow file. Run steps reference
+it as `github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#<devshell>`.
+
+To bump the toolchain, find-replace the old sha with the new in
+`env.RAINIX_SHA:` across all 11 `rainix-*.yaml` files, then sanity-check with
+`nix flake show github:rainlanguage/rainix/<new-sha>` that the referenced
+devshells (`sol-shell`, `rust-shell`, `rust-node-shell`, `subgraph-shell`) still
+resolve at it. Never add a bare unpinned `github:rainlanguage/rainix#…` ref —
+it reintroduces the 429.
 
 ## Code Style
 
