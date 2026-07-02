@@ -38,6 +38,10 @@ All tasks are Nix packages run via `nix run`. From a consuming repo use `..#`
 - `nix run ..#rainix-sol-single-contract` — fail if any tracked `.sol` declares
   more than one top-level `contract`/`abstract contract` (one-contract-per-file
   convention; `library`/`interface` not counted)
+- `nix run ..#rainix-sol-pragma-convention` — fail if any tracked `.sol` uses
+  the wrong pragma operator: lib/interface/abstract files must use `^` (float
+  for soldeer consumers); concrete `contract` files must use `=` (pin exact
+  compiler) (rainix#250; skips `src/generated/` and `dependencies/`)
 - `nix run ..#rainix-sol-legal` — `reuse lint` (REUSE/DCL-1.0 license
   compliance)
 - `nix run ..#rainix-sol-artifacts` — deploy to testnet via `script/Deploy.sol`

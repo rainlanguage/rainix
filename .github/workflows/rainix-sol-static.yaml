@@ -29,3 +29,5 @@ jobs:
       - run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c forge fmt --check
       # Enforce Rain's one-contract-per-.sol-file convention (rainix#214).
       - run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c rainix-sol-single-contract
+      # Enforce Rain's pragma convention (rainix#250): ^ for lib/abstract/interface, = for concrete.
+      - run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c rainix-sol-pragma-convention
