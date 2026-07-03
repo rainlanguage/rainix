@@ -18,6 +18,8 @@ on:
         required: false
       RPC_URL_POLYGON_FORK:
         required: false
+env:
+  RAINIX_SHA: 307bf27fcc5a410994f5a6a6a96527a64625c3da
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -53,5 +55,5 @@ jobs:
             foundry-full-${{ runner.os }}-
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
-        run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c forge soldeer install
-      - run: nix develop github:rainlanguage/rainix/307bf27fcc5a410994f5a6a6a96527a64625c3da#sol-shell -c forge test -vvv
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
+      - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge test -vvv
