@@ -13,6 +13,14 @@ jobs:
       - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      # Ignored tests are banned org-wide with no exceptions: Rust #[ignore],
+      # JS .skip/.only, Solidity xtest renames and any vm.skip. A test either
+      # runs and passes or is deleted.
+      - uses: rainlanguage/rainix/.github/actions/no-ignored-tests@main
+      # Custom NatSpec tags (@custom:) are banned org-wide — document behavior
+      # in standard NatSpec. Sole exception: ERC-7201's normative
+      # `@custom:storage-location erc7201:` annotation, which tooling reads.
+      - uses: rainlanguage/rainix/.github/actions/no-custom-natspec@main
       # Cache Foundry's incremental compilation cache + artifacts so unchanged
       # contracts aren't recompiled (forge build is the dominant CI cost).
       - name: Cache Foundry build
