@@ -1,0 +1,57 @@
+name: no-ignored-tests
+description: >-
+  Fails when tests are statically ignored: Rust #[ignore], JS/TS
+  .skip/.only/x-prefixed suites, Solidity xtest-renamed functions, and
+  unconditional vm.skip(true). Conditional skips gated on real environment
+  availability (an if within the preceding lines, or a non-literal skip
+  argument) are allowed.
+runs:
+  using: composite
+  steps:
+    - name: Check for ignored tests
+      shell: bash
+      run: |
+        set -euo pipefail
+        fail=0
+        
+        rust_hits=$(grep -rn --include='*.rs' -E '#\[ignore' . \
+          --exclude-dir=target --exclude-dir=dependencies --exclude-dir=node_modules --exclude-dir=.git || true)
+        if [ -n "$rust_hits" ]; then
+          echo "Ignored Rust tests (#[ignore]) found:"; echo "$rust_hits"; fail=1
+        fi
+        
+        js_hits=$(grep -rn --include='*.ts' --include='*.tsx' --include='*.js' --include='*.jsx' --include='*.svelte' \
+          -E '\b(it|test|describe)\.(skip|only)[[:space:]]*\(|\bx(it|describe)[[:space:]]*\(' . \
+          --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=build --exclude-dir=.svelte-kit --exclude-dir=.git --exclude-dir=target || true)
+        if [ -n "$js_hits" ]; then
+          echo "Skipped or focused JS/TS tests (.skip/.only/x-prefixed) found:"; echo "$js_hits"; fail=1
+        fi
+        
+        sol_rename=$(grep -rn --include='*.sol' -E 'function xtest' . \
+          --exclude-dir=dependencies --exclude-dir=lib --exclude-dir=node_modules --exclude-dir=.git || true)
+        if [ -n "$sol_rename" ]; then
+          echo "Disabled-by-rename Solidity tests (function xtest*) found:"; echo "$sol_rename"; fail=1
+        fi
+        
+        # Unconditional vm.skip(true) is a hard ignore. A skip is conditional (allowed)
+        # when the argument is a non-literal expression, or an `if (` appears on the
+        # same line or within the 5 preceding lines.
+        while IFS= read -r f; do
+          if ! awk -v file="$f" '
+            { lines[NR] = $0 }
+            /vm\.skip\(true\)/ {
+              ok = 0
+              if ($0 ~ /if[[:space:]]*\(/) ok = 1
+              for (i = NR - 5; i < NR; i++) if (i > 0 && lines[i] ~ /if[[:space:]]*\(/) ok = 1
+              if (!ok) { printf "%s:%d: unconditional vm.skip(true)\n", file, NR; found = 1 }
+            }
+            END { exit found ? 1 : 0 }
+          ' "$f"; then fail=1; fi
+        done < <(grep -rl --include='*.sol' 'vm\.skip(true)' . \
+          --exclude-dir=dependencies --exclude-dir=lib --exclude-dir=node_modules --exclude-dir=.git || true)
+        
+        if [ "$fail" -ne 0 ]; then
+          echo "Ignored tests are not allowed: delete the test, fix it, or make the skip conditional on real environment availability."
+          exit 1
+        fi
+        echo "No ignored tests found."
