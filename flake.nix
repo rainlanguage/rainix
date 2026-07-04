@@ -288,6 +288,19 @@
           rainix-sol-single-contract
         ];
 
+        # Verifies all rainix-*.yaml reusable workflows pin their RAINIX_SHA
+        # to the same commit SHA and contain no bare unpinned flake refs.
+        # Catches toolchain-bump drift across the 11 reusable workflow files.
+        rainix-check-flake-pin = mkTask {
+          name = "rainix-check-flake-pin";
+          body = ''
+            set -euo pipefail
+            source ${./lib/check-rainix-flake-pin.sh}
+            check_rainix_flake_pin_consistent ".github/workflows"
+          '';
+          additionalBuildInputs = [ pkgs.gnugrep pkgs.gnused pkgs.coreutils ];
+        };
+
         rs-tasks = [
           rainix-rs-static
         ];
@@ -381,6 +394,7 @@
             bats test/bats/task/subgraph-build.test.bats
             bats test/bats/task/subgraph-deploy-version.test.bats
             bats test/bats/task/sol-single-contract.test.bats
+            bats test/bats/task/check-rainix-flake-pin.test.bats
           '';
           additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs ++ node-build-inputs;
         };
@@ -587,6 +601,7 @@
             rainix-sol-artifacts
             rainix-sol-single-contract
             rainix-rs-static
+            rainix-check-flake-pin
             prettier-bundle
             sol-shell-test
             rust-shell-test
