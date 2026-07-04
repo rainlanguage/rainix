@@ -298,7 +298,11 @@
             source ${./lib/check-rainix-flake-pin.sh}
             check_rainix_flake_pin_consistent ".github/workflows"
           '';
-          additionalBuildInputs = [ pkgs.gnugrep pkgs.gnused pkgs.coreutils ];
+          additionalBuildInputs = [
+            pkgs.gnugrep
+            pkgs.gnused
+            pkgs.coreutils
+          ];
         };
 
         rs-tasks = [
