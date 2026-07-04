@@ -1,0 +1,48 @@
+name: no-ignored-tests
+description: >-
+  Fails when tests are ignored, with no exceptions: Rust #[ignore], JS/TS
+  .skip/.only/x-prefixed suites, Solidity xtest-renamed functions, and any
+  vm.skip whatsoever. A test either runs and passes or is deleted; skips
+  hide undone work.
+runs:
+  using: composite
+  steps:
+    - name: Check for ignored tests
+      shell: bash
+      run: |
+        set -euo pipefail
+        fail=0
+        
+        rust_hits=$(grep -rn --include='*.rs' -E '#\[ignore' . \
+          --exclude-dir=target --exclude-dir=node_modules --exclude-dir=.git \
+          | grep -vE '^\./(dependencies|lib)/' || true)
+        if [ -n "$rust_hits" ]; then
+          echo "Ignored Rust tests (#[ignore]) found:"; echo "$rust_hits"; fail=1
+        fi
+        
+        js_hits=$(grep -rn --include='*.ts' --include='*.tsx' --include='*.js' --include='*.jsx' --include='*.svelte' \
+          -E '\b(it|test|describe)\.(skip|only)[[:space:]]*\(|\bx(it|describe)[[:space:]]*\(' . \
+          --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=build --exclude-dir=.svelte-kit --exclude-dir=.git --exclude-dir=target || true)
+        if [ -n "$js_hits" ]; then
+          echo "Skipped or focused JS/TS tests (.skip/.only/x-prefixed) found:"; echo "$js_hits"; fail=1
+        fi
+        
+        sol_rename=$(grep -rn --include='*.sol' -E 'function xtest' . \
+          --exclude-dir=node_modules --exclude-dir=.git \
+          | grep -vE '^\./(dependencies|lib)/' || true)
+        if [ -n "$sol_rename" ]; then
+          echo "Disabled-by-rename Solidity tests (function xtest*) found:"; echo "$sol_rename"; fail=1
+        fi
+        
+        sol_skips=$(grep -rn --include='*.sol' -E 'vm\.skip[[:space:]]*\(' . \
+          --exclude-dir=node_modules --exclude-dir=.git \
+          | grep -vE '^\./(dependencies|lib)/' || true)
+        if [ -n "$sol_skips" ]; then
+          echo "vm.skip found (no skips allowed, conditional or otherwise):"; echo "$sol_skips"; fail=1
+        fi
+
+        if [ "$fail" -ne 0 ]; then
+          echo "Ignored tests are not allowed, no exceptions: a test either runs and passes, or it is deleted."
+          exit 1
+        fi
+        echo "No ignored tests found."
