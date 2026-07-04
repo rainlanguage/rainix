@@ -1,0 +1,27 @@
+name: no-custom-natspec
+description: >-
+  Fails on any @custom: NatSpec tag in first-party Solidity. Custom tags are
+  an unreviewed side-channel convention (e.g. @custom:error duplicating
+  declaration-site error docs); document behavior in standard NatSpec
+  (@notice/@dev/@param/@return) instead. The single exception is ERC-7201's
+  normative, tooling-read storage annotation, which must match its exact
+  form: `@custom:storage-location erc7201:`.
+runs:
+  using: composite
+  steps:
+    - name: Check for custom NatSpec tags
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        hits=$(grep -rn --include='*.sol' -E '@custom:' . \
+          --exclude-dir=node_modules --exclude-dir=.git \
+          | grep -vE '^\./(dependencies|lib)/' \
+          | grep -vE '@custom:storage-location erc7201:' || true)
+        if [ -n "$hits" ]; then
+          echo "Custom NatSpec tags (@custom:) found — use standard NatSpec instead"
+          echo "(only ERC-7201's exact '@custom:storage-location erc7201:' form is allowed):"
+          echo "$hits"
+          exit 1
+        fi
+        echo "no-custom-natspec: clean"
