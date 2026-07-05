@@ -1,9 +1,6 @@
 name: no-submodules
 description: >-
-  Fails when the repo uses git submodules: a root .gitmodules file or any
-  committed gitlink entry (mode 160000). Dependencies come from soldeer /
-  npm / nix flakes, never vendored submodule pointers. Migrated from the
-  rain-org-health scan's advisory `submodules` signal into a hard gate.
+  Fails when the repo uses git submodules: a root .gitmodules file or any committed gitlink entry (mode 160000). Dependencies come from soldeer / npm / nix flakes, never vendored submodule pointers. Migrated from the rain-org-health scan's advisory `submodules` signal into a hard gate.
 runs:
   using: composite
   steps:
@@ -11,7 +8,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        # Single source of truth: the BATS-covered library in rainix's lib/.
-        # shellcheck disable=SC1091
-        source "$GITHUB_ACTION_PATH/../../../lib/no-submodules.sh"
-        check_no_submodules .
+        # Single source of truth: the Rust rainix-static binary (its unit tests
+        # run inside the nix build). RAINIX_SHA is exported by the calling
+        # reusable per the org flake-pin convention; main is the dev fallback.
+        nix run "github:rainlanguage/rainix/${RAINIX_SHA:-main}#rainix-static" -- no-submodules .
