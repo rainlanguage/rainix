@@ -1,11 +1,6 @@
 name: no-custom-natspec
 description: >-
-  Fails on any @custom: NatSpec tag in first-party Solidity. Custom tags are
-  an unreviewed side-channel convention (e.g. @custom:error duplicating
-  declaration-site error docs); document behavior in standard NatSpec
-  (@notice/@dev/@param/@return) instead. The single exception is ERC-7201's
-  normative, tooling-read storage annotation, which must match its exact
-  form: `@custom:storage-location erc7201:`.
+  Fails on any @custom: NatSpec tag in first-party Solidity. Custom tags are an unreviewed side-channel convention (e.g. @custom:error duplicating declaration-site error docs); document behavior in standard NatSpec (@notice/@dev/@param/@return) instead. The single exception is ERC-7201's normative, tooling-read storage annotation, which must match its exact form: `@custom:storage-location erc7201:`.
 runs:
   using: composite
   steps:
