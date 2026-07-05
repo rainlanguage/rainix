@@ -19,6 +19,8 @@ jobs:
       # JS .skip/.only, Solidity xtest renames and any vm.skip. A test either
       # runs and passes or is deleted.
       - uses: rainlanguage/rainix/.github/actions/no-ignored-tests@main
+      # Git submodules are banned org-wide — deps come from soldeer/npm/nix.
+      - uses: rainlanguage/rainix/.github/actions/no-submodules@main
       - uses: rainlanguage/rainix/.github/actions/rust-cache@main
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#rust-shell -c rainix-rs-static
       # Run the rainix pre-commit hook bundle (taplo, the nix hooks, yamlfmt,

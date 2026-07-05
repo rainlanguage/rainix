@@ -1,9 +1,6 @@
 name: no-ignored-tests
 description: >-
-  Fails when tests are ignored, with no exceptions: Rust #[ignore], JS/TS
-  .skip/.only/x-prefixed suites, Solidity xtest-renamed functions, and any
-  vm.skip whatsoever. A test either runs and passes or is deleted; skips
-  hide undone work.
+  Fails when tests are ignored, with no exceptions: Rust #[ignore], JS/TS .skip/.only/x-prefixed suites, Solidity xtest-renamed functions, and any vm.skip whatsoever. A test either runs and passes or is deleted; skips hide undone work.
 runs:
   using: composite
   steps:

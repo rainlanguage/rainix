@@ -17,6 +17,8 @@ jobs:
       # JS .skip/.only, Solidity xtest renames and any vm.skip. A test either
       # runs and passes or is deleted.
       - uses: rainlanguage/rainix/.github/actions/no-ignored-tests@main
+      # Git submodules are banned org-wide — deps come from soldeer/npm/nix.
+      - uses: rainlanguage/rainix/.github/actions/no-submodules@main
       # Custom NatSpec tags (@custom:) are banned org-wide — document behavior
       # in standard NatSpec. Sole exception: ERC-7201's normative
       # `@custom:storage-location erc7201:` annotation, which tooling reads.
