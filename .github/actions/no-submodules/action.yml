@@ -1,0 +1,17 @@
+name: no-submodules
+description: >-
+  Fails when the repo uses git submodules: a root .gitmodules file or any
+  committed gitlink entry (mode 160000). Dependencies come from soldeer /
+  npm / nix flakes, never vendored submodule pointers. Migrated from the
+  rain-org-health scan's advisory `submodules` signal into a hard gate.
+runs:
+  using: composite
+  steps:
+    - name: Check for git submodules
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Single source of truth: the BATS-covered library in rainix's lib/.
+        # shellcheck disable=SC1091
+        source "$GITHUB_ACTION_PATH/../../../lib/no-submodules.sh"
+        check_no_submodules .
