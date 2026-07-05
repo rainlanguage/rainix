@@ -9,6 +9,8 @@ runs:
       run: |
         set -euo pipefail
         # Single source of truth: the Rust rainix-static binary (its unit tests
-        # run inside the nix build). RAINIX_SHA is exported by the calling
-        # reusable per the org flake-pin convention; main is the dev fallback.
-        nix run "github:rainlanguage/rainix/${RAINIX_SHA:-main}#rainix-static" -- no-submodules .
+        # run inside the nix build). Run from the composite's OWN checkout via a
+        # path: flake ref — consumers' RAINIX_SHA pins predate the package and a
+        # github: ref at that sha has no such attribute (broke org statics on
+        # 2026-07-05).
+        nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- no-submodules .
