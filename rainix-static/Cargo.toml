@@ -1,0 +1,10 @@
+[package]
+name = "rainix-static"
+version = "0.1.0"
+edition = "2021"
+description = "Org-wide static checks as subcommands; composites invoke this binary instead of inline bash."
+license = "LicenseRef-DCL-1.0"
+
+[[bin]]
+name = "rainix-static"
+path = "src/main.rs"

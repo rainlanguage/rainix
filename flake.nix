@@ -192,6 +192,17 @@
           '';
         };
 
+        # Org-wide static checks as one Rust binary (`rainix-static <check> [dir]`,
+        # rainlanguage/rainix#255): composites `nix run` it (cachix-cached; unit
+        # tests run inside the nix build via doCheck) instead of sourcing bash.
+        rainix-static = pkgs.rustPlatform.buildRustPackage {
+          pname = "rainix-static";
+          version = "0.1.0";
+          src = ./rainix-static;
+          cargoLock.lockFile = ./rainix-static/Cargo.lock;
+          nativeCheckInputs = [ pkgs.git ];
+        };
+
         # https://ertt.ca/nix/shell-scripts/
         mkTask =
           {
@@ -397,6 +408,7 @@
             bats test/bats/task/subgraph-deploy-version.test.bats
             bats test/bats/task/sol-single-contract.test.bats
             bats test/bats/task/sol-pragma-convention.test.bats
+            bats test/bats/task/no-custom-natspec.test.bats
           '';
           additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs ++ node-build-inputs;
         };
@@ -600,6 +612,7 @@
 
         packages = {
           inherit
+            rainix-static
             rainix-sol-artifacts
             rainix-sol-single-contract
             rainix-sol-pragma-convention
