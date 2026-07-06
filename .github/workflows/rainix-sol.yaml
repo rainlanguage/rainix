@@ -14,6 +14,8 @@ on:
         required: false
       RPC_URL_BASE_SEPOLIA_FORK:
         required: false
+      RPC_URL_ETHEREUM_FORK:
+        required: false
       RPC_URL_FLARE_FORK:
         required: false
       RPC_URL_POLYGON_FORK:
@@ -32,5 +34,6 @@ jobs:
       RPC_URL_ARBITRUM_FORK: ${{ secrets.RPC_URL_ARBITRUM_FORK }}
       RPC_URL_BASE_FORK: ${{ secrets.RPC_URL_BASE_FORK }}
       RPC_URL_BASE_SEPOLIA_FORK: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK }}
+      RPC_URL_ETHEREUM_FORK: ${{ secrets.RPC_URL_ETHEREUM_FORK }}
       RPC_URL_FLARE_FORK: ${{ secrets.RPC_URL_FLARE_FORK }}
       RPC_URL_POLYGON_FORK: ${{ secrets.RPC_URL_POLYGON_FORK }}
