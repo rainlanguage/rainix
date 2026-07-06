@@ -27,6 +27,8 @@ on:
         required: false
       RPC_URL_BASE_SEPOLIA_FORK:
         required: false
+      RPC_URL_ETHEREUM_FORK:
+        required: false
       RPC_URL_FLARE_FORK:
         required: false
       RPC_URL_POLYGON_FORK:
@@ -75,6 +77,7 @@ jobs:
           ARBITRUM_RPC_URL: ${{ secrets.RPC_URL_ARBITRUM_FORK || vars.RPC_URL_ARBITRUM_FORK || '' }}
           BASE_RPC_URL: ${{ secrets.RPC_URL_BASE_FORK || vars.RPC_URL_BASE_FORK || '' }}
           BASE_SEPOLIA_RPC_URL: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK || vars.RPC_URL_BASE_SEPOLIA_FORK || '' }}
+          ETHEREUM_RPC_URL: ${{ secrets.RPC_URL_ETHEREUM_FORK || vars.RPC_URL_ETHEREUM_FORK || '' }}
           FLARE_RPC_URL: ${{ secrets.RPC_URL_FLARE_FORK || vars.RPC_URL_FLARE_FORK || '' }}
           POLYGON_RPC_URL: ${{ secrets.RPC_URL_POLYGON_FORK || vars.RPC_URL_POLYGON_FORK || '' }}
           # Etherscan V2 is a single multichain API key: source all Etherscan-family
