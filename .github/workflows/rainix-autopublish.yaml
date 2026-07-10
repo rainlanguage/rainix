@@ -190,25 +190,34 @@ jobs:
       # republish identical bytecode forever. Excluding it also removes the old
       # per-constant pin-stripping: the versioned deploy pins live in the excluded
       # snapshots, not in the hashed source. foundry.toml's version line is
-      # blanked so a bump alone is never a content change. The hash helper is
-      # base64'd to avoid YAML heredoc fragility.
+      # blanked so a bump alone is never a content change. The hash is a small
+      # inline bash function (like the cargo gate above), no Python.
       - name: Soldeer content gate
         if: ${{ inputs.soldeer-package != '' }}
         id: soldeer
         run: |
           set -euo pipefail
           PKG="${{ inputs.soldeer-package }}"
-          echo 'aW1wb3J0IHN5cywgemlwZmlsZSwgaGFzaGxpYiwgcmUKIyBTb3VyY2Utb25seSBjb250ZW50IGhhc2ggZm9yIHRoZSBuZXh0LXZlcnNpb24gbGlmZWN5Y2xlLiBFdmVyeXRoaW5nIHVuZGVyCiMgc3JjL2dlbmVyYXRlZC8gKHBlci1yZWxlYXNlIDx0YWc+LyBzbmFwc2hvdHMgKyBnZW5lcmF0ZWQgYWxpYXNpbmcgbGlicykgaXMKIyBkZXJpdmVkIGZyb20gc291cmNlIGFuZCBncm93cyBhIG5ldyBkaXIgZXZlcnkgcmVsZWFzZSwgc28gaXQncyBleGNsdWRlZCDigJQgb25seQojIHJlYWwgc291cmNlIGNoYW5nZXMgZmxpcCB0aGUgaGFzaC4gZm91bmRyeS50b21sJ3MgdmVyc2lvbiBsaW5lIGlzIGJsYW5rZWQgc28gYQojIGJ1bXAgYWxvbmUgaXMgbmV2ZXIgYSBjb250ZW50IGNoYW5nZS4KaCA9IGhhc2hsaWIuc2hhMjU2KCkKd2l0aCB6aXBmaWxlLlppcEZpbGUoc3lzLmFyZ3ZbMV0pIGFzIHo6CiAgICBmb3IgbiBpbiBzb3J0ZWQoeCBmb3IgeCBpbiB6Lm5hbWVsaXN0KCkgaWYgbm90IHguZW5kc3dpdGgoIi8iKSk6CiAgICAgICAgaWYgbi5zdGFydHN3aXRoKCJzcmMvZ2VuZXJhdGVkLyIpOgogICAgICAgICAgICBjb250aW51ZQogICAgICAgIGQgPSB6LnJlYWQobikKICAgICAgICBpZiBuID09ICJmb3VuZHJ5LnRvbWwiOgogICAgICAgICAgICBkID0gcmUuc3ViKHJiIig/bSledmVyc2lvblxzKj0uKiIsIHJiJ3ZlcnNpb24gPSAiMC4wLjAiJywgZCkKICAgICAgICBoLnVwZGF0ZShuLmVuY29kZSgpKTsgaC51cGRhdGUoYiJcMCIpOyBoLnVwZGF0ZShkKQpwcmludChoLmhleGRpZ2VzdCgpKQo=' | base64 -d > /tmp/soldeer_normhash.py
-          nh() { python3 /tmp/soldeer_normhash.py "$1"; }
+          nh() {
+            local d
+            d=$(mktemp -d)
+            unzip -q "$1" -d "$d"
+            [ -f "$d/foundry.toml" ] && sed -i -E 's/^version[[:space:]]*=.*/version = "0.0.0"/' "$d/foundry.toml"
+            ( cd "$d" && find . -type f -not -path './src/generated/*' | LC_ALL=C sort \
+                | while IFS= read -r f; do printf '%s\0' "$f"; cat "$f"; done \
+                | sha256sum | cut -d' ' -f1 )
+            rm -rf "$d"
+          }
           META=$(curl -fsSL "https://api.soldeer.xyz/api/v1/revision?project_name=$PKG&offset=0&limit=1" || echo '{}')
-          REMOTE=$(printf '%s' "$META" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['data'][0]['version'] if d.get('data') else 'none')")
-          URL=$(printf '%s' "$META" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['data'][0]['url'] if d.get('data') else '')")
+          REMOTE=$(printf '%s' "$META" | jq -r '.data[0].version // "none"')
+          URL=$(printf '%s' "$META" | jq -r '.data[0].url // ""')
           LOCAL=$(awk -F\" '/^version[[:space:]]*=/ { print $2; exit }' foundry.toml)
           # Next-version invariant: LOCAL (the in-dev version) must be AHEAD of
           # the published REMOTE. If a prior run published but its bump-commit
           # push failed, LOCAL will equal REMOTE — fail loud with a clear action
           # (bump the version), not silent re-publish / mis-bump.
-          if [ "$REMOTE" != "none" ] && ! python3 -c "t=lambda v:[int(x) for x in (v.split('.')+['0','0','0'])[:3]]; import sys; sys.exit(0 if t('$LOCAL')>t('$REMOTE') else 1)"; then
+          # LOCAL is ahead iff it sorts (version order) strictly after REMOTE.
+          if [ "$REMOTE" != "none" ] && { [ "$LOCAL" = "$REMOTE" ] || [ "$(printf '%s\n%s\n' "$REMOTE" "$LOCAL" | sort -V | tail -1)" != "$LOCAL" ]; }; then
             echo "::error::foundry.toml [package].version ($LOCAL) is not ahead of the published revision ($REMOTE); the next-version lifecycle needs it to be the next UNPUBLISHED version — bump [package].version above $REMOTE." >&2
             exit 1
           fi
@@ -220,7 +229,7 @@ jobs:
             curl -fsSL "$URL" -o /tmp/soldeer_pub.zip; OLD=$(nh /tmp/soldeer_pub.zip); fi
           # LOCAL (the in-dev version) is what publishes; NEXT (its patch bump)
           # is what foundry.toml becomes after — the next unpublished version.
-          NEXT=$(python3 -c "b=[int(x) for x in ('$LOCAL'.split('.')+['0','0','0'])[:3]]; b[2]+=1; print('.'.join(map(str,b)))")
+          IFS=. read -r _MA _MI _PA <<<"$LOCAL"; NEXT="${_MA}.${_MI}.$((_PA + 1))"
           echo "soldeer gate: remote=$REMOTE publish=$LOCAL next=$NEXT OLD=$OLD NEW=$NEW"
           if [ "$OLD" != "$NEW" ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; else echo "changed=false" >> "$GITHUB_OUTPUT"; fi
           echo "version=$LOCAL" >> "$GITHUB_OUTPUT"
