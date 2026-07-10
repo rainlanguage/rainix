@@ -612,24 +612,23 @@
           mkTask
           ;
 
-        packages =
-          {
-            inherit
-              rainix-static
-              rainix-sol-artifacts
-              rainix-sol-single-contract
-              rainix-rs-static
-              prettier-bundle
-              sol-shell-test
-              rust-shell-test
-              ;
-          }
-          # component-screenshots drives a headless pkgs.chromium, which nixpkgs
-          # only ships for Linux; exposing it on darwin makes `nix flake check`
-          # refuse to evaluate. The reusable workflow runs on ubuntu-latest.
-          // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
-            inherit component-screenshots;
-          };
+        packages = {
+          inherit
+            rainix-static
+            rainix-sol-artifacts
+            rainix-sol-single-contract
+            rainix-rs-static
+            prettier-bundle
+            sol-shell-test
+            rust-shell-test
+            ;
+        }
+        # component-screenshots drives a headless pkgs.chromium, which nixpkgs
+        # only ships for Linux; exposing it on darwin makes `nix flake check`
+        # refuse to evaluate. The reusable workflow runs on ubuntu-latest.
+        // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+          inherit component-screenshots;
+        };
 
         devShells = {
           # Slim shell for Solidity-only repos: no rust, node,
