@@ -50,9 +50,7 @@ on:
         type: string
       storybook-build-command:
         description: >-
-          Command that builds the consumer's Storybook to a static directory.
-          The default writes to `storybook-static`; keep `storybook-static-dir`
-          in sync if you change the output location.
+          Command that builds the consumer's Storybook to a static directory. The default writes to `storybook-static`; keep `storybook-static-dir` in sync if you change the output location.
         required: false
         default: npx storybook build
         type: string

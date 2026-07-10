@@ -612,18 +612,24 @@
           mkTask
           ;
 
-        packages = {
-          inherit
-            rainix-static
-            rainix-sol-artifacts
-            rainix-sol-single-contract
-            rainix-rs-static
-            component-screenshots
-            prettier-bundle
-            sol-shell-test
-            rust-shell-test
-            ;
-        };
+        packages =
+          {
+            inherit
+              rainix-static
+              rainix-sol-artifacts
+              rainix-sol-single-contract
+              rainix-rs-static
+              prettier-bundle
+              sol-shell-test
+              rust-shell-test
+              ;
+          }
+          # component-screenshots drives a headless pkgs.chromium, which nixpkgs
+          # only ships for Linux; exposing it on darwin makes `nix flake check`
+          # refuse to evaluate. The reusable workflow runs on ubuntu-latest.
+          // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+            inherit component-screenshots;
+          };
 
         devShells = {
           # Slim shell for Solidity-only repos: no rust, node,
@@ -696,27 +702,6 @@
             '';
           };
 
-          # Slim shell for frontend repos that render committed Storybook
-          # stories to deterministic PNGs in CI (rainlanguage/rainix#262):
-          # node + a headless Chromium + the component-screenshots task. No
-          # rust, sol or subgraph tooling. Browser and node both come from nix
-          # so there is no setup-node / Playwright browser-download version
-          # drift; CHROMIUM_BIN points the capture script at the nix browser.
-          storybook-shell = pkgs.mkShell {
-            buildInputs =
-              node-build-inputs
-              ++ common-shell-inputs
-              ++ [
-                component-screenshots
-                pkgs.chromium
-              ];
-            shellHook = ''
-              export CHROMIUM_BIN=${pkgs.chromium}/bin/chromium
-              ${pre-commit.shellHook}
-              ${source-dotenv}
-            '';
-          };
-
           default = pkgs.mkShell {
             buildInputs =
               sol-build-inputs
@@ -744,6 +729,31 @@
             '';
           };
 
+        }
+        # Slim shell for frontend repos that render committed Storybook
+        # stories to deterministic PNGs in CI (rainlanguage/rainix#262):
+        # node + a headless Chromium + the component-screenshots task. No
+        # rust, sol or subgraph tooling. Browser and node both come from nix
+        # so there is no setup-node / Playwright browser-download version
+        # drift; CHROMIUM_BIN points the capture script at the nix browser.
+        # Linux-only: nixpkgs ships chromium for Linux alone, and exposing a
+        # chromium-dependent shell on darwin makes `nix flake check` refuse to
+        # evaluate. The component-screenshots reusable runs on ubuntu-latest.
+        // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+          storybook-shell = pkgs.mkShell {
+            buildInputs =
+              node-build-inputs
+              ++ common-shell-inputs
+              ++ [
+                component-screenshots
+                pkgs.chromium
+              ];
+            shellHook = ''
+              export CHROMIUM_BIN=${pkgs.chromium}/bin/chromium
+              ${pre-commit.shellHook}
+              ${source-dotenv}
+            '';
+          };
         };
       }
     );
