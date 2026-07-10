@@ -19,7 +19,7 @@ on:
       RPC_URL_POLYGON_FORK:
         required: false
 env:
-  RAINIX_SHA: 307bf27fcc5a410994f5a6a6a96527a64625c3da
+  RAINIX_SHA: 53e96a7d0a97d7c7c75c3b2412521324776fdac6
 jobs:
   test:
     runs-on: ubuntu-latest
