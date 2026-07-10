@@ -1,0 +1,138 @@
+##
+## Reusable component-screenshots for rainlanguage frontend repos.
+##
+## Renders every committed Storybook story to a deterministic PNG so PR
+## screenshots come from version-controlled stories that import the real
+## component/function — never a fabricated, throwaway DOM harness
+## (rainlanguage/rainix#262). Storybook is the org-standard story tool spanning
+## our React + Svelte repos.
+##
+## The caller owns its Storybook config + stories and the install/build
+## commands; this workflow owns the generic wrapper: checkout, nix + Cachix, the
+## npm cache, and the build -> capture -> upload steps. The capture itself is
+## the committed lib/component-screenshots.js, run by the `component-screenshots`
+## task in the `storybook-shell` devShell and driven by a nix-provided headless
+## Chromium (browser AND node from nix — no actions/setup-node, no Playwright
+## browser download, no version drift). Submodules are intentionally not
+## supported: they are banned org-wide (deps come from npm/nix).
+##
+## A consumer composes it like:
+##
+##   jobs:
+##     screenshots:
+##       uses: rainlanguage/rainix/.github/workflows/component-screenshots.yml@main
+##       with:
+##         working-directory: packages/ui-components
+##       secrets:
+##         CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+##
+## BOOTSTRAP CAVEAT: this reusable renders in the `storybook-shell` devShell,
+## added to flake.nix in the same change. The run steps pin the flake ref to
+## `env.RAINIX_SHA` (never a bare `github:rainlanguage/rainix#…`, which 429s —
+## see CLAUDE.md). That pin must be bumped — find-replace `RAINIX_SHA` across
+## every rainix-*.yaml, exactly the shell-bump procedure in CLAUDE.md — to a
+## merged commit that contains `storybook-shell` before this job can go green.
+## Until then it is red for the same bootstrap reason the shared composites are.
+##
+name: component-screenshots
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Directory the consumer's Storybook lives in (its package.json + .storybook).
+        required: false
+        default: .
+        type: string
+      install-command:
+        description: Command that installs the consumer's node dependencies.
+        required: false
+        default: npm ci
+        type: string
+      storybook-build-command:
+        description: >-
+          Command that builds the consumer's Storybook to a static directory.
+          The default writes to `storybook-static`; keep `storybook-static-dir`
+          in sync if you change the output location.
+        required: false
+        default: npx storybook build
+        type: string
+      storybook-static-dir:
+        description: Directory (relative to working-directory) the Storybook build writes its static output to.
+        required: false
+        default: storybook-static
+        type: string
+      output-dir:
+        description: Directory (relative to working-directory) the rendered PNGs are written to.
+        required: false
+        default: screenshots
+        type: string
+      width:
+        description: Screenshot viewport width in pixels.
+        required: false
+        default: 1280
+        type: number
+      height:
+        description: Screenshot viewport height in pixels.
+        required: false
+        default: 800
+        type: number
+      artifact-name:
+        description: Name of the uploaded screenshots artifact.
+        required: false
+        default: component-screenshots
+        type: string
+    secrets:
+      CACHIX_AUTH_TOKEN:
+        required: false
+    outputs:
+      artifact-name:
+        description: Name of the uploaded screenshots artifact.
+        value: ${{ inputs.artifact-name }}
+      output-dir:
+        description: Directory (relative to working-directory) the PNGs were written to.
+        value: ${{ inputs.output-dir }}
+env:
+  RAINIX_SHA: 307bf27fcc5a410994f5a6a6a96527a64625c3da
+jobs:
+  component-screenshots:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      # Shared nix + cachix CI preamble (checkout, nix-quick-install, Cachix,
+      # cache-nix-action) — pinned action SHAs live in the composite. Fully
+      # qualified ref: a bare `./` would resolve against the calling repo. A
+      # headless Chromium closure is large, so budget the Nix store like the
+      # webapp build does.
+      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          gc-max-store-size-linux: 10G
+      - name: Cache npm
+        uses: rainlanguage/rainix/.github/actions/cache@main
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ github.workflow }}-${{ hashFiles(format('{0}/package-lock.json', inputs.working-directory)) }}
+          restore-keys: npm-${{ runner.os }}-
+      - name: Install dependencies
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#storybook-shell -c ${{ inputs.install-command }}
+      - name: Build Storybook
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#storybook-shell -c ${{ inputs.storybook-build-command }}
+      - name: Render stories to PNG
+        run: |
+          nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#storybook-shell -c \
+            component-screenshots \
+            --input "${{ inputs.storybook-static-dir }}" \
+            --out "${{ inputs.output-dir }}" \
+            --width "${{ inputs.width }}" \
+            --height "${{ inputs.height }}"
+      # upload-artifact does not honour `defaults.run.working-directory`, so the
+      # path is workspace-relative (working-directory + output-dir). Pinned by
+      # SHA like every other third-party action in these reusables.
+      - name: Upload screenshots
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ inputs.working-directory }}/${{ inputs.output-dir }}
+          if-no-files-found: error
