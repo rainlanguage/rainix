@@ -24,7 +24,14 @@ on:
         type: string
         default: ''
       soldeer-package:
-        description: optional Soldeer registry package name (e.g. rain-erc). When set, the workflow content-gates the Soldeer package (dry-run zip vs the latest published revision) and AUTO-BUMPS foundry.toml [package].version on a content change, then publishes — same merge-driven model as the crates (no manual version bump needed).
+        description: >-
+          optional Soldeer registry package name (e.g. rain-erc). When set, the workflow runs the next-version release lifecycle: `[package].version` is the NEXT, in-development version (not yet on the registry). On a content change vs the published revision it publishes that version, bumps `[package].version` to the next, runs `soldeer-generate-cmd` (to re-freeze any versioned artifacts), and commits — one merge-driven process, no manual version bump.
+        required: false
+        type: string
+        default: ''
+      soldeer-generate-cmd:
+        description: >-
+          optional shell command run inside the rainix sol-shell right after the version bump, before the release commit — for repos that generate per-release artifacts keyed by `[package].version` (e.g. deploy-address pointer snapshots). Its output is staged into the "Package Release" commit so the bump lands born-green. Empty (the default) is a no-op for repos with nothing to generate.
         required: false
         type: string
         default: ''
@@ -162,54 +169,30 @@ jobs:
             echo "new=$NEW" >> $GITHUB_OUTPUT
             if [ "$OLD" = "$NEW" ]; then echo "changed=false" >> $GITHUB_OUTPUT; else echo "changed=true" >> $GITHUB_OUTPUT; fi
           '
-      # Soldeer content gate + auto-bump. Mirror the cargo gate: compare the
+      # Soldeer content gate (next-version lifecycle). `[package].version` is the
+      # NEXT, unpublished version. `rainix-static soldeer-gate` compares the
       # NORMALIZED content of what `forge soldeer push --dry-run` would upload
-      # against the latest published revision's zip (the registry returns a
-      # download URL). foundry.toml's version line is blanked in the hash so a
-      # version bump alone is never seen as a content change (no infinite
-      # re-bump). On a content change the next step bumps foundry.toml
-      # [package].version (patch on the greater of local/registry, kept
-      # monotonic) so Soldeer publishes on merge like the crates — no manual
-      # version bump. The hash helper also strips pinned
-      # `*_DEPLOYED_{ADDRESS,CODEHASH}_<x>_<y>_<z>` deploy-constant blocks from
-      # .sol files before hashing: a repo that records a published version's
-      # deployed addresses back into its own source (e.g. raindex's
-      # LibRaindexDeploy) would otherwise self-trigger an endless
-      # bump -> pin-constants -> bump loop, since pinning the constants is itself
-      # a source change. The un-versioned current constants (no _x_y_z suffix)
-      # are kept, so real bytecode changes still register.
-      # The hash helper is base64'd to avoid YAML heredoc fragility.
+      # against the latest published revision, hashing SOURCE ONLY — everything
+      # under `src/generated/` (the per-release `<tag>/` snapshots and generated
+      # aliasing libs) is excluded, since it is derived from source and a fresh
+      # `<tag>/` dir appears every release, which would otherwise flag "changed"
+      # on every merge and republish identical bytecode forever; foundry.toml's
+      # version line is blanked so a bump alone is never a content change. It
+      # fetches the registry + published zip, enforces the next-version invariant
+      # (the in-dev version must be AHEAD of what is published — else a prior
+      # run's failed bump-push is caught loud, not silently re-published), and
+      # emits changed / version / next. The gate logic is Rust, not inline bash
+      # or Python (rainix-static/src/main.rs); the workflow just runs it inside
+      # sol-shell, where forge and curl are on PATH.
       - name: Soldeer content gate
         if: ${{ inputs.soldeer-package != '' }}
         id: soldeer
         run: |
           set -euo pipefail
-          PKG="${{ inputs.soldeer-package }}"
-          echo 'aW1wb3J0IHN5cywgemlwZmlsZSwgaGFzaGxpYiwgcmUKaCA9IGhhc2hsaWIuc2hhMjU2KCkKIyBTdHJpcCBwaW5uZWQgYCpfREVQTE9ZRURfe0FERFJFU1MsQ09ERUhBU0h9Xzx4Pl88eT5fPHo+YCBjb25zdGFudCBibG9ja3MgKGFuZAojIHRoZWlyIGRvYyBjb21tZW50cykgZnJvbSAuc29sIGZpbGVzLCB0aGVuIGNvbGxhcHNlIHRoZSBibGFuay1saW5lIGdhcHMgdGhleQojIGxlYXZlLCBzbyBwaW5uaW5nIGEgcHVibGlzaGVkIHZlcnNpb24ncyBkZXBsb3kgY29uc3RhbnRzIGlzIE5PVCBzZWVuIGFzIGEKIyBjb250ZW50IGNoYW5nZSAoaXQgd291bGQgb3RoZXJ3aXNlIHNlbGYtdHJpZ2dlciBhbiBlbmRsZXNzIGJ1bXAtPnBpbi0+YnVtcAojIGxvb3ApLiBUaGUgdW4tdmVyc2lvbmVkIGN1cnJlbnQgY29uc3RhbnRzIGhhdmUgbm8gX3hfeV96IHN1ZmZpeCBhbmQgYXJlIGtlcHQsCiMgc28gcmVhbCBieXRlY29kZSBjaGFuZ2VzIHN0aWxsIGZsaXAgdGhlIGhhc2guClBJTiA9IHJlLmNvbXBpbGUocmIiKD9tKV4oPzpbIFx0XSovLy8uKlxuKSpbIFx0XSooPzphZGRyZXNzfGJ5dGVzMzIpIGNvbnN0YW50IFtBLVowLTlfXStfREVQTE9ZRURfKD86QUREUkVTU3xDT0RFSEFTSClfXGQrX1xkK19cZCtccyo9W1xzXFNdKj87WyBcdF0qXG4iKQp3aXRoIHppcGZpbGUuWmlwRmlsZShzeXMuYXJndlsxXSkgYXMgejoKICAgIGZvciBuIGluIHNvcnRlZCh4IGZvciB4IGluIHoubmFtZWxpc3QoKSBpZiBub3QgeC5lbmRzd2l0aCgiLyIpKToKICAgICAgICBkID0gei5yZWFkKG4pCiAgICAgICAgaWYgbiA9PSAiZm91bmRyeS50b21sIjoKICAgICAgICAgICAgZCA9IHJlLnN1YihyYiIoP20pXnZlcnNpb25ccyo9LioiLCByYid2ZXJzaW9uID0gIjAuMC4wIicsIGQpCiAgICAgICAgaWYgbi5lbmRzd2l0aCgiLnNvbCIpOgogICAgICAgICAgICBkID0gUElOLnN1YihiIiIsIGQpCiAgICAgICAgICAgIGQgPSByZS5zdWIocmIiXG57Mix9IiwgYiJcbiIsIGQpCiAgICAgICAgaC51cGRhdGUobi5lbmNvZGUoKSk7IGgudXBkYXRlKGIiXDAiKTsgaC51cGRhdGUoZCkKcHJpbnQoaC5oZXhkaWdlc3QoKSkK' | base64 -d > /tmp/soldeer_normhash.py
-          nh() { python3 /tmp/soldeer_normhash.py "$1"; }
-          META=$(curl -fsSL "https://api.soldeer.xyz/api/v1/revision?project_name=$PKG&offset=0&limit=1" || echo '{}')
-          REMOTE=$(printf '%s' "$META" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['data'][0]['version'] if d.get('data') else 'none')")
-          URL=$(printf '%s' "$META" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['data'][0]['url'] if d.get('data') else '')")
-          LOCAL=$(awk -F\" '/^version[[:space:]]*=/ { print $2; exit }' foundry.toml)
-          # Local package content: dry-run writes <cwd-basename>.zip into the cwd.
-          rm -f ./*.zip
-          nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer push "$PKG~$LOCAL" --dry-run
-          NEW=$(nh "$(ls -t ./*.zip | head -1)"); rm -f ./*.zip
-          if [ -z "$URL" ] || [ "$REMOTE" = "none" ]; then OLD="none"; else
-            curl -fsSL "$URL" -o /tmp/soldeer_pub.zip; OLD=$(nh /tmp/soldeer_pub.zip); fi
-          echo "soldeer gate: remote=$REMOTE local=$LOCAL OLD=$OLD NEW=$NEW"
-          # Next version: a first publish (never on the registry) uses LOCAL
-          # as-is; otherwise patch-bump the GREATER of local/remote so NEXT is
-          # always > LOCAL — foundry.toml left ahead of the registry by a prior
-          # bumped-but-unpublished run must not yield a no-op bump.
-          if [ "$REMOTE" = "none" ]; then
-            NEXT="$LOCAL"
-          else
-            NEXT=$(python3 -c "t=lambda v:[int(x) for x in (v.split('.')+['0','0','0'])[:3]]; b=max(t('$LOCAL'),t('$REMOTE')); b[2]+=1; print('.'.join(map(str,b)))")
-          fi
-          if [ "$OLD" != "$NEW" ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; else echo "changed=false" >> "$GITHUB_OUTPUT"; fi
-          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
-          echo "remote=$REMOTE" >> "$GITHUB_OUTPUT"
+          nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c \
+            rainix-static soldeer-gate \
+            --package "${{ inputs.soldeer-package }}" \
+            --github-output "$GITHUB_OUTPUT"
       # Run the test suite only when something is actually going to publish. The
       # change gates above are cheap (cargo package --no-verify + a hash compare,
       # an npm/soldeer version lookup); the full workspace test is the expensive
@@ -244,25 +227,35 @@ jobs:
           echo "NPM_VERSION=$NEW" >> $GITHUB_ENV
           git add package.json package-lock.json
           git commit -m "Package Release npm-${NEW}"
-      # Auto-bump the Soldeer package version when its content changed, so it
-      # publishes on merge like the crates. The "Package Release" prefix makes
-      # the job-level skip guard ignore the push this commit triggers.
-      - name: Bump Soldeer version
+      # Publish the CURRENT in-dev version (steps.soldeer.outputs.version) from
+      # the PRE-bump tree, so the package's contents match the version it is
+      # published under. Runs before the bump+regenerate below (which mutates the
+      # tree). If the later bump-commit push fails after this publishes, the next
+      # run's stale-toml guard fails loud with a clear action (bump the version).
+      - name: Publish to Soldeer
+        if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
+        env:
+          SOLDEER_API_TOKEN: ${{ secrets.SOLDEER_API_TOKEN }}
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer push "${{ inputs.soldeer-package }}~${{ steps.soldeer.outputs.version }}"
+      # Freeze the release: bump [package].version to the next unpublished
+      # version, run the optional generate-cmd to re-key any per-release artifacts
+      # to it, and commit as one "Package Release" (the prefix makes the job-level
+      # skip guard ignore the push this triggers). The commit is born green — the
+      # bumped version's snapshot is already generated.
+      - name: Bump + regenerate Soldeer
         if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
         run: |
           set -euo pipefail
           NEXT="${{ steps.soldeer.outputs.next }}"
           sed -i -E "0,/^version[[:space:]]*=.*/s//version = \"$NEXT\"/" foundry.toml
-          git add foundry.toml
-          # A first publish (NEXT == the current foundry.toml version) stages
-          # nothing — only commit when the version actually changed, so the bump
-          # step never fails with "nothing to commit". --no-verify: an automated
-          # version bump must not be gated on the repo's pre-commit hooks.
-          if git diff --cached --quiet; then
-            echo "foundry.toml already at $NEXT; nothing to commit"
-          else
-            git commit --no-verify -m "Package Release: soldeer ${{ inputs.soldeer-package }} $NEXT"
+          GEN='${{ inputs.soldeer-generate-cmd }}'
+          if [ -n "$GEN" ]; then
+            nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c bash -c "$GEN"
           fi
+          # --no-verify: an automated release bump must not be gated on the repo's
+          # pre-commit hooks. Stage everything the generate step produced.
+          git add -A
+          git commit --no-verify -m "Package Release: soldeer ${{ inputs.soldeer-package }} $NEXT"
       # Tag + push everything in one shot. cargo tags are namespaced
       # <crate>-v<version>; rebase onto any concurrent push first (only the
       # shared Cargo.lock is expected to conflict).
@@ -283,7 +276,7 @@ jobs:
             done
           fi
           if [ -n "${{ env.NPM_VERSION }}" ]; then git tag npm-${{ env.NPM_VERSION }}; fi
-          if [ "${{ steps.soldeer.outputs.changed }}" = "true" ]; then git tag sol-v${{ steps.soldeer.outputs.next }}; fi
+          if [ "${{ steps.soldeer.outputs.changed }}" = "true" ]; then git tag sol-v${{ steps.soldeer.outputs.version }}; fi
           git push origin HEAD
           git push origin --tags
       # Package npm tarball for upload step.
@@ -310,11 +303,6 @@ jobs:
           token: ${{ secrets.NPM_PUBLISH_PRIVATE_TOKEN }}
           access: public
           package: npm_package_${{ env.NPM_VERSION }}.tgz
-      - name: Publish to Soldeer
-        if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
-        env:
-          SOLDEER_API_TOKEN: ${{ secrets.SOLDEER_API_TOKEN }}
-        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer push "${{ inputs.soldeer-package }}~${{ steps.soldeer.outputs.next }}"
       # GitHub Releases. One per crate (loop), plus npm/soldeer.
       - name: GitHub Release (cargo)
         if: ${{ steps.cargo.outputs.changed == 'true' }}
@@ -338,6 +326,6 @@ jobs:
         if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
         uses: rainlanguage/rainix/.github/actions/gh-release@main
         with:
-          tag-name: sol-v${{ steps.soldeer.outputs.next }}
-          name: Soldeer Release sol-v${{ steps.soldeer.outputs.next }}
+          tag-name: sol-v${{ steps.soldeer.outputs.version }}
+          name: Soldeer Release sol-v${{ steps.soldeer.outputs.version }}
           github-token: ${{ secrets.GITHUB_TOKEN }}

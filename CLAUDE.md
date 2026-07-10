@@ -80,6 +80,30 @@ The flake exports:
 `mkTask` is the core abstraction: it creates self-contained Nix derivations
 wrapping shell scripts with their dependencies on `PATH`.
 
+## Tooling is Rust — never Python, never bash logic
+
+Any tool the flake or CI needs that does real **work** — a content/change gate,
+a hash-and-normalize, a version bump, an allowlist check, JSON parsing, a
+comparison — ships as a **Rust binary in this flake, invoked directly**. The
+model is `rainix-static` — general rainix tooling as one
+`rainix-static <subcommand>` binary (org-wide static checks AND CI release
+tooling): one testable, type-checked implementation on the pinned toolchain, not
+logic smeared across shell or a scripting language.
+
+- **No Python.** There is no ambient `python3` in CI, by policy. A
+  `python3 -c …` step (or a base64'd script decoded at runtime) in a workflow is
+  a defect — port it to Rust.
+- **No bash as a logic host.** Wiring a few `nix run ..#…` steps together, env
+  setup, and file moves are fine as glue; but the moment shell is doing the work
+  — parsing, hashing, arithmetic, string surgery, branching over data — that
+  logic belongs in Rust. De-bashing logic into a thin bash wrapper is still
+  bash: ship the binary and call it, don't wrap it.
+
+The line is **logic vs. orchestration**: orchestration (wire these steps
+together) may stay shell; logic (decide, compute, transform) is Rust. When in
+doubt, it's a Rust binary. New repo conventions get enforced the same way — as a
+`rainix-*-static` check — so they hold mechanically, not by reviewer memory.
+
 ## CI
 
 Defined in `.github/workflows/`:
