@@ -102,6 +102,9 @@
           pkgs.slither-analyzer
           pkgs.solc_0_8_25
           pkgs.reuse
+          # curl backs `rainix-static soldeer-gate`'s registry + published-zip
+          # fetches; that release-tooling subcommand runs in this shell (forge).
+          pkgs.curl
           # jq is the canonical tool for extracting stable subsets of
           # forge build artifacts via `vm.ffi` in CopyArtifacts.sol-style
           # scripts.
@@ -192,9 +195,11 @@
           '';
         };
 
-        # Org-wide static checks as one Rust binary (`rainix-static <check> [dir]`,
-        # rainlanguage/rainix#255): composites `nix run` it (cachix-cached; unit
-        # tests run inside the nix build via doCheck) instead of sourcing bash.
+        # General rainix tooling as one Rust binary (`rainix-static <subcommand>`,
+        # rainlanguage/rainix#255): org-wide static checks AND the CI release
+        # tooling that would otherwise be inline bash/Python in a workflow. On PATH
+        # in every shell (via common-shell-inputs) and cachix-cached; unit tests
+        # run inside the nix build via doCheck instead of sourcing bash.
         rainix-static = pkgs.rustPlatform.buildRustPackage {
           pname = "rainix-static";
           version = "0.1.0";
@@ -309,6 +314,9 @@
         common-shell-inputs = [
           pkgs.gh
           pkgs.pre-commit
+          # General rainix tooling on PATH in every shell; workflows call it
+          # instead of inline bash/Python (rainlanguage/rainix#255).
+          rainix-static
         ]
         ++ pre-commit.enabledPackages;
 

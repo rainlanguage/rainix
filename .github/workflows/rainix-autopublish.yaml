@@ -25,24 +25,13 @@ on:
         default: ''
       soldeer-package:
         description: >-
-          optional Soldeer registry package name (e.g. rain-erc). When set, the
-          workflow runs the next-version release lifecycle: `[package].version`
-          is the NEXT, in-development version (not yet on the registry). On a
-          content change vs the published revision it publishes that version,
-          bumps `[package].version` to the next, runs `soldeer-generate-cmd` (to
-          re-freeze any versioned artifacts), and commits — one merge-driven
-          process, no manual version bump.
+          optional Soldeer registry package name (e.g. rain-erc). When set, the workflow runs the next-version release lifecycle: `[package].version` is the NEXT, in-development version (not yet on the registry). On a content change vs the published revision it publishes that version, bumps `[package].version` to the next, runs `soldeer-generate-cmd` (to re-freeze any versioned artifacts), and commits — one merge-driven process, no manual version bump.
         required: false
         type: string
         default: ''
       soldeer-generate-cmd:
         description: >-
-          optional shell command run inside the rainix sol-shell right after the
-          version bump, before the release commit — for repos that generate
-          per-release artifacts keyed by `[package].version` (e.g. deploy-address
-          pointer snapshots). Its output is staged into the "Package Release"
-          commit so the bump lands born-green. Empty (the default) is a no-op for
-          repos with nothing to generate.
+          optional shell command run inside the rainix sol-shell right after the version bump, before the release commit — for repos that generate per-release artifacts keyed by `[package].version` (e.g. deploy-address pointer snapshots). Its output is staged into the "Package Release" commit so the bump lands born-green. Empty (the default) is a no-op for repos with nothing to generate.
         required: false
         type: string
         default: ''
@@ -181,59 +170,29 @@ jobs:
             if [ "$OLD" = "$NEW" ]; then echo "changed=false" >> $GITHUB_OUTPUT; else echo "changed=true" >> $GITHUB_OUTPUT; fi
           '
       # Soldeer content gate (next-version lifecycle). `[package].version` is the
-      # NEXT, unpublished version. Compare the NORMALIZED content of what
-      # `forge soldeer push --dry-run` would upload against the latest published
-      # revision's zip, hashing SOURCE ONLY — everything under `src/generated/`
-      # (the per-release `<tag>/` snapshots and the generated aliasing libs) is
-      # excluded, since it is derived from source and a fresh `<tag>/` dir appears
-      # every release; hashing it would flag "changed" on every merge and
-      # republish identical bytecode forever. Excluding it also removes the old
-      # per-constant pin-stripping: the versioned deploy pins live in the excluded
-      # snapshots, not in the hashed source. foundry.toml's version line is
-      # blanked so a bump alone is never a content change. The hash is a small
-      # inline bash function (like the cargo gate above), no Python.
+      # NEXT, unpublished version. `rainix-static soldeer-gate` compares the
+      # NORMALIZED content of what `forge soldeer push --dry-run` would upload
+      # against the latest published revision, hashing SOURCE ONLY — everything
+      # under `src/generated/` (the per-release `<tag>/` snapshots and generated
+      # aliasing libs) is excluded, since it is derived from source and a fresh
+      # `<tag>/` dir appears every release, which would otherwise flag "changed"
+      # on every merge and republish identical bytecode forever; foundry.toml's
+      # version line is blanked so a bump alone is never a content change. It
+      # fetches the registry + published zip, enforces the next-version invariant
+      # (the in-dev version must be AHEAD of what is published — else a prior
+      # run's failed bump-push is caught loud, not silently re-published), and
+      # emits changed / version / next. The gate logic is Rust, not inline bash
+      # or Python (rainix-static/src/main.rs); the workflow just runs it inside
+      # sol-shell, where forge and curl are on PATH.
       - name: Soldeer content gate
         if: ${{ inputs.soldeer-package != '' }}
         id: soldeer
         run: |
           set -euo pipefail
-          PKG="${{ inputs.soldeer-package }}"
-          nh() {
-            local d
-            d=$(mktemp -d)
-            unzip -q "$1" -d "$d"
-            [ -f "$d/foundry.toml" ] && sed -i -E 's/^version[[:space:]]*=.*/version = "0.0.0"/' "$d/foundry.toml"
-            ( cd "$d" && find . -type f -not -path './src/generated/*' | LC_ALL=C sort \
-                | while IFS= read -r f; do printf '%s\0' "$f"; cat "$f"; done \
-                | sha256sum | cut -d' ' -f1 )
-            rm -rf "$d"
-          }
-          META=$(curl -fsSL "https://api.soldeer.xyz/api/v1/revision?project_name=$PKG&offset=0&limit=1" || echo '{}')
-          REMOTE=$(printf '%s' "$META" | jq -r '.data[0].version // "none"')
-          URL=$(printf '%s' "$META" | jq -r '.data[0].url // ""')
-          LOCAL=$(awk -F\" '/^version[[:space:]]*=/ { print $2; exit }' foundry.toml)
-          # Next-version invariant: LOCAL (the in-dev version) must be AHEAD of
-          # the published REMOTE. If a prior run published but its bump-commit
-          # push failed, LOCAL will equal REMOTE — fail loud with a clear action
-          # (bump the version), not silent re-publish / mis-bump.
-          # LOCAL is ahead iff it sorts (version order) strictly after REMOTE.
-          if [ "$REMOTE" != "none" ] && { [ "$LOCAL" = "$REMOTE" ] || [ "$(printf '%s\n%s\n' "$REMOTE" "$LOCAL" | sort -V | tail -1)" != "$LOCAL" ]; }; then
-            echo "::error::foundry.toml [package].version ($LOCAL) is not ahead of the published revision ($REMOTE); the next-version lifecycle needs it to be the next UNPUBLISHED version — bump [package].version above $REMOTE." >&2
-            exit 1
-          fi
-          # Local package content: dry-run writes <cwd-basename>.zip into the cwd.
-          rm -f ./*.zip
-          nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer push "$PKG~$LOCAL" --dry-run
-          NEW=$(nh "$(ls -t ./*.zip | head -1)"); rm -f ./*.zip
-          if [ -z "$URL" ] || [ "$REMOTE" = "none" ]; then OLD="none"; else
-            curl -fsSL "$URL" -o /tmp/soldeer_pub.zip; OLD=$(nh /tmp/soldeer_pub.zip); fi
-          # LOCAL (the in-dev version) is what publishes; NEXT (its patch bump)
-          # is what foundry.toml becomes after — the next unpublished version.
-          IFS=. read -r _MA _MI _PA <<<"$LOCAL"; NEXT="${_MA}.${_MI}.$((_PA + 1))"
-          echo "soldeer gate: remote=$REMOTE publish=$LOCAL next=$NEXT OLD=$OLD NEW=$NEW"
-          if [ "$OLD" != "$NEW" ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; else echo "changed=false" >> "$GITHUB_OUTPUT"; fi
-          echo "version=$LOCAL" >> "$GITHUB_OUTPUT"
-          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+          nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c \
+            rainix-static soldeer-gate \
+            --package "${{ inputs.soldeer-package }}" \
+            --github-output "$GITHUB_OUTPUT"
       # Run the test suite only when something is actually going to publish. The
       # change gates above are cheap (cargo package --no-verify + a hash compare,
       # an npm/soldeer version lookup); the full workspace test is the expensive
