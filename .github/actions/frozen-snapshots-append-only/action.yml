@@ -1,0 +1,29 @@
+name: frozen-snapshots-append-only
+description: >-
+  Fails when a branch modifies or deletes an existing per-tag deploy-pin snapshot under src/generated/<tag>/ (tag = three underscore-separated numbers, e.g. 0_1_4). These snapshots are frozen once on the base branch — downstream consumers pin the address/codehash constants they hold, so a release ADDS a new tag (bump the version), never edits an existing snapshot. No-op for repos with no such snapshots.
+runs:
+  using: composite
+  steps:
+    - name: Enforce append-only snapshots
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Nothing to enforce if the repo has no per-tag snapshots.
+        if ! ls src/generated/*/*.pointers.sol >/dev/null 2>&1; then
+          echo "snapshots-append-only: no per-tag snapshots; skip"
+          exit 0
+        fi
+        # The three-dot diff needs the merge-base with the base branch, but the
+        # shared checkout is shallow — unshallow (rain repos are small, so cheap)
+        # and fetch the base. GITHUB_BASE_REF is set on pull_request; on push it
+        # is empty, so compare against main.
+        BASE_REF="${GITHUB_BASE_REF:-main}"
+        if [ -f "$(git rev-parse --git-dir)/shallow" ]; then
+          git fetch --no-tags --unshallow origin
+        fi
+        git fetch --no-tags origin "$BASE_REF"
+        # path: ref runs the check from THIS composite's own checkout, so the
+        # check version always matches the action version (same pattern as
+        # no-submodules) regardless of any RAINIX_SHA the caller pins.
+        nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- \
+          snapshots-append-only --base "origin/$BASE_REF"
