@@ -25,13 +25,13 @@ on:
         default: ''
       soldeer-package:
         description: >-
-          optional Soldeer registry package name (e.g. rain-erc). When set, the workflow runs the next-version release lifecycle: `[package].version` is the NEXT, in-development version (not yet on the registry). On a content change vs the published revision it publishes that version, bumps `[package].version` to the next, runs `soldeer-generate-cmd` (to re-freeze any versioned artifacts), and commits — one merge-driven process, no manual version bump.
+          optional Soldeer registry package name (e.g. rain-erc). When set, the workflow runs the next-version release lifecycle: `[package].version` is the NEXT, in-development version (not yet on the registry). On a content change vs the published revision it publishes that version and bumps `[package].version` to the next, in one merge-driven process — no manual version bump. The bump does NOT generate per-release artifacts: a version's deploy-pin snapshot is built and committed by the PR that defines that version's content, so a next-version slot never carries a placeholder snapshot on main (main snapshots are frozen constants consumers pin against).
         required: false
         type: string
         default: ''
       soldeer-generate-cmd:
         description: >-
-          optional shell command run inside the rainix sol-shell right after the version bump, before the release commit — for repos that generate per-release artifacts keyed by `[package].version` (e.g. deploy-address pointer snapshots). Its output is staged into the "Package Release" commit so the bump lands born-green. Empty (the default) is a no-op for repos with nothing to generate.
+          DEPRECATED / no-op. The version bump no longer generates per-release artifacts — a version's deploy-pin snapshot is built and committed by the PR that defines that version's content, never pre-generated onto main at bump time. Retained only so existing callers that still pass it do not error; it is ignored and will be removed. Consumers should drop it (and instead build snapshots in the PR, e.g. a pre-commit hook or a CI regenerate-and-verify check).
         required: false
         type: string
         default: ''
@@ -187,11 +187,16 @@ jobs:
       - name: Soldeer content gate
         if: ${{ inputs.soldeer-package != '' }}
         id: soldeer
+        # Pass interpolations through env, never into the shell script directly
+        # (avoids GitHub Actions template injection; this is a reusable workflow
+        # whose inputs come from arbitrary callers).
+        env:
+          SOLDEER_PACKAGE: ${{ inputs.soldeer-package }}
         run: |
           set -euo pipefail
           nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c \
             rainix-static soldeer-gate \
-            --package "${{ inputs.soldeer-package }}" \
+            --package "$SOLDEER_PACKAGE" \
             --github-output "$GITHUB_OUTPUT"
       # Run the test suite only when something is actually going to publish. The
       # change gates above are cheap (cargo package --no-verify + a hash compare,
@@ -229,33 +234,41 @@ jobs:
           git commit -m "Package Release npm-${NEW}"
       # Publish the CURRENT in-dev version (steps.soldeer.outputs.version) from
       # the PRE-bump tree, so the package's contents match the version it is
-      # published under. Runs before the bump+regenerate below (which mutates the
-      # tree). If the later bump-commit push fails after this publishes, the next
-      # run's stale-toml guard fails loud with a clear action (bump the version).
+      # published under. Runs before the version bump below (which edits
+      # foundry.toml). If the later bump-commit push fails after this publishes,
+      # the next run's stale-toml guard fails loud with a clear action (bump the
+      # version).
       - name: Publish to Soldeer
         if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
         env:
           SOLDEER_API_TOKEN: ${{ secrets.SOLDEER_API_TOKEN }}
-        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer push "${{ inputs.soldeer-package }}~${{ steps.soldeer.outputs.version }}"
-      # Freeze the release: bump [package].version to the next unpublished
-      # version, run the optional generate-cmd to re-key any per-release artifacts
-      # to it, and commit as one "Package Release" (the prefix makes the job-level
-      # skip guard ignore the push this triggers). The commit is born green — the
-      # bumped version's snapshot is already generated.
-      - name: Bump + regenerate Soldeer
+          SOLDEER_PACKAGE: ${{ inputs.soldeer-package }}
+          SOLDEER_VERSION: ${{ steps.soldeer.outputs.version }}
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer push "$SOLDEER_PACKAGE~$SOLDEER_VERSION"
+      # Bump [package].version to the next unpublished version and commit it as
+      # one "Package Release" (the prefix makes the job-level skip guard ignore
+      # the push this triggers). The bump does NOT generate per-release
+      # artifacts: a version's deploy-pin snapshot is built and committed by the
+      # PR that defines that version's content. So the next-version slot never
+      # carries a placeholder snapshot on main that a later PR would have to
+      # rewrite — snapshots on main are frozen constants that consumers pin
+      # against, and must never change. The bump is content-neutral (the version
+      # line is blanked in the change-gate hash) and leaves the deploy lib
+      # aliasing the last published tag, so main stays green until a PR builds the
+      # next version's snapshot.
+      - name: Bump Soldeer version
         if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
+        # Pass interpolations through env, never into the shell script directly
+        # (avoids GitHub Actions template injection).
+        env:
+          SOLDEER_PACKAGE: ${{ inputs.soldeer-package }}
+          NEXT: ${{ steps.soldeer.outputs.next }}
         run: |
           set -euo pipefail
-          NEXT="${{ steps.soldeer.outputs.next }}"
           sed -i -E "0,/^version[[:space:]]*=.*/s//version = \"$NEXT\"/" foundry.toml
-          GEN='${{ inputs.soldeer-generate-cmd }}'
-          if [ -n "$GEN" ]; then
-            nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c bash -c "$GEN"
-          fi
-          # --no-verify: an automated release bump must not be gated on the repo's
-          # pre-commit hooks. Stage everything the generate step produced.
-          git add -A
-          git commit --no-verify -m "Package Release: soldeer ${{ inputs.soldeer-package }} $NEXT"
+          # --no-verify: an automated version bump must not be gated on the repo's
+          # pre-commit hooks.
+          git commit --no-verify foundry.toml -m "Package Release: soldeer $SOLDEER_PACKAGE $NEXT"
       # Tag + push everything in one shot. cargo tags are namespaced
       # <crate>-v<version>; rebase onto any concurrent push first (only the
       # shared Cargo.lock is expected to conflict).
