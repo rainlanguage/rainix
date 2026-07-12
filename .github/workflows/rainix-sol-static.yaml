@@ -19,6 +19,10 @@ jobs:
       - uses: rainlanguage/rainix/.github/actions/no-ignored-tests@main
       # Git submodules are banned org-wide — deps come from soldeer/npm/nix.
       - uses: rainlanguage/rainix/.github/actions/no-submodules@main
+      # Per-tag deploy-pin snapshots under src/generated/<tag>/ are append-only:
+      # a release ADDS a new tag, never edits/deletes a frozen snapshot whose
+      # address/codehash constants downstream consumers pin. No-op when absent.
+      - uses: rainlanguage/rainix/.github/actions/frozen-snapshots-append-only@main
       # Custom NatSpec tags (@custom:) are banned org-wide — document behavior
       # in standard NatSpec. Sole exception: ERC-7201's normative
       # `@custom:storage-location erc7201:` annotation, which tooling reads.

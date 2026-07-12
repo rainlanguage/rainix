@@ -13,12 +13,19 @@
 // Subcommands:
 //   no-submodules [dir]
 //       fail if the repo vendors git submodules.
+//   snapshots-append-only [--base <ref>] [--root <dir>]
+//       fail if the branch modifies or deletes an existing per-tag deploy-pin
+//       snapshot under <root>/<tag>/ (default root src/generated, base
+//       origin/main). Snapshots are frozen once on the base branch; a release
+//       ADDS a new <tag>, never edits an existing one. Needs the base ref
+//       fetched with history (fetch-depth: 0 + `git fetch origin <base>`).
 //   soldeer-gate --package <name> [--github-output <file>]
 //       Soldeer next-version content gate: compare the normalized content of what
 //       `forge soldeer push --dry-run` would upload against the latest published
 //       revision, and emit changed / version / next. Runs inside sol-shell, so
 //       `forge` and `curl` are on PATH.
 
+mod frozen_snapshots;
 mod no_submodules;
 mod soldeer_gate;
 
@@ -67,8 +74,25 @@ fn main() {
                 .unwrap_or_else(|| fail("soldeer-gate: --package <name> required"));
             soldeer_gate::run(&pkg, flag(&args, "--github-output").as_deref());
         }
+        "snapshots-append-only" => {
+            let base = flag(&args, "--base").unwrap_or_else(|| "origin/main".to_string());
+            let root = flag(&args, "--root").unwrap_or_else(|| "src/generated".to_string());
+            match frozen_snapshots::check(&base, &root) {
+                Err(e) => fail(&e),
+                Ok(offenders) if offenders.is_empty() => println!("snapshots-append-only: clean"),
+                Ok(offenders) => {
+                    for line in offenders {
+                        println!("{line}");
+                    }
+                    std::process::exit(1);
+                }
+            }
+        }
         other => {
-            eprintln!("rainix-static: unknown subcommand {other:?} (available: no-submodules, soldeer-gate)");
+            eprintln!(
+                "rainix-static: unknown subcommand {other:?} \
+                 (available: no-submodules, snapshots-append-only, soldeer-gate)"
+            );
             std::process::exit(2);
         }
     }
