@@ -187,11 +187,16 @@ jobs:
       - name: Soldeer content gate
         if: ${{ inputs.soldeer-package != '' }}
         id: soldeer
+        # Pass interpolations through env, never into the shell script directly
+        # (avoids GitHub Actions template injection; this is a reusable workflow
+        # whose inputs come from arbitrary callers).
+        env:
+          SOLDEER_PACKAGE: ${{ inputs.soldeer-package }}
         run: |
           set -euo pipefail
           nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c \
             rainix-static soldeer-gate \
-            --package "${{ inputs.soldeer-package }}" \
+            --package "$SOLDEER_PACKAGE" \
             --github-output "$GITHUB_OUTPUT"
       # Run the test suite only when something is actually going to publish. The
       # change gates above are cheap (cargo package --no-verify + a hash compare,
@@ -237,7 +242,9 @@ jobs:
         if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
         env:
           SOLDEER_API_TOKEN: ${{ secrets.SOLDEER_API_TOKEN }}
-        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer push "${{ inputs.soldeer-package }}~${{ steps.soldeer.outputs.version }}"
+          SOLDEER_PACKAGE: ${{ inputs.soldeer-package }}
+          SOLDEER_VERSION: ${{ steps.soldeer.outputs.version }}
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer push "$SOLDEER_PACKAGE~$SOLDEER_VERSION"
       # Bump [package].version to the next unpublished version and commit it as
       # one "Package Release" (the prefix makes the job-level skip guard ignore
       # the push this triggers). The bump does NOT generate per-release
@@ -251,13 +258,17 @@ jobs:
       # next version's snapshot.
       - name: Bump Soldeer version
         if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
+        # Pass interpolations through env, never into the shell script directly
+        # (avoids GitHub Actions template injection).
+        env:
+          SOLDEER_PACKAGE: ${{ inputs.soldeer-package }}
+          NEXT: ${{ steps.soldeer.outputs.next }}
         run: |
           set -euo pipefail
-          NEXT="${{ steps.soldeer.outputs.next }}"
           sed -i -E "0,/^version[[:space:]]*=.*/s//version = \"$NEXT\"/" foundry.toml
           # --no-verify: an automated version bump must not be gated on the repo's
           # pre-commit hooks.
-          git commit --no-verify foundry.toml -m "Package Release: soldeer ${{ inputs.soldeer-package }} $NEXT"
+          git commit --no-verify foundry.toml -m "Package Release: soldeer $SOLDEER_PACKAGE $NEXT"
       # Tag + push everything in one shot. cargo tags are namespaced
       # <crate>-v<version>; rebase onto any concurrent push first (only the
       # shared Cargo.lock is expected to conflict).
