@@ -277,10 +277,21 @@ jobs:
         run: |
           set -euo pipefail
           git fetch origin
+          # Entering the devShell can rewrite generated tracked files (e.g. a
+          # nix-store pre-commit-config symlink), dirtying the tree. The release
+          # commit is already made, so restore any such leftovers before the
+          # rebase, or it aborts with "cannot rebase: You have unstaged changes".
+          git checkout -- .
           if ! git rebase "origin/${{ github.ref_name }}"; then
-            nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#rust-shell -c cargo generate-lockfile
-            git add Cargo.lock
-            GIT_EDITOR=true git rebase --continue
+            if [ -n "${{ inputs.crates }}${{ inputs.crate }}" ]; then
+              # Only the shared Cargo.lock is expected to conflict.
+              nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#rust-shell -c cargo generate-lockfile
+              git add Cargo.lock
+              GIT_EDITOR=true git rebase --continue
+            else
+              echo "rebase onto origin/${{ github.ref_name }} conflicted, and there is no crate lockfile to regenerate; resolve manually" >&2
+              exit 1
+            fi
           fi
           if [ "${{ steps.cargo.outputs.changed }}" = "true" ]; then
             for CRATE in $CRATES; do
