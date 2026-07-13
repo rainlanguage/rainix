@@ -283,7 +283,7 @@ jobs:
           # rebase, or it aborts with "cannot rebase: You have unstaged changes".
           git checkout -- .
           if ! git rebase "origin/${{ github.ref_name }}"; then
-            if [ -n "${{ inputs.crates }}${{ inputs.crate }}" ]; then
+            if [ -n "${{ inputs.crates }}" ] || [ -n "${{ inputs.crate }}" ]; then
               # Only the shared Cargo.lock is expected to conflict.
               nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#rust-shell -c cargo generate-lockfile
               git add Cargo.lock
