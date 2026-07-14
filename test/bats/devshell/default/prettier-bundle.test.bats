@@ -23,6 +23,24 @@ setup() {
   echo "$actual" | grep -q 'READY = "LOCK"'
 }
 
+@test "rainix-bundled prettier formats Svelte 5 snippet syntax ({@render}/{#snippet})" {
+  tmpdir="$(mktemp -d)"
+  cp "$fixtures/svelte5-snippet/App.svelte" "$tmpdir/"
+  cd "$tmpdir"
+
+  bash -c "$prettier_entry App.svelte"
+
+  actual="$(cat App.svelte)"
+  rm -rf "$tmpdir"
+
+  # A Svelte 4 compiler can't parse {#snippet}/{@render}, so the format would
+  # error and leave the source's single quotes; a Svelte 5 compiler preserves
+  # the snippet and reformats to double quotes.
+  echo "$actual" | grep -q '{#snippet row(label)}'
+  echo "$actual" | grep -q '{@render row(item)}'
+  echo "$actual" | grep -q 'class="item"'
+}
+
 @test "rainix-bundled prettier reformats to rainix canon: 2-space indent and double quotes" {
   tmpdir="$(mktemp -d)"
   cp "$fixtures/canon-style/sample.ts" "$tmpdir/"
