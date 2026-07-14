@@ -182,7 +182,7 @@
           pname = "rainix-prettier-bundle";
           version = "0.0.0";
           src = ./prettier-bundle;
-          npmDepsHash = "sha256-64dISGPfTPK7LUSL43CKoHM5SPZYqx6Ngg2dBgsqIyg=";
+          npmDepsHash = "sha256-nSpg3uvO28W0uRYybqEIXKhYd/LnuRy4YwR6homOQYU=";
           dontNpmBuild = true;
           installPhase = ''
             runHook preInstall
