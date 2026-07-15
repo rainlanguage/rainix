@@ -29,9 +29,19 @@ jobs:
       - name: Regenerate meta artifacts
         if: hashFiles('script/build-meta.sh') != ''
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c ./script/build-meta.sh
-      - name: Regenerate pointer artifacts
-        if: hashFiles('script/BuildPointers.sol') != ''
-        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ./script/BuildPointers.sol
+      # Committed generated sources must be regenerable here, or the currency
+      # check below passes without checking anything. The codegen script is
+      # `script/Build.sol`, matched exactly: a repo that renames or drops it
+      # goes red rather than skipping regeneration and reporting green.
+      - name: Regenerate generated sources
+        run: |
+          if [ -d src/generated ] && [ ! -f script/Build.sol ]; then
+            echo "::error::src/generated/ is committed but script/Build.sol was not found, so the committed sources cannot be currency checked here. The codegen script must be script/Build.sol."
+            exit 1
+          fi
+          if [ -f script/Build.sol ]; then
+            nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ./script/Build.sol
+          fi
       - name: Build Solidity
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge build
       - name: Copy forge artifacts into committed location
@@ -48,6 +58,6 @@ jobs:
       - name: Assert committed artifacts match freshly built
         run: |
           if ! git diff --exit-code; then
-            echo "::error::Committed artifacts are stale. Regenerate (script/build-meta.sh, script/BuildPointers.sol, script/CopyArtifacts.sol, script/build.sh, forge fmt) and commit."
+            echo "::error::Committed artifacts are stale. Regenerate (script/build-meta.sh, script/Build.sol, script/CopyArtifacts.sol, script/build.sh, forge fmt) and commit."
             exit 1
           fi
