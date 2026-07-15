@@ -29,9 +29,32 @@ jobs:
       - name: Regenerate meta artifacts
         if: hashFiles('script/build-meta.sh') != ''
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c ./script/build-meta.sh
-      - name: Regenerate pointer artifacts
-        if: hashFiles('script/BuildPointers.sol') != ''
-        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ./script/BuildPointers.sol
+      # A repo that commits generated sources but exposes no regen step passes
+      # every check below without anything being regenerated, which is
+      # indistinguishable from a real pass. Fail loudly instead.
+      - name: Assert committed generated sources have a regen step
+        run: |
+          if [ -d src/generated ] \
+            && [ ! -f script/Build.sol ] \
+            && [ ! -f script/BuildPointers.sol ] \
+            && [ ! -f script/build.sh ]; then
+            echo "::error::src/generated/ is committed but no regen step was found (script/Build.sol, script/BuildPointers.sol or script/build.sh), so the currency check below would pass without regenerating anything."
+            exit 1
+          fi
+      # The codegen script is consumer named: `script/Build.sol` is the
+      # convention, `script/BuildPointers.sol` the legacy name. Both are matched
+      # because a repo that renames its script must not silently stop being
+      # regenerated, and so must not be forced to rename in lockstep with this
+      # workflow, which consumers track at @main.
+      - name: Regenerate generated sources
+        if: hashFiles('script/Build.sol', 'script/BuildPointers.sol') != ''
+        run: |
+          for candidate in script/Build.sol script/BuildPointers.sol; do
+            if [ -f "$candidate" ]; then
+              nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script "./$candidate"
+              break
+            fi
+          done
       - name: Build Solidity
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge build
       - name: Copy forge artifacts into committed location
@@ -48,6 +71,6 @@ jobs:
       - name: Assert committed artifacts match freshly built
         run: |
           if ! git diff --exit-code; then
-            echo "::error::Committed artifacts are stale. Regenerate (script/build-meta.sh, script/BuildPointers.sol, script/CopyArtifacts.sol, script/build.sh, forge fmt) and commit."
+            echo "::error::Committed artifacts are stale. Regenerate (script/build-meta.sh, your codegen script, script/CopyArtifacts.sol, script/build.sh, forge fmt) and commit."
             exit 1
           fi
