@@ -6,8 +6,25 @@ on:
         type: string
         required: true
         description: |
-          Passed through as `DEPLOYMENT_SUITE`. `script/Deploy.sol` dispatches
-          on this to select what to deploy.
+          Passed through as `DEPLOYMENT_SUITE`. The deploy script dispatches on
+          this to select what to deploy.
+      script:
+        type: string
+        required: false
+        default: script/Deploy.sol:Deploy
+        description: |
+          Fully qualified forge script target (`path:Contract`) to run. Defaults
+          to the conventional `script/Deploy.sol:Deploy`. Override to run an
+          alternate deploy script in the same repo.
+      verify:
+        type: boolean
+        required: false
+        default: true
+        description: |
+          Whether to pass `--verify` to `forge script`. Disable when deploying
+          bytecode that does not match the current source (e.g. a pinned
+          historical release deployed from stored creation code), where Etherscan
+          verification against current source would fail the run.
     # Secrets consumed by the deploy step. Declared here so callers in a
     # different organization can pass them explicitly — `secrets: inherit`
     # only forwards a caller's secrets within the same org, so a cross-org
@@ -72,7 +89,7 @@ jobs:
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge selectors up --all
-      - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script script/Deploy.sol:Deploy -vvvvv --slow --broadcast --verify
+      - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ${{ inputs.script }} -vvvvv --slow --broadcast ${{ inputs.verify && '--verify' || '' }}
         env:
           DEPLOYMENT_SUITE: ${{ inputs.suite }}
           DEPLOYMENT_KEY: ${{ secrets.PRIVATE_KEY }}
