@@ -289,6 +289,20 @@
           additionalBuildInputs = [ pkgs.git ];
         };
 
+        # Enforces Rain's pragma convention (rainix#250): ^ for library/
+        # interface/abstract contract files so downstream soldeer consumers can
+        # compile them; = for concrete contract files to pin the compiler.
+        # Skips src/generated/ and dependencies/ (vendored).
+        rainix-sol-pragma-convention = mkTask {
+          name = "rainix-sol-pragma-convention";
+          body = ''
+            set -euo pipefail
+            source ${./lib/sol-pragma-convention.sh}
+            sol_pragma_convention_check_tracked
+          '';
+          additionalBuildInputs = [ pkgs.git ];
+        };
+
         rainix-rs-static = mkTask {
           name = "rainix-rs-static";
           body = ''
@@ -302,6 +316,7 @@
         sol-tasks = [
           rainix-sol-artifacts
           rainix-sol-single-contract
+          rainix-sol-pragma-convention
         ];
 
         rs-tasks = [
@@ -400,6 +415,7 @@
             bats test/bats/task/subgraph-build.test.bats
             bats test/bats/task/subgraph-deploy-version.test.bats
             bats test/bats/task/sol-single-contract.test.bats
+            bats test/bats/task/sol-pragma-convention.test.bats
             bats test/bats/task/no-custom-natspec.test.bats
           '';
           additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs ++ node-build-inputs;
@@ -607,6 +623,7 @@
             rainix-static
             rainix-sol-artifacts
             rainix-sol-single-contract
+            rainix-sol-pragma-convention
             rainix-rs-static
             prettier-bundle
             sol-shell-test
