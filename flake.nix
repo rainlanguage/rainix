@@ -299,6 +299,24 @@
           additionalBuildInputs = rust-build-inputs;
         };
 
+        # Renders a consumer's built Storybook to one deterministic PNG per
+        # story (rainlanguage/rainix#262). The de-bashed capture logic lives in
+        # the committed lib/component-screenshots.js and is driven by a headless
+        # `pkgs.chromium` — browser AND node both come from nix, so there is no
+        # setup-node / Playwright browser-download version drift. Consumers
+        # invoke it through the component-screenshots reusable workflow after
+        # building their Storybook to a static directory. CHROMIUM_BIN points
+        # the capture script at the nix-provided browser.
+        component-screenshots = mkTask {
+          name = "component-screenshots";
+          body = ''
+            set -euo pipefail
+            export CHROMIUM_BIN=${pkgs.chromium}/bin/chromium
+            exec ${pkgs.nodejs_22}/bin/node ${./lib/component-screenshots.js} "$@"
+          '';
+          additionalBuildInputs = node-build-inputs ++ [ pkgs.chromium ];
+        };
+
         sol-tasks = [
           rainix-sol-artifacts
           rainix-sol-single-contract
@@ -612,6 +630,12 @@
             sol-shell-test
             rust-shell-test
             ;
+        }
+        # component-screenshots drives a headless pkgs.chromium, which nixpkgs
+        # only ships for Linux; exposing it on darwin makes `nix flake check`
+        # refuse to evaluate. The reusable workflow runs on ubuntu-latest.
+        // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+          inherit component-screenshots;
         };
 
         devShells = {
@@ -712,6 +736,31 @@
             '';
           };
 
+        }
+        # Slim shell for frontend repos that render committed Storybook
+        # stories to deterministic PNGs in CI (rainlanguage/rainix#262):
+        # node + a headless Chromium + the component-screenshots task. No
+        # rust, sol or subgraph tooling. Browser and node both come from nix
+        # so there is no setup-node / Playwright browser-download version
+        # drift; CHROMIUM_BIN points the capture script at the nix browser.
+        # Linux-only: nixpkgs ships chromium for Linux alone, and exposing a
+        # chromium-dependent shell on darwin makes `nix flake check` refuse to
+        # evaluate. The component-screenshots reusable runs on ubuntu-latest.
+        // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+          storybook-shell = pkgs.mkShell {
+            buildInputs =
+              node-build-inputs
+              ++ common-shell-inputs
+              ++ [
+                component-screenshots
+                pkgs.chromium
+              ];
+            shellHook = ''
+              export CHROMIUM_BIN=${pkgs.chromium}/bin/chromium
+              ${pre-commit.shellHook}
+              ${source-dotenv}
+            '';
+          };
         };
       }
     );
