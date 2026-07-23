@@ -16,6 +16,22 @@ on:
           Fully qualified forge script target (`path:Contract`) to run. Defaults
           to the conventional `script/Deploy.sol:Deploy`. Override to run an
           alternate deploy script in the same repo.
+      network:
+        type: string
+        required: false
+        default: ''
+        description: |
+          Passed through as `DEPLOYMENT_NETWORK`. Deploy scripts that support
+          multiple bootstrap networks dispatch on this to select which network
+          to broadcast to; scripts that ignore it keep their own default.
+      legacy:
+        type: boolean
+        required: false
+        default: false
+        description: |
+          Whether to pass `--legacy` to `forge script`. Required on networks
+          whose RPCs reject the fee-history ranges EIP-1559 estimation uses
+          (e.g. HyperEVM); type-0 transactions work everywhere.
       verify:
         type: boolean
         required: false
@@ -47,6 +63,8 @@ on:
       RPC_URL_ETHEREUM_FORK:
         required: false
       RPC_URL_FLARE_FORK:
+        required: false
+      RPC_URL_HYPEREVM_FORK:
         required: false
       RPC_URL_POLYGON_FORK:
         required: false
@@ -89,15 +107,17 @@ jobs:
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge selectors up --all
-      - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ${{ inputs.script }} -vvvvv --slow --broadcast ${{ inputs.verify && '--verify' || '' }}
+      - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ${{ inputs.script }} -vvvvv --slow --broadcast ${{ inputs.verify && '--verify' || '' }} ${{ inputs.legacy && '--legacy' || '' }}
         env:
           DEPLOYMENT_SUITE: ${{ inputs.suite }}
+          DEPLOYMENT_NETWORK: ${{ inputs.network }}
           DEPLOYMENT_KEY: ${{ secrets.PRIVATE_KEY }}
           ARBITRUM_RPC_URL: ${{ secrets.RPC_URL_ARBITRUM_FORK || vars.RPC_URL_ARBITRUM_FORK || '' }}
           BASE_RPC_URL: ${{ secrets.RPC_URL_BASE_FORK || vars.RPC_URL_BASE_FORK || '' }}
           BASE_SEPOLIA_RPC_URL: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK || vars.RPC_URL_BASE_SEPOLIA_FORK || '' }}
           ETHEREUM_RPC_URL: ${{ secrets.RPC_URL_ETHEREUM_FORK || vars.RPC_URL_ETHEREUM_FORK || '' }}
           FLARE_RPC_URL: ${{ secrets.RPC_URL_FLARE_FORK || vars.RPC_URL_FLARE_FORK || '' }}
+          HYPEREVM_RPC_URL: ${{ secrets.RPC_URL_HYPEREVM_FORK || vars.RPC_URL_HYPEREVM_FORK || '' }}
           POLYGON_RPC_URL: ${{ secrets.RPC_URL_POLYGON_FORK || vars.RPC_URL_POLYGON_FORK || '' }}
           # Etherscan V2 is a single multichain API key: source all Etherscan-family
           # networks from the one EXPLORER_VERIFICATION_KEY secret (legacy per-chain
