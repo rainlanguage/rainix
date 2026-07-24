@@ -1,0 +1,332 @@
+name: rainix-tag-release
+# Tag-triggered release for DEPLOY repos (deploy + publish + snapshot together),
+# the counterpart to rainix-autopublish's merge-driven publish for LIBRARY repos.
+#
+# The two lifecycles are mutually exclusive and a repo is strictly one or the
+# other:
+#
+#   * A LIBRARY repo (rainix-autopublish) runs the next-version lifecycle:
+#     [package].version is the NEXT, unpublished version, one ahead of the
+#     registry; a content change on merge publishes it and bumps to the next.
+#     Consumers import its abstract surface (interfaces/libs); it never pins a
+#     deployed address, so it carries no per-tag deploy-pin snapshot.
+#
+#   * A DEPLOY repo (this workflow) records deployed addresses. Its
+#     src/generated/<tag>/ snapshot pins the address + codehash of what it
+#     deployed, frozen so consumers can rely on them (enforced by the
+#     frozen-snapshots-append-only gate). [package].version is the LAST released
+#     version, and moves ONLY at release time, in lockstep with the snapshot it
+#     describes.
+#
+# Running the next-version lifecycle on a deploy repo is the bug this exists to
+# remove: autopublish bumps [package].version on every merge, while the frozen
+# DEPLOY_TAG only advances at deploy time, so a version-vs-DEPLOY_TAG identity
+# test (e.g. `testDeployTag`) is red on main between every merge and the next
+# deploy — trained to be ignored, which is how a real regression rides through.
+#
+# Here nothing moves on merge: a PR lands source only, main stays at the last
+# release (its live contracts still match its pins), and a human TAG is the sole
+# release trigger. The tag names the version; this workflow regenerates the
+# snapshot for it, verifies the live chain against the fresh pins, publishes to
+# Soldeer, and commits the new (append-only) snapshot back to main so the daily
+# drift sweep always has the current release's pins to check.
+#
+# A release is deploy + publish + snapshot as one act. The `deploy` job broadcasts
+# every suite in dependency order (one forge run per suite, the Zoltu
+# nonce-isolation the manual dispatch already enforces) by fanning
+# rainix-manual-sol-artifacts over `deploy-suites` at max-parallel 1 — composing
+# the existing deploy reusable rather than re-implementing its broadcast. The
+# `release` job then `needs:` it, so publish/snapshot only run once the chain
+# actually carries the code the pins name. Deploy is independent of the snapshot
+# regeneration (both derive from the same deterministic bytecode), so it needs no
+# shared filesystem with the release job — the regen recomputes the pins and the
+# verify gate confirms they now resolve on-chain.
+on:
+  workflow_call:
+    inputs:
+      soldeer-package:
+        description: Soldeer registry package name to publish (e.g. st0x-deploy).
+        required: true
+        type: string
+      tag-prefix:
+        description: >-
+          Prefix stripped from the pushed tag to derive the release version, e.g. `sol-v` turns tag `sol-v0.1.29` into version `0.1.29`. The caller restricts which tags trigger the release via its own `on: push: tags` filter; this only parses the version out of the ref.
+        required: false
+        type: string
+        default: sol-v
+      snapshot-generate-cmd:
+        description: >-
+          Command that regenerates the deploy-pin snapshot from the (deterministic) bytecode into src/generated/<tag>/, DEPLOY_TAG and any pointer libs, then formats. Run after [package].version is set to the release version, so the generated tag matches it. e.g. `forge script ./script/BuildPointers.sol && forge fmt`.
+        required: true
+        type: string
+      test-cmd:
+        description: >-
+          Pre-publish verification gate. Run against the regenerated snapshot; for a deploy repo this is the fork suite that reads the live chain and asserts it matches the fresh pins, so a release that snapshots addresses the chain does not actually carry fails loud BEFORE publishing. Default `forge test`.
+        required: false
+        type: string
+        default: forge test
+      main-branch:
+        description: The branch the release snapshot is committed back to.
+        required: false
+        type: string
+        default: main
+      deploy-suites:
+        description: >-
+          JSON array of deploy suites IN DEPENDENCY ORDER, e.g. `["stox-receipt", "stox-wrapped-token-vault"]`. Each is broadcast in a separate forge run (Zoltu nonce isolation) sequentially. A later suite that references an earlier one fails loud on the on-chain dep-codehash check if run out of order, so ordering is enforced by the deploy, not just by this list.
+        required: true
+        type: string
+      deploy-script:
+        description: >-
+          Fully qualified forge deploy script (`path:Contract`), passed to rainix-manual-sol-artifacts. Defaults to the conventional `script/Deploy.sol:Deploy`.
+        required: false
+        type: string
+        default: script/Deploy.sol:Deploy
+      deploy-verify:
+        description: >-
+          Whether the deploy passes `--verify` to forge. Set false when broadcasting pinned historical creation code that no longer matches current source (Etherscan would reject it). Default true.
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      PUBLISH_PRIVATE_KEY:
+        # A deploy key whose push events (unlike GITHUB_TOKEN pushes) trigger the
+        # downstream git-clean / rainix-sol workflows on the commit-back to main.
+        required: false
+      PRIVATE_KEY:
+        # The on-chain DEPLOYMENT key (distinct from PUBLISH_PRIVATE_KEY, the git
+        # deploy key). Broadcasts the suites.
+        required: false
+      EXPLORER_VERIFICATION_KEY:
+        required: false
+      CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY:
+        required: false
+      CI_DEPLOY_BASE_ETHERSCAN_API_KEY:
+        required: false
+      CI_DEPLOY_BASE_SEPOLIA_ETHERSCAN_API_KEY:
+        required: false
+      CI_DEPLOY_ETHEREUM_ETHERSCAN_API_KEY:
+        required: false
+      CI_DEPLOY_POLYGON_ETHERSCAN_API_KEY:
+        required: false
+      CI_DEPLOY_FLARE_ETHERSCAN_API_KEY:
+        required: false
+      CI_GIT_EMAIL:
+        required: false
+      CI_GIT_USER:
+        required: false
+      SOLDEER_API_TOKEN:
+        # This workflow always publishes, so a missing token is a setup error to
+        # catch before the deploy/regenerate work, not after.
+        required: true
+      CACHIX_AUTH_TOKEN:
+        required: false
+      RPC_URL_ARBITRUM_FORK:
+        required: false
+      RPC_URL_BASE_FORK:
+        required: false
+      RPC_URL_BASE_SEPOLIA_FORK:
+        required: false
+      RPC_URL_ETHEREUM_FORK:
+        required: false
+      RPC_URL_FLARE_FORK:
+        required: false
+      RPC_URL_POLYGON_FORK:
+        required: false
+env:
+  RAINIX_SHA: 53e96a7d0a97d7c7c75c3b2412521324776fdac6
+jobs:
+  # The release tag must point at a commit already merged to the release branch.
+  # `on: push: tags` fires for ANY tag, including one cut from an unmerged branch;
+  # without this the later rebase would replay that branch's unreviewed commits
+  # onto main and push them, and the deploy would broadcast unreviewed bytecode.
+  # Gate both `deploy` and `release` on it. All refs come from built-in env vars,
+  # never interpolated into the shell, to avoid template injection.
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: rainlanguage/rainix/.github/actions/checkout@main
+      - name: Tag must be a tag on the release branch
+        env:
+          MAIN: ${{ inputs.main-branch }}
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF" in
+            refs/tags/*) : ;;
+            *) echo "::error::rainix-tag-release must be triggered by a tag push, got $GITHUB_REF" >&2; exit 1 ;;
+          esac
+          # The shared checkout is shallow; unshallow so the ancestry test can see
+          # whether the tag commit is on the release branch.
+          if [ -f "$(git rev-parse --git-dir)/shallow" ]; then
+            git fetch --no-tags --unshallow origin
+          fi
+          git fetch --no-tags origin "$MAIN"
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/$MAIN"; then
+            echo "::error::tag $GITHUB_REF_NAME ($GITHUB_SHA) is not on origin/$MAIN — refusing to release an unmerged commit" >&2
+            exit 1
+          fi
+  # Broadcast every suite in dependency order, one forge run each (Zoltu nonce
+  # isolation), by fanning the existing deploy reusable over `deploy-suites` at
+  # max-parallel 1. Runs before `release`, so publish/snapshot only happen once
+  # the chain carries the code the pins name. `verify:false`-capable via the
+  # `deploy-verify` input for pinned historical bytecode.
+  deploy:
+    needs: guard
+    strategy:
+      max-parallel: 1
+      matrix:
+        suite: ${{ fromJSON(inputs.deploy-suites) }}
+    uses: rainlanguage/rainix/.github/workflows/rainix-manual-sol-artifacts.yaml@main
+    with:
+      suite: ${{ matrix.suite }}
+      script: ${{ inputs.deploy-script }}
+      verify: ${{ inputs.deploy-verify }}
+    secrets:
+      PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      EXPLORER_VERIFICATION_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY }}
+      RPC_URL_ARBITRUM_FORK: ${{ secrets.RPC_URL_ARBITRUM_FORK }}
+      RPC_URL_BASE_FORK: ${{ secrets.RPC_URL_BASE_FORK }}
+      RPC_URL_BASE_SEPOLIA_FORK: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK }}
+      RPC_URL_ETHEREUM_FORK: ${{ secrets.RPC_URL_ETHEREUM_FORK }}
+      RPC_URL_FLARE_FORK: ${{ secrets.RPC_URL_FLARE_FORK }}
+      RPC_URL_POLYGON_FORK: ${{ secrets.RPC_URL_POLYGON_FORK }}
+      CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY: ${{ secrets.CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY }}
+      CI_DEPLOY_BASE_ETHERSCAN_API_KEY: ${{ secrets.CI_DEPLOY_BASE_ETHERSCAN_API_KEY }}
+      CI_DEPLOY_BASE_SEPOLIA_ETHERSCAN_API_KEY: ${{ secrets.CI_DEPLOY_BASE_SEPOLIA_ETHERSCAN_API_KEY }}
+      CI_DEPLOY_ETHEREUM_ETHERSCAN_API_KEY: ${{ secrets.CI_DEPLOY_ETHEREUM_ETHERSCAN_API_KEY }}
+      CI_DEPLOY_POLYGON_ETHERSCAN_API_KEY: ${{ secrets.CI_DEPLOY_POLYGON_ETHERSCAN_API_KEY }}
+      CI_DEPLOY_FLARE_ETHERSCAN_API_KEY: ${{ secrets.CI_DEPLOY_FLARE_ETHERSCAN_API_KEY }}
+  release:
+    needs: deploy
+    runs-on: ubuntu-latest
+    # contents: write for the commit-back to main + the gh-release composite. No
+    # id-token: nothing here uses OIDC (Soldeer uses SOLDEER_API_TOKEN, the release
+    # uses GITHUB_TOKEN).
+    permissions:
+      contents: write
+    steps:
+      # Deploy-key checkout so the commit-back to main can push and trigger
+      # downstream workflows. The pinned checkout / cache-nix / nix-install /
+      # Cachix SHAs all live once in the composites; the nix preamble then runs
+      # with checkout:'false'.
+      - uses: rainlanguage/rainix/.github/actions/checkout@main
+        with:
+          ssh-key: ${{ secrets.PUBLISH_PRIVATE_KEY }}
+      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          checkout: 'false'
+      - name: Git config
+        run: |
+          git config --global user.email "${{ secrets.CI_GIT_EMAIL || 'github-actions[bot]@users.noreply.github.com' }}"
+          git config --global user.name "${{ secrets.CI_GIT_USER || 'github-actions[bot]' }}"
+          # Entering the devShell writes a generated .pre-commit-config.yaml into
+          # the tree; hide it via the local exclude so it never dirties the release
+          # commit (repo-agnostic, no consumer needs to .gitignore it).
+          echo ".pre-commit-config.yaml" >> .git/info/exclude
+      - name: Install soldeer dependencies
+        if: ${{ hashFiles('soldeer.lock') != '' }}
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
+      - name: Resolve release version from the tag
+        # Strip the caller's tag-prefix; a tag that does not carry it is a
+        # misconfigured trigger, not a release.
+        env:
+          TAG_PREFIX: ${{ inputs.tag-prefix }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          case "$TAG" in
+            "$TAG_PREFIX"*) VERSION="${TAG#"$TAG_PREFIX"}" ;;
+            *) echo "::error::tag '$TAG' does not start with tag-prefix '$TAG_PREFIX'" >&2; exit 1 ;;
+          esac
+          # Require MAJOR.MINOR.PATCH. Beyond rejecting junk tags (sol-vfoo), this
+          # guarantees VERSION carries no characters special to the sed below
+          # (`&`, `\`, `/`), so it cannot corrupt foundry.toml.
+          if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::version '$VERSION' from tag '$TAG' is not MAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Release version: $VERSION"
+      - name: Set foundry.toml version to the release version
+        # The tag names the version; set it BEFORE regenerating so the snapshot's
+        # DEPLOY_TAG bakes in the same value (a version-vs-DEPLOY_TAG identity test
+        # then holds by construction). Targets the first `version =` line, which is
+        # [package].version.
+        run: |
+          set -euo pipefail
+          sed -i -E "0,/^version[[:space:]]*=.*/s//version = \"${VERSION}\"/" foundry.toml
+          # Fail loud if the substitution matched nothing (no [package].version line
+          # to move) rather than silently releasing an unchanged version.
+          grep -qxE "version = \"${VERSION}\"" foundry.toml || {
+            echo "::error::foundry.toml has no [package] version line to set to ${VERSION}" >&2
+            exit 1
+          }
+      - name: Regenerate the deploy-pin snapshot
+        # Deterministic: the pins are computed from bytecode (address = f(bytecode)
+        # under CREATE2), so this needs no chain access and produces the exact
+        # src/generated/<tag>/ the release publishes and commits.
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c bash -c '${{ inputs.snapshot-generate-cmd }}'
+      - name: Commit the release snapshot
+        # Commit BEFORE the append-only gate and Soldeer push so both operate on a
+        # clean, inspectable tree. The commit is what lands on main below.
+        run: |
+          set -euo pipefail
+          # Stage the release: the foundry.toml version bump AND the regenerated
+          # snapshot (tracked edits + the new src/generated/<version>/). Do NOT
+          # `git checkout` first — that would revert the version bump and any
+          # regenerated tracked file, leaving a commit that misses them and breaks
+          # the version/snapshot lockstep. The one devShell leftover
+          # (.pre-commit-config.yaml) is already hidden via .git/info/exclude in the
+          # Git config step, so `git add -A` will not stage it.
+          git add -A
+          if git diff --cached --quiet; then
+            echo "::error::snapshot regeneration produced no changes for ${VERSION}; nothing to release" >&2
+            exit 1
+          fi
+          git commit --no-verify -m "Package Release: soldeer ${{ inputs.soldeer-package }} ${VERSION}"
+      - name: Enforce append-only snapshots
+        # The release must only ADD src/generated/<version>/; a frozen snapshot for
+        # an already-released tag must never change (consumers pin its constants).
+        uses: rainlanguage/rainix/.github/actions/frozen-snapshots-append-only@main
+      - name: Verify live chain matches the fresh pins
+        # The `deploy` job (needs:) has broadcast every suite; this gate confirms
+        # it actually landed, so a snapshot of addresses the
+        # chain does not carry never gets published.
+        env:
+          RPC_URL_ARBITRUM_FORK: ${{ secrets.RPC_URL_ARBITRUM_FORK }}
+          RPC_URL_BASE_FORK: ${{ secrets.RPC_URL_BASE_FORK }}
+          RPC_URL_BASE_SEPOLIA_FORK: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK }}
+          RPC_URL_ETHEREUM_FORK: ${{ secrets.RPC_URL_ETHEREUM_FORK }}
+          RPC_URL_FLARE_FORK: ${{ secrets.RPC_URL_FLARE_FORK }}
+          RPC_URL_POLYGON_FORK: ${{ secrets.RPC_URL_POLYGON_FORK }}
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c bash -c '${{ inputs.test-cmd }}'
+      - name: Publish to Soldeer
+        # Pushes the working tree (== the release commit's tree, snapshot present)
+        # under the exact version the tag names.
+        env:
+          SOLDEER_API_TOKEN: ${{ secrets.SOLDEER_API_TOKEN }}
+          SOLDEER_PACKAGE: ${{ inputs.soldeer-package }}
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer push "$SOLDEER_PACKAGE~$VERSION"
+      - name: Commit the snapshot back to main
+        # main carries the CURRENT release's pins so the daily drift sweep has live
+        # constants to check. The tag was made on the main tip; rebase in any
+        # concurrent move first, then push the release commit to main. src/generated
+        # is append-only (a new <version>/ dir), so a concurrent release is the only
+        # thing that could conflict, and it fails loud rather than silently.
+        env:
+          MAIN: ${{ inputs.main-branch }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$MAIN"
+          if ! git rebase "origin/$MAIN"; then
+            echo "::error::release commit does not rebase cleanly onto origin/$MAIN (concurrent release?); resolve manually" >&2
+            exit 1
+          fi
+          git push origin "HEAD:$MAIN"
+      - name: GitHub Release
+        uses: rainlanguage/rainix/.github/actions/gh-release@main
+        with:
+          tag-name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
