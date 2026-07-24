@@ -67,6 +67,6 @@ jobs:
       - run: nix develop ../.. --command forge soldeer install
       - name: Run ${{ matrix.task }}
         env:
-          ETH_RPC_URL: ${{ secrets.CI_DEPLOY_SEPOLIA_RPC_URL || vars.CI_DEPLOY_SEPOLIA_RPC_URL }}
+          ETH_RPC_URL: ${{ secrets.RPC_URL_ETHEREUM_FORK || vars.RPC_URL_ETHEREUM_FORK }}
           ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY }}
         run: nix develop ../.. --command ${{ matrix.task }}
