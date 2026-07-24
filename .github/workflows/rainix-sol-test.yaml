@@ -18,6 +18,8 @@ on:
         required: false
       RPC_URL_FLARE_FORK:
         required: false
+      RPC_URL_HYPEREVM_FORK:
+        required: false
       RPC_URL_POLYGON_FORK:
         required: false
 env:
@@ -37,6 +39,7 @@ jobs:
       BASE_SEPOLIA_RPC_URL: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK || vars.RPC_URL_BASE_SEPOLIA_FORK }}
       ETHEREUM_RPC_URL: ${{ secrets.RPC_URL_ETHEREUM_FORK || vars.RPC_URL_ETHEREUM_FORK }}
       FLARE_RPC_URL: ${{ secrets.RPC_URL_FLARE_FORK || vars.RPC_URL_FLARE_FORK }}
+      HYPEREVM_RPC_URL: ${{ secrets.RPC_URL_HYPEREVM_FORK || vars.RPC_URL_HYPEREVM_FORK }}
       POLYGON_RPC_URL: ${{ secrets.RPC_URL_POLYGON_FORK || vars.RPC_URL_POLYGON_FORK }}
     steps:
       # Shared nix + cachix CI preamble (checkout, nix-quick-install, Cachix,
