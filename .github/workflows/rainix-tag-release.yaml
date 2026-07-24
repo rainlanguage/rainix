@@ -31,11 +31,16 @@ name: rainix-tag-release
 # Soldeer, and commits the new (append-only) snapshot back to main so the daily
 # drift sweep always has the current release's pins to check.
 #
-# The on-chain DEPLOY itself stays the repo's existing per-network, human-driven
-# rainix-manual-sol-artifacts dispatch, run BEFORE tagging: the tag's verify gate
-# passes precisely because the deploy already happened. Folding that dispatch
-# into this workflow (so one tag deploys every suite in dependency order, then
-# publishes) is the intended next step — see the PR description.
+# A release is deploy + publish + snapshot as one act. The `deploy` job broadcasts
+# every suite in dependency order (one forge run per suite, the Zoltu
+# nonce-isolation the manual dispatch already enforces) by fanning
+# rainix-manual-sol-artifacts over `deploy-suites` at max-parallel 1 — composing
+# the existing deploy reusable rather than re-implementing its broadcast. The
+# `release` job then `needs:` it, so publish/snapshot only run once the chain
+# actually carries the code the pins name. Deploy is independent of the snapshot
+# regeneration (both derive from the same deterministic bytecode), so it needs no
+# shared filesystem with the release job — the regen recomputes the pins and the
+# verify gate confirms they now resolve on-chain.
 on:
   workflow_call:
     inputs:
@@ -65,10 +70,45 @@ on:
         required: false
         type: string
         default: main
+      deploy-suites:
+        description: >-
+          JSON array of deploy suites IN DEPENDENCY ORDER, e.g. `["stox-receipt", "stox-wrapped-token-vault"]`. Each is broadcast in a separate forge run (Zoltu nonce isolation) sequentially. A later suite that references an earlier one fails loud on the on-chain dep-codehash check if run out of order, so ordering is enforced by the deploy, not just by this list.
+        required: true
+        type: string
+      deploy-script:
+        description: >-
+          Fully qualified forge deploy script (`path:Contract`), passed to rainix-manual-sol-artifacts. Defaults to the conventional `script/Deploy.sol:Deploy`.
+        required: false
+        type: string
+        default: script/Deploy.sol:Deploy
+      deploy-verify:
+        description: >-
+          Whether the deploy passes `--verify` to forge. Set false when broadcasting pinned historical creation code that no longer matches current source (Etherscan would reject it). Default true.
+        required: false
+        type: boolean
+        default: true
     secrets:
       PUBLISH_PRIVATE_KEY:
         # A deploy key whose push events (unlike GITHUB_TOKEN pushes) trigger the
         # downstream git-clean / rainix-sol workflows on the commit-back to main.
+        required: false
+      PRIVATE_KEY:
+        # The on-chain DEPLOYMENT key (distinct from PUBLISH_PRIVATE_KEY, the git
+        # deploy key). Broadcasts the suites.
+        required: false
+      EXPLORER_VERIFICATION_KEY:
+        required: false
+      CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY:
+        required: false
+      CI_DEPLOY_BASE_ETHERSCAN_API_KEY:
+        required: false
+      CI_DEPLOY_BASE_SEPOLIA_ETHERSCAN_API_KEY:
+        required: false
+      CI_DEPLOY_ETHEREUM_ETHERSCAN_API_KEY:
+        required: false
+      CI_DEPLOY_POLYGON_ETHERSCAN_API_KEY:
+        required: false
+      CI_DEPLOY_FLARE_ETHERSCAN_API_KEY:
         required: false
       CI_GIT_EMAIL:
         required: false
@@ -93,7 +133,39 @@ on:
 env:
   RAINIX_SHA: 53e96a7d0a97d7c7c75c3b2412521324776fdac6
 jobs:
+  # Broadcast every suite in dependency order, one forge run each (Zoltu nonce
+  # isolation), by fanning the existing deploy reusable over `deploy-suites` at
+  # max-parallel 1. Runs before `release`, so publish/snapshot only happen once
+  # the chain carries the code the pins name. `verify:false`-capable via the
+  # `deploy-verify` input for pinned historical bytecode.
+  deploy:
+    strategy:
+      max-parallel: 1
+      matrix:
+        suite: ${{ fromJSON(inputs.deploy-suites) }}
+    uses: rainlanguage/rainix/.github/workflows/rainix-manual-sol-artifacts.yaml@main
+    with:
+      suite: ${{ matrix.suite }}
+      script: ${{ inputs.deploy-script }}
+      verify: ${{ inputs.deploy-verify }}
+    secrets:
+      PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      EXPLORER_VERIFICATION_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY }}
+      RPC_URL_ARBITRUM_FORK: ${{ secrets.RPC_URL_ARBITRUM_FORK }}
+      RPC_URL_BASE_FORK: ${{ secrets.RPC_URL_BASE_FORK }}
+      RPC_URL_BASE_SEPOLIA_FORK: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK }}
+      RPC_URL_ETHEREUM_FORK: ${{ secrets.RPC_URL_ETHEREUM_FORK }}
+      RPC_URL_FLARE_FORK: ${{ secrets.RPC_URL_FLARE_FORK }}
+      RPC_URL_POLYGON_FORK: ${{ secrets.RPC_URL_POLYGON_FORK }}
+      CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY: ${{ secrets.CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY }}
+      CI_DEPLOY_BASE_ETHERSCAN_API_KEY: ${{ secrets.CI_DEPLOY_BASE_ETHERSCAN_API_KEY }}
+      CI_DEPLOY_BASE_SEPOLIA_ETHERSCAN_API_KEY: ${{ secrets.CI_DEPLOY_BASE_SEPOLIA_ETHERSCAN_API_KEY }}
+      CI_DEPLOY_ETHEREUM_ETHERSCAN_API_KEY: ${{ secrets.CI_DEPLOY_ETHEREUM_ETHERSCAN_API_KEY }}
+      CI_DEPLOY_POLYGON_ETHERSCAN_API_KEY: ${{ secrets.CI_DEPLOY_POLYGON_ETHERSCAN_API_KEY }}
+      CI_DEPLOY_FLARE_ETHERSCAN_API_KEY: ${{ secrets.CI_DEPLOY_FLARE_ETHERSCAN_API_KEY }}
   release:
+    needs: deploy
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -173,8 +245,8 @@ jobs:
         # an already-released tag must never change (consumers pin its constants).
         uses: rainlanguage/rainix/.github/actions/frozen-snapshots-append-only@main
       - name: Verify live chain matches the fresh pins
-        # The deploy is the repo's own per-network dispatch, run before tagging;
-        # this gate confirms it actually landed, so a snapshot of addresses the
+        # The `deploy` job (needs:) has broadcast every suite; this gate confirms
+        # it actually landed, so a snapshot of addresses the
         # chain does not carry never gets published.
         env:
           RPC_URL_ARBITRUM_FORK: ${{ secrets.RPC_URL_ARBITRUM_FORK }}
