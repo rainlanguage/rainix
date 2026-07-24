@@ -115,7 +115,9 @@ on:
       CI_GIT_USER:
         required: false
       SOLDEER_API_TOKEN:
-        required: false
+        # This workflow always publishes, so a missing token is a setup error to
+        # catch before the deploy/regenerate work, not after.
+        required: true
       CACHIX_AUTH_TOKEN:
         required: false
       RPC_URL_ARBITRUM_FORK:
@@ -133,12 +135,42 @@ on:
 env:
   RAINIX_SHA: 53e96a7d0a97d7c7c75c3b2412521324776fdac6
 jobs:
+  # The release tag must point at a commit already merged to the release branch.
+  # `on: push: tags` fires for ANY tag, including one cut from an unmerged branch;
+  # without this the later rebase would replay that branch's unreviewed commits
+  # onto main and push them, and the deploy would broadcast unreviewed bytecode.
+  # Gate both `deploy` and `release` on it. All refs come from built-in env vars,
+  # never interpolated into the shell, to avoid template injection.
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: rainlanguage/rainix/.github/actions/checkout@main
+      - name: Tag must be a tag on the release branch
+        env:
+          MAIN: ${{ inputs.main-branch }}
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF" in
+            refs/tags/*) : ;;
+            *) echo "::error::rainix-tag-release must be triggered by a tag push, got $GITHUB_REF" >&2; exit 1 ;;
+          esac
+          # The shared checkout is shallow; unshallow so the ancestry test can see
+          # whether the tag commit is on the release branch.
+          if [ -f "$(git rev-parse --git-dir)/shallow" ]; then
+            git fetch --no-tags --unshallow origin
+          fi
+          git fetch --no-tags origin "$MAIN"
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/$MAIN"; then
+            echo "::error::tag $GITHUB_REF_NAME ($GITHUB_SHA) is not on origin/$MAIN — refusing to release an unmerged commit" >&2
+            exit 1
+          fi
   # Broadcast every suite in dependency order, one forge run each (Zoltu nonce
   # isolation), by fanning the existing deploy reusable over `deploy-suites` at
   # max-parallel 1. Runs before `release`, so publish/snapshot only happen once
   # the chain carries the code the pins name. `verify:false`-capable via the
   # `deploy-verify` input for pinned historical bytecode.
   deploy:
+    needs: guard
     strategy:
       max-parallel: 1
       matrix:
@@ -167,8 +199,10 @@ jobs:
   release:
     needs: deploy
     runs-on: ubuntu-latest
+    # contents: write for the commit-back to main + the gh-release composite. No
+    # id-token: nothing here uses OIDC (Soldeer uses SOLDEER_API_TOKEN, the release
+    # uses GITHUB_TOKEN).
     permissions:
-      id-token: write
       contents: write
     steps:
       # Deploy-key checkout so the commit-back to main can push and trigger
@@ -182,13 +216,6 @@ jobs:
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
           checkout: 'false'
-      - name: Guard - the trigger ref is a tag
-        # A branch push must never regenerate + publish; this workflow only makes
-        # sense for the release tags the caller's `on: push: tags` filter allows.
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        run: |
-          echo "::error::rainix-tag-release must be triggered by a tag push, got ${{ github.ref }}" >&2
-          exit 1
       - name: Git config
         run: |
           git config --global user.email "${{ secrets.CI_GIT_EMAIL || 'github-actions[bot]@users.noreply.github.com' }}"
@@ -212,7 +239,13 @@ jobs:
             "$TAG_PREFIX"*) VERSION="${TAG#"$TAG_PREFIX"}" ;;
             *) echo "::error::tag '$TAG' does not start with tag-prefix '$TAG_PREFIX'" >&2; exit 1 ;;
           esac
-          if [ -z "$VERSION" ]; then echo "::error::empty version parsed from tag '$TAG'" >&2; exit 1; fi
+          # Require MAJOR.MINOR.PATCH. Beyond rejecting junk tags (sol-vfoo), this
+          # guarantees VERSION carries no characters special to the sed below
+          # (`&`, `\`, `/`), so it cannot corrupt foundry.toml.
+          if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::version '$VERSION' from tag '$TAG' is not MAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "Release version: $VERSION"
       - name: Set foundry.toml version to the release version
@@ -220,7 +253,15 @@ jobs:
         # DEPLOY_TAG bakes in the same value (a version-vs-DEPLOY_TAG identity test
         # then holds by construction). Targets the first `version =` line, which is
         # [package].version.
-        run: sed -i -E "0,/^version[[:space:]]*=.*/s//version = \"${VERSION}\"/" foundry.toml
+        run: |
+          set -euo pipefail
+          sed -i -E "0,/^version[[:space:]]*=.*/s//version = \"${VERSION}\"/" foundry.toml
+          # Fail loud if the substitution matched nothing (no [package].version line
+          # to move) rather than silently releasing an unchanged version.
+          grep -qxE "version = \"${VERSION}\"" foundry.toml || {
+            echo "::error::foundry.toml has no [package] version line to set to ${VERSION}" >&2
+            exit 1
+          }
       - name: Regenerate the deploy-pin snapshot
         # Deterministic: the pins are computed from bytecode (address = f(bytecode)
         # under CREATE2), so this needs no chain access and produces the exact
@@ -231,9 +272,13 @@ jobs:
         # clean, inspectable tree. The commit is what lands on main below.
         run: |
           set -euo pipefail
-          # Drop any devShell-generated leftovers (e.g. a nix-store pre-commit
-          # symlink) so only the regenerated release artifacts are staged.
-          git checkout -- . 2>/dev/null || true
+          # Stage the release: the foundry.toml version bump AND the regenerated
+          # snapshot (tracked edits + the new src/generated/<version>/). Do NOT
+          # `git checkout` first — that would revert the version bump and any
+          # regenerated tracked file, leaving a commit that misses them and breaks
+          # the version/snapshot lockstep. The one devShell leftover
+          # (.pre-commit-config.yaml) is already hidden via .git/info/exclude in the
+          # Git config step, so `git add -A` will not stage it.
           git add -A
           if git diff --cached --quiet; then
             echo "::error::snapshot regeneration produced no changes for ${VERSION}; nothing to release" >&2
