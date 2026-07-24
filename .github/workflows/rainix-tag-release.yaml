@@ -227,13 +227,18 @@ jobs:
         # pins, so a snapshot of addresses the chain does not carry never gets
         # published. A transient fork/RPC failure here just fails the release
         # (retry the tag); it publishes nothing and is not a broadcast.
+        # foundry.toml's [rpc_endpoints] read ${<NETWORK>_RPC_URL}; the secrets are
+        # named RPC_URL_<NETWORK>_FORK. Map each to the env name foundry expects
+        # (mirrors rainix-sol-test.yaml), with the vars.* fallback the rest of the
+        # org's CI uses. Naming them after the secret (as before) left
+        # ${ARBITRUM_RPC_URL} unset, so createSelectFork failed "env var not found".
         env:
-          RPC_URL_ARBITRUM_FORK: ${{ secrets.RPC_URL_ARBITRUM_FORK }}
-          RPC_URL_BASE_FORK: ${{ secrets.RPC_URL_BASE_FORK }}
-          RPC_URL_BASE_SEPOLIA_FORK: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK }}
-          RPC_URL_ETHEREUM_FORK: ${{ secrets.RPC_URL_ETHEREUM_FORK }}
-          RPC_URL_FLARE_FORK: ${{ secrets.RPC_URL_FLARE_FORK }}
-          RPC_URL_POLYGON_FORK: ${{ secrets.RPC_URL_POLYGON_FORK }}
+          ARBITRUM_RPC_URL: ${{ secrets.RPC_URL_ARBITRUM_FORK || vars.RPC_URL_ARBITRUM_FORK }}
+          BASE_RPC_URL: ${{ secrets.RPC_URL_BASE_FORK || vars.RPC_URL_BASE_FORK }}
+          BASE_SEPOLIA_RPC_URL: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK || vars.RPC_URL_BASE_SEPOLIA_FORK }}
+          ETHEREUM_RPC_URL: ${{ secrets.RPC_URL_ETHEREUM_FORK || vars.RPC_URL_ETHEREUM_FORK }}
+          FLARE_RPC_URL: ${{ secrets.RPC_URL_FLARE_FORK || vars.RPC_URL_FLARE_FORK }}
+          POLYGON_RPC_URL: ${{ secrets.RPC_URL_POLYGON_FORK || vars.RPC_URL_POLYGON_FORK }}
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c bash -c '${{ inputs.test-cmd }}'
       - name: Publish to Soldeer
         # Pushes the working tree (== the release commit's tree, snapshot present)
