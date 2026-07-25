@@ -37,10 +37,12 @@ use crate::fail;
 /// prints `<redacted>`, so no format string anywhere in this crate can put a
 /// URL on stdout or stderr — including a future edit that adds a `{:?}` to a
 /// log line. The inner string is reachable only through `expose()`, which has
-/// exactly two call sites: the argv of the curl child process (whose stdout and
-/// stderr are captured and never re-printed) and the write to the file named by
-/// --github-env. Every log line is built from a `Source` label and a `Reason`,
-/// both of which are closed enums over fixed text.
+/// exactly three call sites: the argv of the curl child process (whose stdout
+/// and stderr are captured and never re-printed), the write to the file named
+/// by --github-env, and the `::add-mask::` workflow command — whose whole
+/// purpose is that the runner redacts the value it is given, including in the
+/// command line itself. Every log line is built from a `Source` label and a
+/// `Reason`, both of which are closed enums over fixed text.
 pub(crate) struct Url(String);
 
 impl fmt::Debug for Url {
@@ -282,10 +284,11 @@ pub(crate) const NETWORKS: &[Network] = &[
         // Latest-only in every consumer today.
         archive_blocks: &[],
         probe_contract: "0x5555555555555555555555555555555555555555", // WHYPE
-        // No measured public archive endpoint yet; the pool is whatever the
-        // secret and variable hold. An empty pool is a skip, not a failure, so
-        // a repo that does not use hyperevm is unaffected either way.
-        defaults: &[],
+        defaults: &[
+            "https://rpc.hyperliquid.xyz/evm",
+            "https://rpc.hyperlend.finance",
+            "https://hyperliquid.drpc.org",
+        ],
     },
 ];
 
@@ -836,8 +839,20 @@ mod tests {
 
     #[test]
     fn pool_is_empty_when_nothing_is_configured_and_there_is_no_default() {
-        let n = net("hyperevm");
-        assert!(pool(n, "", "").is_empty());
+        // Every network in the table currently ships defaults, so construct the
+        // degenerate case explicitly: an empty pool must stay empty, because
+        // `run` treats that as a skip (today's behaviour) rather than a failure.
+        let n = Network {
+            key: "nowhere",
+            env_name: "NOWHERE_RPC_URL",
+            secret_name: "RPC_URL_NOWHERE_FORK",
+            chain_id: 0,
+            archive_blocks: &[],
+            probe_contract: "0x0000000000000000000000000000000000000000",
+            defaults: &[],
+        };
+        assert!(pool(&n, "", "").is_empty());
+        assert!(pool(&n, "  \n # only a comment\n", "").is_empty());
     }
 
     #[test]
