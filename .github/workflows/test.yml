@@ -70,3 +70,48 @@ jobs:
           ETH_RPC_URL: ${{ secrets.CI_DEPLOY_SEPOLIA_RPC_URL || vars.CI_DEPLOY_SEPOLIA_RPC_URL }}
           ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY }}
         run: nix develop ../.. --command ${{ matrix.task }}
+  # End-to-end self-test of the rpc-preflight composite, which the reusables run
+  # but nothing here otherwise exercises — every fork-RPC wiring bug so far has
+  # been discovered downstream, in a consumer's red CI.
+  #
+  # rainix has no fork suite of its own, but its own sources name every
+  # <NETWORK>_RPC_URL, so the demand scan selects all of them and the job proves
+  # the action resolves a healthy archive endpoint per network on a real runner.
+  # Red here means the hardcoded defaults have gone stale — precisely the signal
+  # that was missing when one vendor's exhausted quota reddened the whole org.
+  #
+  # Same BOOTSTRAP CAVEAT as the composites above: `@main` resolves against the
+  # tip of main, so the PR that first adds this action is red on this job until
+  # it merges.
+  rpc-preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: rainlanguage/rainix/.github/actions/rpc-preflight@main
+        env:
+          RAINIX_RPC_SECRET_ARBITRUM: ${{ secrets.RPC_URL_ARBITRUM_FORK }}
+          RAINIX_RPC_VARS_ARBITRUM: ${{ vars.RPC_URL_ARBITRUM_FORK }}
+          RAINIX_RPC_SECRET_BASE: ${{ secrets.RPC_URL_BASE_FORK }}
+          RAINIX_RPC_VARS_BASE: ${{ vars.RPC_URL_BASE_FORK }}
+          RAINIX_RPC_SECRET_BASE_SEPOLIA: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK }}
+          RAINIX_RPC_VARS_BASE_SEPOLIA: ${{ vars.RPC_URL_BASE_SEPOLIA_FORK }}
+          RAINIX_RPC_SECRET_ETHEREUM: ${{ secrets.RPC_URL_ETHEREUM_FORK }}
+          RAINIX_RPC_VARS_ETHEREUM: ${{ vars.RPC_URL_ETHEREUM_FORK }}
+          RAINIX_RPC_SECRET_FLARE: ${{ secrets.RPC_URL_FLARE_FORK }}
+          RAINIX_RPC_VARS_FLARE: ${{ vars.RPC_URL_FLARE_FORK }}
+          RAINIX_RPC_SECRET_POLYGON: ${{ secrets.RPC_URL_POLYGON_FORK }}
+          RAINIX_RPC_VARS_POLYGON: ${{ vars.RPC_URL_POLYGON_FORK }}
+      - name: Assert the preflight bound every archive network
+        # Presence only — never echo the values, they may be secret-derived.
+        run: |
+          set -euo pipefail
+          fail=0
+          for name in ARBITRUM_RPC_URL BASE_RPC_URL BASE_SEPOLIA_RPC_URL ETHEREUM_RPC_URL FLARE_RPC_URL POLYGON_RPC_URL; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::rpc-preflight did not export $name"
+              fail=1
+            fi
+          done
+          exit "$fail"
