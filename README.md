@@ -118,9 +118,10 @@ jobs:
 
 `secrets: inherit` is required because the reusable wires the standard fork RPC
 env vars (`ARBITRUM_RPC_URL`, `BASE_RPC_URL`, `BASE_SEPOLIA_RPC_URL`,
-`FLARE_RPC_URL`, `POLYGON_RPC_URL`, `CI_DEPLOY_SEPOLIA_RPC_URL`) plus
-`ETHERSCAN_API_KEY` and `DEPLOYMENT_KEY` from the consumer org's secrets/vars.
-Repos that do no fork tests can ignore — empty values are harmless.
+`ETHEREUM_RPC_URL`, `FLARE_RPC_URL`, `HYPEREVM_RPC_URL`, `POLYGON_RPC_URL`,
+`CI_DEPLOY_SEPOLIA_RPC_URL`) plus `ETHERSCAN_API_KEY` and `DEPLOYMENT_KEY` from
+the consumer org's secrets/vars. Repos that do no fork tests can ignore — empty
+values are harmless.
 
 #### rainix-sol (composite)
 
@@ -232,6 +233,55 @@ jobs:
 
 Consumers needing only one of the three should call the individual reusable
 directly rather than this composite.
+
+### Fork RPC endpoints
+
+Each `<NETWORK>_RPC_URL` is chosen at job start by the `rpc-preflight` composite
+action, not bound to a single configured URL. Foundry maps one `[rpc_endpoints]`
+alias to exactly one URL and `--fork-retries` only retries that same URL, so a
+dead upstream — plan quota exhausted, pruning node, host gone — cannot be
+recovered inside `forge`. The preflight recovers it one layer up.
+
+**Candidates are a merged pool, not a fallback chain.** For each network:
+
+| source                            | holds                              | order |
+| --------------------------------- | ---------------------------------- | ----- |
+| secret `RPC_URL_<NETWORK>_FORK`   | keyed/paid URLs (masked)           | first |
+| variable `RPC_URL_<NETWORK>_FORK` | public keyless URLs (visible)      | next  |
+| hardcoded public archive defaults | measured keyless archive endpoints | last  |
+
+Both the secret and the variable hold a **newline-separated list**; a single
+bare URL is a one-element list, which is what they contain today. Every entry in
+every source is a real candidate — the variable's URLs are tried even when the
+secret is set. The order only expresses preference: the paid endpoint first, the
+org's curated public list next, the hardcoded safety net when both are
+exhausted. Keeping keyed URLs in the secret and keyless ones in the variable is
+the point of merging: a public archive endpoint can back up a keyed one without
+putting a non-secret into a secret (where masking makes logs unreadable for no
+security benefit). `#` starts a comment, so a candidate can be parked with a
+note.
+
+**Health is archive-aware.** A candidate must report the right chain id, then
+serve historical account state and a historical `eth_call` at the deepest block
+any repo in the org pins for that network, three times consecutively. An
+`eth_blockNumber` check would happily select a pruning node that then fails the
+suite with `trying to fork from an older block with a non-archive node`; a
+code-only check would select a host that answers no `eth_call` at all; and a
+single sample would qualify a load balancer that round-robins over a mix of
+archive and pruning backends. Ethereum and HyperEVM are latest-only in every
+consumer, so they are not held to the archive bar, and neither are
+deploy/broadcast paths.
+
+**No candidate URL is ever printed.** Logs name the _source_ (`secret[0]`,
+`variable[1]`, `default[0]`) and a typed reason, never a URL:
+
+```
+rpc-preflight: arbitrum: secret[0] rejected: quota exhausted / rate limited (rpc error -32001)
+rpc-preflight: arbitrum: SELECTED variable[0] (chain 42161, archive at block 280000000, 3/3 samples)
+```
+
+Only networks the repo actually references are probed, and a network with no
+candidates at all is left exactly as it is today.
 
 ## Pinned Versions
 

@@ -18,6 +18,8 @@ on:
         required: false
       RPC_URL_FLARE_FORK:
         required: false
+      RPC_URL_HYPEREVM_FORK:
+        required: false
       RPC_URL_POLYGON_FORK:
         required: false
 env:
@@ -32,12 +34,11 @@ jobs:
       CI_DEPLOY_SEPOLIA_RPC_URL: ${{ secrets.CI_DEPLOY_SEPOLIA_RPC_URL || vars.CI_DEPLOY_SEPOLIA_RPC_URL }}
       CI_FORK_SEPOLIA_BLOCK_NUMBER: ${{ vars.CI_FORK_SEPOLIA_BLOCK_NUMBER }}
       CI_FORK_SEPOLIA_DEPLOYER_ADDRESS: ${{ vars.CI_FORK_SEPOLIA_DEPLOYER_ADDRESS }}
-      ARBITRUM_RPC_URL: ${{ secrets.RPC_URL_ARBITRUM_FORK || vars.RPC_URL_ARBITRUM_FORK }}
-      BASE_RPC_URL: ${{ secrets.RPC_URL_BASE_FORK || vars.RPC_URL_BASE_FORK }}
-      BASE_SEPOLIA_RPC_URL: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK || vars.RPC_URL_BASE_SEPOLIA_FORK }}
-      ETHEREUM_RPC_URL: ${{ secrets.RPC_URL_ETHEREUM_FORK || vars.RPC_URL_ETHEREUM_FORK }}
-      FLARE_RPC_URL: ${{ secrets.RPC_URL_FLARE_FORK || vars.RPC_URL_FLARE_FORK }}
-      POLYGON_RPC_URL: ${{ secrets.RPC_URL_POLYGON_FORK || vars.RPC_URL_POLYGON_FORK }}
+      # <NETWORK>_RPC_URL is NOT set here. foundry.toml's [rpc_endpoints] still
+      # read ${<NETWORK>_RPC_URL}, but the rpc-preflight step below picks which
+      # candidate to bind to each one and writes it to $GITHUB_ENV. A static
+      # mapping cannot fail over, and a single dead upstream reds every fork
+      # suite in the org.
     steps:
       # Shared nix + cachix CI preamble (checkout, nix-quick-install, Cachix,
       # cache-nix-action) — pinned action SHAs live in the composite. Fully
@@ -59,4 +60,25 @@ jobs:
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
+      # Bind every <NETWORK>_RPC_URL foundry.toml reads to a candidate that is
+      # actually healthy right now, before forge starts. Candidate URLs travel
+      # as env, never as `with:` inputs, because GitHub renders a composite's
+      # resolved inputs into the log and a keyed URL embeds its API key.
+      - name: RPC preflight
+        uses: rainlanguage/rainix/.github/actions/rpc-preflight@main
+        env:
+          RAINIX_RPC_SECRET_ARBITRUM: ${{ secrets.RPC_URL_ARBITRUM_FORK }}
+          RAINIX_RPC_VARS_ARBITRUM: ${{ vars.RPC_URL_ARBITRUM_FORK }}
+          RAINIX_RPC_SECRET_BASE: ${{ secrets.RPC_URL_BASE_FORK }}
+          RAINIX_RPC_VARS_BASE: ${{ vars.RPC_URL_BASE_FORK }}
+          RAINIX_RPC_SECRET_BASE_SEPOLIA: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK }}
+          RAINIX_RPC_VARS_BASE_SEPOLIA: ${{ vars.RPC_URL_BASE_SEPOLIA_FORK }}
+          RAINIX_RPC_SECRET_ETHEREUM: ${{ secrets.RPC_URL_ETHEREUM_FORK }}
+          RAINIX_RPC_VARS_ETHEREUM: ${{ vars.RPC_URL_ETHEREUM_FORK }}
+          RAINIX_RPC_SECRET_FLARE: ${{ secrets.RPC_URL_FLARE_FORK }}
+          RAINIX_RPC_VARS_FLARE: ${{ vars.RPC_URL_FLARE_FORK }}
+          RAINIX_RPC_SECRET_HYPEREVM: ${{ secrets.RPC_URL_HYPEREVM_FORK }}
+          RAINIX_RPC_VARS_HYPEREVM: ${{ vars.RPC_URL_HYPEREVM_FORK }}
+          RAINIX_RPC_SECRET_POLYGON: ${{ secrets.RPC_URL_POLYGON_FORK }}
+          RAINIX_RPC_VARS_POLYGON: ${{ vars.RPC_URL_POLYGON_FORK }}
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge test -vvv

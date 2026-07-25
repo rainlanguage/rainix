@@ -107,18 +107,38 @@ jobs:
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge selectors up --all
+      # archive: false — this is a broadcast, so it only ever reads head state.
+      # Requiring historical state here would reject a perfectly good pruning
+      # endpoint; the RPC_URL_<NET>_FORK name is a misnomer on this path.
+      # Candidate URLs travel as env, never as `with:` inputs, because GitHub
+      # renders a composite's resolved inputs into the log.
+      - name: RPC preflight
+        uses: rainlanguage/rainix/.github/actions/rpc-preflight@main
+        with:
+          archive: 'false'
+        env:
+          RAINIX_RPC_SECRET_ARBITRUM: ${{ secrets.RPC_URL_ARBITRUM_FORK }}
+          RAINIX_RPC_VARS_ARBITRUM: ${{ vars.RPC_URL_ARBITRUM_FORK }}
+          RAINIX_RPC_SECRET_BASE: ${{ secrets.RPC_URL_BASE_FORK }}
+          RAINIX_RPC_VARS_BASE: ${{ vars.RPC_URL_BASE_FORK }}
+          RAINIX_RPC_SECRET_BASE_SEPOLIA: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK }}
+          RAINIX_RPC_VARS_BASE_SEPOLIA: ${{ vars.RPC_URL_BASE_SEPOLIA_FORK }}
+          RAINIX_RPC_SECRET_ETHEREUM: ${{ secrets.RPC_URL_ETHEREUM_FORK }}
+          RAINIX_RPC_VARS_ETHEREUM: ${{ vars.RPC_URL_ETHEREUM_FORK }}
+          RAINIX_RPC_SECRET_FLARE: ${{ secrets.RPC_URL_FLARE_FORK }}
+          RAINIX_RPC_VARS_FLARE: ${{ vars.RPC_URL_FLARE_FORK }}
+          RAINIX_RPC_SECRET_HYPEREVM: ${{ secrets.RPC_URL_HYPEREVM_FORK }}
+          RAINIX_RPC_VARS_HYPEREVM: ${{ vars.RPC_URL_HYPEREVM_FORK }}
+          RAINIX_RPC_SECRET_POLYGON: ${{ secrets.RPC_URL_POLYGON_FORK }}
+          RAINIX_RPC_VARS_POLYGON: ${{ vars.RPC_URL_POLYGON_FORK }}
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ${{ inputs.script }} -vvvvv --slow --broadcast ${{ inputs.verify && '--verify' || '' }} ${{ inputs.legacy && '--legacy' || '' }}
+        # <NETWORK>_RPC_URL is bound by the rpc-preflight step above, which picks
+        # a candidate that is reachable right now rather than binding one URL
+        # that may be dead.
         env:
           DEPLOYMENT_SUITE: ${{ inputs.suite }}
           DEPLOYMENT_NETWORK: ${{ inputs.network }}
           DEPLOYMENT_KEY: ${{ secrets.PRIVATE_KEY }}
-          ARBITRUM_RPC_URL: ${{ secrets.RPC_URL_ARBITRUM_FORK || vars.RPC_URL_ARBITRUM_FORK || '' }}
-          BASE_RPC_URL: ${{ secrets.RPC_URL_BASE_FORK || vars.RPC_URL_BASE_FORK || '' }}
-          BASE_SEPOLIA_RPC_URL: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK || vars.RPC_URL_BASE_SEPOLIA_FORK || '' }}
-          ETHEREUM_RPC_URL: ${{ secrets.RPC_URL_ETHEREUM_FORK || vars.RPC_URL_ETHEREUM_FORK || '' }}
-          FLARE_RPC_URL: ${{ secrets.RPC_URL_FLARE_FORK || vars.RPC_URL_FLARE_FORK || '' }}
-          HYPEREVM_RPC_URL: ${{ secrets.RPC_URL_HYPEREVM_FORK || vars.RPC_URL_HYPEREVM_FORK || '' }}
-          POLYGON_RPC_URL: ${{ secrets.RPC_URL_POLYGON_FORK || vars.RPC_URL_POLYGON_FORK || '' }}
           # Etherscan V2 is a single multichain API key: source all Etherscan-family
           # networks from the one EXPLORER_VERIFICATION_KEY secret (legacy per-chain
           # secret kept as fallback during migration). Flare/Songbird are NOT

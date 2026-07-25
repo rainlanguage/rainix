@@ -95,6 +95,8 @@ on:
         required: false
       RPC_URL_FLARE_FORK:
         required: false
+      RPC_URL_HYPEREVM_FORK:
+        required: false
       RPC_URL_POLYGON_FORK:
         required: false
 env:
@@ -221,6 +223,27 @@ jobs:
         # The release must only ADD src/generated/<version>/; a frozen snapshot for
         # an already-released tag must never change (consumers pin its constants).
         uses: rainlanguage/rainix/.github/actions/frozen-snapshots-append-only@main
+      # The fork suite below rolls back to the freshly regenerated pins, so it
+      # needs archive endpoints. Candidate URLs travel as env, never as `with:`
+      # inputs — GitHub renders a composite's resolved inputs into the log and a
+      # keyed URL embeds its API key.
+      - name: RPC preflight
+        uses: rainlanguage/rainix/.github/actions/rpc-preflight@main
+        env:
+          RAINIX_RPC_SECRET_ARBITRUM: ${{ secrets.RPC_URL_ARBITRUM_FORK }}
+          RAINIX_RPC_VARS_ARBITRUM: ${{ vars.RPC_URL_ARBITRUM_FORK }}
+          RAINIX_RPC_SECRET_BASE: ${{ secrets.RPC_URL_BASE_FORK }}
+          RAINIX_RPC_VARS_BASE: ${{ vars.RPC_URL_BASE_FORK }}
+          RAINIX_RPC_SECRET_BASE_SEPOLIA: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK }}
+          RAINIX_RPC_VARS_BASE_SEPOLIA: ${{ vars.RPC_URL_BASE_SEPOLIA_FORK }}
+          RAINIX_RPC_SECRET_ETHEREUM: ${{ secrets.RPC_URL_ETHEREUM_FORK }}
+          RAINIX_RPC_VARS_ETHEREUM: ${{ vars.RPC_URL_ETHEREUM_FORK }}
+          RAINIX_RPC_SECRET_FLARE: ${{ secrets.RPC_URL_FLARE_FORK }}
+          RAINIX_RPC_VARS_FLARE: ${{ vars.RPC_URL_FLARE_FORK }}
+          RAINIX_RPC_SECRET_HYPEREVM: ${{ secrets.RPC_URL_HYPEREVM_FORK }}
+          RAINIX_RPC_VARS_HYPEREVM: ${{ vars.RPC_URL_HYPEREVM_FORK }}
+          RAINIX_RPC_SECRET_POLYGON: ${{ secrets.RPC_URL_POLYGON_FORK }}
+          RAINIX_RPC_VARS_POLYGON: ${{ vars.RPC_URL_POLYGON_FORK }}
       - name: Verify live chain matches the fresh pins
         # The manual deploy was run before tagging; this is the attestation that it
         # landed — the fork suite checks prod exists at the freshly regenerated
@@ -228,17 +251,10 @@ jobs:
         # published. A transient fork/RPC failure here just fails the release
         # (retry the tag); it publishes nothing and is not a broadcast.
         # foundry.toml's [rpc_endpoints] read ${<NETWORK>_RPC_URL}; the secrets are
-        # named RPC_URL_<NETWORK>_FORK. Map each to the env name foundry expects
-        # (mirrors rainix-sol-test.yaml), with the vars.* fallback the rest of the
-        # org's CI uses. Naming them after the secret (as before) left
-        # ${ARBITRUM_RPC_URL} unset, so createSelectFork failed "env var not found".
-        env:
-          ARBITRUM_RPC_URL: ${{ secrets.RPC_URL_ARBITRUM_FORK || vars.RPC_URL_ARBITRUM_FORK }}
-          BASE_RPC_URL: ${{ secrets.RPC_URL_BASE_FORK || vars.RPC_URL_BASE_FORK }}
-          BASE_SEPOLIA_RPC_URL: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK || vars.RPC_URL_BASE_SEPOLIA_FORK }}
-          ETHEREUM_RPC_URL: ${{ secrets.RPC_URL_ETHEREUM_FORK || vars.RPC_URL_ETHEREUM_FORK }}
-          FLARE_RPC_URL: ${{ secrets.RPC_URL_FLARE_FORK || vars.RPC_URL_FLARE_FORK }}
-          POLYGON_RPC_URL: ${{ secrets.RPC_URL_POLYGON_FORK || vars.RPC_URL_POLYGON_FORK }}
+        # named RPC_URL_<NETWORK>_FORK. rpc-preflight above binds each env name
+        # foundry expects to a candidate that is healthy right now. Naming them
+        # after the secret left ${ARBITRUM_RPC_URL} unset, so createSelectFork
+        # failed "env var not found"; a static one-URL mapping cannot fail over.
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c bash -c '${{ inputs.test-cmd }}'
       - name: Publish to Soldeer
         # Pushes the working tree (== the release commit's tree, snapshot present)
