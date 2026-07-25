@@ -471,6 +471,50 @@ fn hex_result(v: &serde_json::Value) -> Option<&str> {
     v.as_str().filter(|s| s.starts_with("0x"))
 }
 
+/// Chain id from an `eth_chainId` result.
+fn parse_chain_id(v: &serde_json::Value) -> Option<u64> {
+    hex_result(v).and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
+}
+
+/// Blocks the probe reads state at.
+///
+/// Latest-only when the network has no pinned historical reads in the org, or
+/// when the caller is a deploy/broadcast path that only ever touches head state
+/// — forcing archive there would reject a perfectly good pruning endpoint for
+/// no benefit.
+fn probe_blocks(net: &Network, archive: bool) -> Vec<Option<u64>> {
+    if archive && !net.archive_blocks.is_empty() {
+        net.archive_blocks.iter().copied().map(Some).collect()
+    } else {
+        vec![None]
+    }
+}
+
+/// JSON-RPC block parameter for a probe block.
+fn block_tag(b: Option<u64>) -> String {
+    match b {
+        Some(n) => format!("0x{n:x}"),
+        None => "latest".to_string(),
+    }
+}
+
+/// Validate an `eth_call` of `totalSupply()`.
+///
+/// A well-formed answer is exactly one 32-byte word ("0x" + 64 hex digits).
+/// `0x` means the call executed against an account with no code, i.e. the node
+/// served an empty state for the probe block rather than erroring — a silent
+/// form of "not archive" that would otherwise look like a pass.
+fn check_call_result(v: &serde_json::Value, block: Option<u64>) -> Result<(), Reason> {
+    match hex_result(v) {
+        Some(s) if s.len() == 66 => Ok(()),
+        Some(_) => Err(Reason::NotArchive {
+            code: 0,
+            block: block.unwrap_or(0),
+        }),
+        None => Err(Reason::BadResponse),
+    }
+}
+
 /// Probe one candidate. Returns Ok only if EVERY check passes on EVERY sample.
 ///
 /// The three checks mirror what forge's fork backend does, in the order that
@@ -501,9 +545,7 @@ fn probe(
         r#"{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}"#,
         None,
     )?;
-    let got = hex_result(&chain)
-        .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
-        .ok_or(Reason::BadResponse)?;
+    let got = parse_chain_id(&chain).ok_or(Reason::BadResponse)?;
     if got != net.chain_id {
         return Err(Reason::WrongChain {
             expected: net.chain_id,
@@ -511,22 +553,11 @@ fn probe(
         });
     }
 
-    // Latest-only when the network has no pinned historical reads in the org,
-    // or when the caller is a deploy/broadcast path that only ever touches head
-    // state — forcing archive there would reject a perfectly good pruning
-    // endpoint for no benefit.
-    let blocks: Vec<Option<u64>> = if archive && !net.archive_blocks.is_empty() {
-        net.archive_blocks.iter().copied().map(Some).collect()
-    } else {
-        vec![None]
-    };
+    let blocks = probe_blocks(net, archive);
 
     for _ in 0..samples {
         for b in &blocks {
-            let tag = match b {
-                Some(n) => format!("0x{n:x}"),
-                None => "latest".to_string(),
-            };
+            let tag = block_tag(*b);
             let bal = rpc(
                 url,
                 timeout,
@@ -547,19 +578,7 @@ fn probe(
                 ),
                 *b,
             )?;
-            // A well-formed totalSupply() answer is exactly one 32-byte word.
-            // `0x` means the call executed against an account with no code,
-            // i.e. the node served an empty state for the probe block.
-            match hex_result(&call) {
-                Some(s) if s.len() == 66 => {}
-                Some(_) => {
-                    return Err(Reason::NotArchive {
-                        code: 0,
-                        block: b.unwrap_or(0),
-                    })
-                }
-                None => return Err(Reason::BadResponse),
-            }
+            check_call_result(&call, *b)?;
         }
     }
     Ok(())
@@ -734,6 +753,7 @@ fn upper(key: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn url_never_formats_its_value() {
@@ -925,6 +945,82 @@ mod tests {
         assert_eq!(
             classify(-32603, "internal error", None),
             Reason::RpcError { code: -32603 }
+        );
+    }
+
+    #[test]
+    fn chain_id_parsing() {
+        assert_eq!(parse_chain_id(&json!("0xa4b1")), Some(42161));
+        assert_eq!(parse_chain_id(&json!("0x1")), Some(1));
+        assert_eq!(parse_chain_id(&json!("0xe")), Some(14));
+        // Decimal, missing prefix, non-string, garbage hex: all unusable.
+        assert_eq!(parse_chain_id(&json!("42161")), None);
+        assert_eq!(parse_chain_id(&json!(42161)), None);
+        assert_eq!(parse_chain_id(&json!("0xzz")), None);
+        assert_eq!(parse_chain_id(&json!(null)), None);
+    }
+
+    #[test]
+    fn probe_blocks_follow_the_archive_decision() {
+        // An archive network under archive mode probes every configured block.
+        assert_eq!(
+            probe_blocks(net("base"), true),
+            vec![Some(1), Some(39_000_000)]
+        );
+        assert_eq!(probe_blocks(net("arbitrum"), true), vec![Some(280_000_000)]);
+        // --no-archive (deploy/broadcast) collapses to latest even for a
+        // network that has pinned blocks.
+        assert_eq!(probe_blocks(net("arbitrum"), false), vec![None]);
+        // A latest-only network is latest in either mode.
+        assert_eq!(probe_blocks(net("ethereum"), true), vec![None]);
+        assert_eq!(probe_blocks(net("ethereum"), false), vec![None]);
+    }
+
+    #[test]
+    fn block_tags_are_hex_or_latest() {
+        assert_eq!(block_tag(None), "latest");
+        assert_eq!(block_tag(Some(0)), "0x0");
+        assert_eq!(block_tag(Some(1)), "0x1");
+        // Hex, not decimal — a decimal block param is silently misread.
+        assert_eq!(block_tag(Some(280_000_000)), "0x10b07600");
+        assert_eq!(block_tag(Some(39_000_000)), "0x25317c0");
+    }
+
+    #[test]
+    fn call_result_must_be_one_full_word() {
+        let word = json!("0x0000000000000000000000000000000000000000000000000000000000000000");
+        assert_eq!(check_call_result(&word, Some(1)), Ok(()));
+        // "0x" is the node answering from empty state rather than erroring —
+        // the silent not-archive that a naive probe would score as a pass.
+        assert_eq!(
+            check_call_result(&json!("0x"), Some(280_000_000)),
+            Err(Reason::NotArchive {
+                code: 0,
+                block: 280_000_000
+            })
+        );
+        // Short or long by one nibble is still not a word.
+        assert!(matches!(
+            check_call_result(&json!("0x00"), None),
+            Err(Reason::NotArchive { .. })
+        ));
+        assert!(matches!(
+            check_call_result(&json!(format!("0x{}", "0".repeat(63))), None),
+            Err(Reason::NotArchive { .. })
+        ));
+        assert!(matches!(
+            check_call_result(&json!(format!("0x{}", "0".repeat(65))), None),
+            Err(Reason::NotArchive { .. })
+        ));
+        // Not a hex string at all.
+        assert_eq!(
+            check_call_result(&json!(null), None),
+            Err(Reason::BadResponse)
+        );
+        assert_eq!(check_call_result(&json!(1), None), Err(Reason::BadResponse));
+        assert_eq!(
+            check_call_result(&json!("no prefix"), None),
+            Err(Reason::BadResponse)
         );
     }
 
