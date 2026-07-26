@@ -13,12 +13,14 @@ teardown() {
 }
 
 forge_deploy() {
-  forge script script/Deploy.sol:Deploy \
+  # The fixture Deploy.sol reads DEPLOYMENT_KEY itself (consumer convention);
+  # anvil's first funded dev account.
+  DEPLOYMENT_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+    forge script script/Deploy.sol:Deploy \
     -vvvvv \
     --broadcast \
     ${DEPLOY_SKIP_SIMULATION:+--skip-simulation} \
     --rpc-url http://127.0.0.1:8545 \
-    --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
     2>&1
 }
 

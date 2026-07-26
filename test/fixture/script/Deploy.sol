@@ -8,8 +8,14 @@ import {Counter} from "../src/Counter.sol";
 contract Deploy is Script {
     function setUp() public {}
 
+    /// Reads the deployer key from `DEPLOYMENT_KEY`, the same convention as
+    /// the consumer `Deploy.sol` scripts `rainix-sol-artifacts` runs, so the
+    /// fixture exercises the task exactly as consumers do (broadcast included
+    /// — a bare `vm.broadcast()` would hit foundry's default-sender refusal).
     function run() public {
-        vm.broadcast();
+        uint256 deployerPrivateKey = vm.envUint("DEPLOYMENT_KEY");
+        vm.startBroadcast(deployerPrivateKey);
         new Counter();
+        vm.stopBroadcast();
     }
 }

@@ -23,8 +23,6 @@ jobs:
             task: rainix-rs-static
       fail-fast: false
     runs-on: ${{ matrix.os }}
-    env:
-      DEPLOYMENT_KEY: ${{ secrets.PRIVATE_KEY }}
     defaults:
       run:
         working-directory: test/fixture
@@ -65,8 +63,8 @@ jobs:
           restore-keys: |
             foundry-full-${{ runner.os }}-
       - run: nix develop ../.. --command forge soldeer install
+      # rainix-sol-artifacts runs hermetically here: with no ETH_RPC_URL the
+      # task deploys against its own ephemeral anvil, so this job needs no RPC
+      # or key secrets.
       - name: Run ${{ matrix.task }}
-        env:
-          ETH_RPC_URL: ${{ secrets.RPC_URL_ETHEREUM_FORK || vars.RPC_URL_ETHEREUM_FORK }}
-          ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY }}
         run: nix develop ../.. --command ${{ matrix.task }}
