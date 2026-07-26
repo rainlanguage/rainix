@@ -237,6 +237,39 @@
             # Upload all function selectors to the registry.
             forge selectors up --all
 
+            # With no ETH_RPC_URL the task is hermetic: it runs against its own
+            # ephemeral anvil instance with anvil's first funded dev account as
+            # the deployment key, so it needs no secrets and no external RPC.
+            # An explicit ETH_RPC_URL (a real deploy) always wins and leaves
+            # DEPLOYMENT_KEY untouched. Port 18545 avoids clobbering a dev's
+            # own anvil on the default 8545.
+            if [[ -z "''${ETH_RPC_URL:-}" ]]; then
+              anvil --port 18545 --silent &
+              anvil_pid=$!
+              trap 'kill "''${anvil_pid}" 2>/dev/null' EXIT
+              export ETH_RPC_URL='http://127.0.0.1:18545'
+              export DEPLOYMENT_KEY='0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
+              # Bounded readiness wait: an anvil that died or never bound the
+              # port must fail here with a clear message, not hang the task
+              # until the surrounding job's timeout.
+              anvil_ready=""
+              for _ in $(seq 1 100); do
+                if ! kill -0 "''${anvil_pid}" 2>/dev/null; then
+                  echo 'rainix-sol-artifacts: anvil exited during startup' >&2
+                  exit 1
+                fi
+                if cast chain-id --rpc-url "''${ETH_RPC_URL}" >/dev/null 2>&1; then
+                  anvil_ready=1
+                  break
+                fi
+                sleep 0.2
+              done
+              if [[ -z "''${anvil_ready}" ]]; then
+                echo "rainix-sol-artifacts: anvil not ready on ''${ETH_RPC_URL} after 20s" >&2
+                exit 1
+              fi
+            fi
+
             # Deploy all contracts to testnet.
             # Assumes the existence of a `Deploy.sol` script in the `script` directory.
             # Echos the deploy pubkey to stdout to make it easy to add gas to the account.
