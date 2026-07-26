@@ -249,9 +249,25 @@
               trap 'kill "''${anvil_pid}" 2>/dev/null' EXIT
               export ETH_RPC_URL='http://127.0.0.1:18545'
               export DEPLOYMENT_KEY='0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
-              until cast chain-id --rpc-url "''${ETH_RPC_URL}" >/dev/null 2>&1; do
+              # Bounded readiness wait: an anvil that died or never bound the
+              # port must fail here with a clear message, not hang the task
+              # until the surrounding job's timeout.
+              anvil_ready=""
+              for _ in $(seq 1 100); do
+                if ! kill -0 "''${anvil_pid}" 2>/dev/null; then
+                  echo 'rainix-sol-artifacts: anvil exited during startup' >&2
+                  exit 1
+                fi
+                if cast chain-id --rpc-url "''${ETH_RPC_URL}" >/dev/null 2>&1; then
+                  anvil_ready=1
+                  break
+                fi
                 sleep 0.2
               done
+              if [[ -z "''${anvil_ready}" ]]; then
+                echo "rainix-sol-artifacts: anvil not ready on ''${ETH_RPC_URL} after 20s" >&2
+                exit 1
+              fi
             fi
 
             # Deploy all contracts to testnet.
