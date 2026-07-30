@@ -537,6 +537,19 @@
                 "javascript"
                 "json"
               ];
+              # One owner per file type: the `javascript` type also matches
+              # .mjs/.cjs, which denofmt owns (its excludes carve out only
+              # .ts/.js/.json/.svelte). With both hooks live — a frontend repo
+              # running the bundle over all files — the two styles disagree and
+              # rewrite each other forever, so no whole-tree check can ever
+              # pass. Committed .mjs across the org is denofmt-styled (it runs
+              # live in rust-shell CI where this hook no-ops), so denofmt keeps
+              # them and this hook excludes them: every type claimed by two
+              # hooks must be excluded by one of them.
+              excludes = [
+                ".*\.mjs$"
+                ".*\.cjs$"
+              ];
             };
 
             # Block consumers from shipping their own prettier, prettier
