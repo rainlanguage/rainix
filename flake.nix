@@ -282,6 +282,8 @@
           additionalBuildInputs = [
             pkgs.curl
             pkgs.gnugrep
+            # cut/sort/tr in the version-parsing pipeline.
+            pkgs.coreutils
           ];
         };
 
@@ -394,6 +396,7 @@
             bats test/bats/task/subgraph-build.test.bats
             bats test/bats/task/subgraph-deploy-version.test.bats
             bats test/bats/task/sol-single-contract.test.bats
+            bats test/bats/task/check-published-deploy-constants.test.bats
           '';
           additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs ++ node-build-inputs;
         };

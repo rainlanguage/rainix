@@ -16,10 +16,17 @@
 #   deploy-lib-path  path to the Solidity file holding the constants
 #   prefix...        one or more constant name prefixes
 #
-# Output (always exits 0):
+# Output for a well-formed invocation (always exits 0, so registry state never
+# reds a consumer pipeline):
 #   OK               every published version has its full constant suite
 #   MISSING: <names> one or more expected constants are absent
-#   SKIP: <reason>   the registry could not be reached (nothing verified)
+#   SKIP: <reason>   nothing was verified; the reason distinguishes an
+#                    unreachable registry from a reachable registry whose
+#                    response yielded no parseable versions
+#
+# A malformed invocation (fewer than 3 arguments) is a caller bug, not a
+# registry state: usage goes to stderr and the exit status is 1, so a miswired
+# CI step fails loud instead of silently skipping forever.
 
 set -euo pipefail
 
@@ -32,13 +39,22 @@ package="$1"
 lib="$2"
 shift 2
 
+if ! response=$(curl -fsS "https://api.soldeer.xyz/api/v1/revision?project_name=${package}" 2>/dev/null); then
+  printf 'SKIP: could not fetch published soldeer versions'
+  exit 0
+fi
+
+# grep exits non-zero on zero matches; that is the legitimate
+# "registry reachable but no versions parsed" case (e.g. a package with no
+# published releases yet), kept distinct from the connectivity SKIP above so
+# parser/API drift is never masked as an unreachable registry.
 versions=$(
-  curl -fsS "https://api.soldeer.xyz/api/v1/revision?project_name=${package}" 2>/dev/null \
+  printf '%s' "$response" \
     | grep -oE '"version":"[0-9][0-9.]*"' | cut -d'"' -f4 | sort -u
 ) || true
 
 if [ -z "$versions" ]; then
-  printf 'SKIP: could not fetch published soldeer versions'
+  printf 'SKIP: no versions parsed from registry response'
   exit 0
 fi
 
