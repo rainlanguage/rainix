@@ -24,9 +24,17 @@
 //       `forge soldeer push --dry-run` would upload against the latest published
 //       revision, and emit changed / version / next. Runs inside sol-shell, so
 //       `forge` and `curl` are on PATH.
+//   rpc-preflight [--root <dir>] [--github-env <file>] [--samples N]
+//                 [--timeout N] [--no-archive]
+//       Pick a working fork RPC endpoint per network and export it as
+//       <NETWORK>_RPC_URL, so a dead upstream (quota, pruning node, gone host)
+//       fails over instead of reddening every suite in the org. Candidates come
+//       from the RAINIX_RPC_SECRET_<NET> / RAINIX_RPC_VARS_<NET> env vars merged
+//       with hardcoded public archive defaults. Never prints a candidate URL.
 
 mod frozen_snapshots;
 mod no_submodules;
+mod rpc_preflight;
 mod soldeer_gate;
 
 use std::path::Path;
@@ -51,6 +59,17 @@ fn flag(args: &[String], name: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Numeric value following `--name`, or `default` when absent. A present but
+/// unparseable value is a typo, not a request for the default — fail loud.
+fn num(args: &[String], name: &str, default: u32) -> u32 {
+    match flag(args, name) {
+        None => default,
+        Some(v) => v
+            .parse()
+            .unwrap_or_else(|_| fail(&format!("{name}: {v:?} is not a positive integer"))),
+    }
 }
 
 fn main() {
@@ -88,10 +107,33 @@ fn main() {
                 }
             }
         }
+        "rpc-preflight" => {
+            let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
+            // There is no stdout fallback on purpose: the selected URL may be
+            // secret-derived, so the only sink it may reach is a file. Without
+            // one, fail rather than print.
+            let github_env = flag(&args, "--github-env")
+                .or_else(|| std::env::var("GITHUB_ENV").ok())
+                .unwrap_or_else(|| {
+                    fail("rpc-preflight: --github-env <file> required (or set GITHUB_ENV)")
+                });
+            let samples = num(&args, "--samples", 3);
+            let timeout = num(&args, "--timeout", 15);
+            // Deploy/broadcast paths only ever read head state; requiring
+            // archive there would reject a healthy pruning endpoint.
+            let archive = !args.iter().any(|a| a == "--no-archive");
+            rpc_preflight::run(
+                Path::new(&root),
+                Path::new(&github_env),
+                samples,
+                timeout,
+                archive,
+            );
+        }
         other => {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
-                 (available: no-submodules, snapshots-append-only, soldeer-gate)"
+                 (available: no-submodules, snapshots-append-only, soldeer-gate, rpc-preflight)"
             );
             std::process::exit(2);
         }

@@ -1,0 +1,27 @@
+name: rpc-preflight
+description: >-
+  Selects a working fork RPC endpoint per network and exports it as <NETWORK>_RPC_URL for the steps that follow, so a dead upstream fails over instead of reddening every fork suite in the org. Foundry maps one [rpc_endpoints] alias to exactly one URL and its --fork-retries only retries that same URL, so a deterministic upstream failure (plan quota exhausted, node is not archive, host is gone) cannot be recovered inside forge — it has to be recovered before forge starts. Candidates are the MERGED pool of the RPC_URL_<NETWORK>_FORK secret (newline-separated list of keyed/paid URLs), the RPC_URL_<NETWORK>_FORK variable (newline-separated list of public keyless URLs) and hardcoded public archive defaults; every entry in every source is a real candidate, the sources only set the order. Health is an archive-aware probe (chain id, then historical account state and a historical eth_call at the deepest block any repo in the org pins for that network) repeated until it passes consecutively, because a latest-only check happily selects a pruning node that then dies mid-suite. Only networks the repo actually references are probed; a network with no candidates at all is left exactly as it is today.
+inputs:
+  archive:
+    description: >-
+      Whether the endpoint must serve historical state. 'true' for fork test suites (they roll back months of blocks). 'false' for deploy/broadcast paths, which only ever read head state — requiring archive there would reject a healthy pruning endpoint for no benefit.
+    required: false
+    default: 'true'
+runs:
+  using: composite
+  steps:
+    - name: Select a healthy fork RPC per network
+      shell: bash
+      # Candidate URLs are NOT passed as `with:` inputs on purpose: GitHub
+      # renders a composite's resolved inputs into the log, which would print a
+      # keyed URL verbatim. They arrive as env vars set by the calling reusable
+      # (RAINIX_RPC_SECRET_<NET> / RAINIX_RPC_VARS_<NET>) and are read straight
+      # out of the environment by the binary, which never prints one.
+      run: |
+        set -euo pipefail
+        # Single source of truth: the Rust rainix-static binary (its unit tests
+        # run inside the nix build). The path: flake ref runs it from this
+        # composite's own checkout, so the check version always matches the
+        # action version regardless of any RAINIX_SHA the caller pins.
+        nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- \
+          rpc-preflight ${{ inputs.archive == 'true' && '' || '--no-archive' }}
