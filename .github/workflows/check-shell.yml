@@ -38,5 +38,6 @@ jobs:
       - run: nix develop --command yq --version
       - run: nix develop --command gh --version
       - run: nix develop --command default-shell-test
+      - run: nix run .#rainix-check-flake-pin
       - run: nix develop .#sol-shell --command nix run .#sol-shell-test
       - run: nix develop .#rust-shell --command nix run .#rust-shell-test
