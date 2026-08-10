@@ -12,6 +12,8 @@ runs:
   steps:
     - name: Select a healthy fork RPC per network
       shell: bash
+      env:
+        RAINIX_RPC_ARCHIVE: ${{ inputs.archive }}
       # Candidate URLs are NOT passed as `with:` inputs on purpose: GitHub
       # renders a composite's resolved inputs into the log, which would print a
       # keyed URL verbatim. They arrive as env vars set by the calling reusable
@@ -19,9 +21,15 @@ runs:
       # out of the environment by the binary, which never prints one.
       run: |
         set -euo pipefail
+        # Keep this in bash rather than a GitHub &&/|| expression: an empty
+        # "archive" argument is falsey there and falls through to --no-archive.
+        rpc_args=(rpc-preflight)
+        if [[ "$RAINIX_RPC_ARCHIVE" != "true" ]]; then
+          rpc_args+=(--no-archive)
+        fi
         # Single source of truth: the Rust rainix-static binary (its unit tests
         # run inside the nix build). The path: flake ref runs it from this
         # composite's own checkout, so the check version always matches the
         # action version regardless of any RAINIX_SHA the caller pins.
         nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- \
-          rpc-preflight ${{ inputs.archive == 'true' && '' || '--no-archive' }}
+          "${rpc_args[@]}"
