@@ -473,4 +473,20 @@ mod tests {
         assert_eq!(tree[Path::new("a/mid")], b"2");
         assert_eq!(tree[Path::new("a/b/deep")], b"3");
     }
+
+    /// The consumer's generate command is arbitrary shell, so a failure anywhere
+    /// in it has to abort the cut — a release that freezes what a half-failed
+    /// generator left behind is the same silent-corruption class this tool exists
+    /// to close.
+    #[test]
+    fn a_command_that_fails_anywhere_fails_the_cut() {
+        assert!(sh("true").is_ok());
+        assert!(sh("false").is_err());
+        // -e: an early failure is not hidden by a later success.
+        assert!(sh("false; true").is_err());
+        // -o pipefail: nor by a successful tail of a pipe.
+        assert!(sh("false | true").is_err());
+        // -u: an unset variable (a typo'd path) is an error, not an empty string.
+        assert!(sh("echo \"${RAINIX_CUT_RELEASE_UNSET_PROBE}\"").is_err());
+    }
 }
