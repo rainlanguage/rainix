@@ -159,4 +159,29 @@ mod tests {
         assert_eq!(size_bytes(&d), Some(body.len() as u64));
         assert!(!check(&d).is_empty());
     }
+
+    /// Every other test states its sizes relative to `CAP_BYTES`, so they all
+    /// pass at any cap — the VALUE has to be pinned separately or a mutation of
+    /// it survives the whole suite (it did, until this test).
+    ///
+    /// Pinned as an upper bound, not equality, because the ratchet is
+    /// floor-only: lowering the cap must stay the one-line change the constant
+    /// promises, while raising it has to delete an assertion that says in words
+    /// it may not be raised — a deliberate act, visible in the diff, rather
+    /// than a number quietly edited upward to make a PR pass.
+    #[test]
+    fn cap_is_only_ever_lowered() {
+        assert!(
+            CAP_BYTES <= 4096,
+            "the CLAUDE.md cap is a floor-only ratchet: it may only ever be \
+             LOWERED, never raised. A repo over the cap cuts its file."
+        );
+    }
+
+    /// The capped path is the file agent sessions actually preload; pointing
+    /// the check at anything else makes it pass vacuously everywhere.
+    #[test]
+    fn caps_claude_md() {
+        assert_eq!(FILE, "CLAUDE.md");
+    }
 }
