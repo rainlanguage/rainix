@@ -159,9 +159,10 @@ pub(crate) fn check(dir: &Path) -> (u64, Vec<String>) {
 /// already counted — an absent file is a PASS, this check caps context, it
 /// never requires any file to exist.
 ///
-/// The `is_file` guard matters: a DIRECTORY named `CLAUDE.md` reports its own
-/// inode size (4096 on ext4, i.e. exactly at the cap), which would otherwise
-/// pass for entirely the wrong reason.
+/// The `is_file` guard rejects non-regular paths — a directory, a fifo — up
+/// front rather than relying on the read to fail on them. Belt and braces: a
+/// directory would fail the read anyway, but a fifo would BLOCK it, and a CI
+/// job that hangs costs a runner for its whole timeout.
 fn read_loaded(path: &Path, seen: &mut BTreeSet<PathBuf>) -> Option<String> {
     if !path.is_file() {
         return None;
@@ -501,23 +502,36 @@ mod tests {
 
     #[test]
     fn failure_names_total_cap_overage_and_every_contributor() {
+        // Sizes are stated relative to CAP_BYTES, never as literals, so winding
+        // the ratchet down stays the one-line change the constant promises.
         let d = tmp_dir();
-        write(&d, "CLAUDE.md", &format!("@big.md\n{}", "x".repeat(3000)));
-        write(&d, "big.md", &"y".repeat(2000));
+        let import = "@big.md\n";
+        let memory = CAP_BYTES as usize;
+        let imported = 2000;
+        write(&d, "CLAUDE.md", &format!("{import}{}", "x".repeat(memory)));
+        write(&d, "big.md", &"y".repeat(imported));
+        let memory_bytes = import.len() + memory;
+        let total_bytes = (memory_bytes + imported) as u64;
+        let over = total_bytes - CAP_BYTES;
         let (t, off) = check(&d);
-        assert_eq!(t, 3008 + 2000);
+        assert_eq!(t, total_bytes);
         let joined = off.join("\n");
-        assert!(joined.contains("5008 bytes"), "{joined}");
-        assert!(joined.contains("4096-byte cap"), "{joined}");
-        assert!(joined.contains("912 over"), "{joined}");
+        assert!(joined.contains(&format!("{total_bytes} bytes")), "{joined}");
+        assert!(
+            joined.contains(&format!("{CAP_BYTES}-byte cap")),
+            "{joined}"
+        );
+        assert!(joined.contains(&format!("{over} over")), "{joined}");
         assert!(joined.contains("CLAUDE.md"), "{joined}");
         assert!(
             joined.contains("big.md (imported by CLAUDE.md)"),
             "{joined}"
         );
         // breakdown is largest-first so the fix is obvious
-        let claude_at = joined.find("  3008  CLAUDE.md").unwrap();
-        let big_at = joined.find("  2000  big.md").unwrap();
+        let claude_at = joined
+            .find(&format!("  {memory_bytes}  CLAUDE.md"))
+            .unwrap();
+        let big_at = joined.find(&format!("  {imported}  big.md")).unwrap();
         assert!(claude_at < big_at, "{joined}");
     }
 
