@@ -379,8 +379,17 @@ fn strip_block_html_comments(text: &str) -> String {
 /// deterministic. Empty when the directory does not exist.
 fn rules_files(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
+    let mut walked: BTreeSet<PathBuf> = BTreeSet::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
+        // `is_dir()` follows symlinks, so two directories under .claude/rules/
+        // that point at each other would spin this loop forever — the job then
+        // hangs until the runner timeout, the same failure mode `read_loaded`'s
+        // `is_file` guard avoids for a fifo. Walk each REAL directory once.
+        let key = std::fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
+        if !walked.insert(key) {
+            continue;
+        }
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
         };
@@ -689,6 +698,34 @@ mod tests {
         // nested under another key, not a top-level scope declaration
         assert!(!is_path_scoped("---\nmeta:\n  paths: src/**\n---\n"));
         assert!(!is_path_scoped("---\ndescription: x\n---\nbody"));
+    }
+
+    /// `is_dir()` follows symlinks, so two directories under `.claude/rules/`
+    /// pointing at each other spin the walk forever and hang the job until the
+    /// runner timeout — a check that never finishes is worse than one that
+    /// fails. This test does not merely assert a number: on the unguarded walk
+    /// it never returns at all.
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_directory_cycles_terminate() {
+        let d = tmp_dir();
+        write(&d, ".claude/rules/a/rule.md", "x");
+        std::fs::create_dir_all(d.join(".claude/rules/b")).unwrap();
+        std::os::unix::fs::symlink(d.join(".claude/rules/b"), d.join(".claude/rules/a/b")).unwrap();
+        std::os::unix::fs::symlink(d.join(".claude/rules/a"), d.join(".claude/rules/b/a")).unwrap();
+        assert_eq!(total(&d), 1);
+    }
+
+    /// The same file reached through a symlink and directly is ONE file in the
+    /// context, so it is charged once.
+    #[cfg(unix)]
+    #[test]
+    fn a_rule_reachable_two_ways_is_charged_once() {
+        let d = tmp_dir();
+        write(&d, ".claude/rules/real/rule.md", &"x".repeat(100));
+        std::os::unix::fs::symlink(d.join(".claude/rules/real"), d.join(".claude/rules/link"))
+            .unwrap();
+        assert_eq!(total(&d), 100);
     }
 
     #[test]
