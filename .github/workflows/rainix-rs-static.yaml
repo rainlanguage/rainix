@@ -21,6 +21,11 @@ jobs:
       - uses: rainlanguage/rainix/.github/actions/no-ignored-tests@main
       # Git submodules are banned org-wide — deps come from soldeer/npm/nix.
       - uses: rainlanguage/rainix/.github/actions/no-submodules@main
+      # CLAUDE.md is capped org-wide: it loads into context on every turn of
+      # every session in the repo, so its size taxes all work done there. The
+      # cap is a floor-only ratchet — an over-cap repo cuts the file, it never
+      # raises the number. Absent CLAUDE.md passes.
+      - uses: rainlanguage/rainix/.github/actions/claude-md-cap@main
       - uses: rainlanguage/rainix/.github/actions/rust-cache@main
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#rust-shell -c rainix-rs-static
       # Run the rainix pre-commit hook bundle (taplo, the nix hooks, yamlfmt,

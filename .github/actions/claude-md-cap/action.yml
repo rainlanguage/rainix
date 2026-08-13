@@ -1,0 +1,15 @@
+name: claude-md-cap
+description: >-
+  Fails when the repo's root CLAUDE.md exceeds the org-wide byte cap. CLAUDE.md is loaded into context on every turn of every session in the repo, whether or not the session needs a word of it, so its size taxes all work done there rather than costing only the readers it helps. The cap is a floor-only ratchet — it may only ever be lowered, never raised, so regrowth is impossible and the existing fat can be wound out gradually. A repo over the cap cuts its file; it does not raise the number. An absent CLAUDE.md passes: this caps the file, it never requires it to exist.
+runs:
+  using: composite
+  steps:
+    - name: Check CLAUDE.md byte cap
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Single source of truth: the Rust rainix-static binary (its unit tests
+        # run inside the nix build). The path: flake ref runs it from this
+        # composite's own checkout, so the check version always matches the
+        # action version regardless of any RAINIX_SHA the caller pins.
+        nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- claude-md-cap .

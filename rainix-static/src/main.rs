@@ -13,6 +13,11 @@
 // Subcommands:
 //   no-submodules [dir]
 //       fail if the repo vendors git submodules.
+//   claude-md-cap [dir]
+//       fail if the repo's CLAUDE.md exceeds the byte cap. CLAUDE.md is loaded
+//       into context on every turn of every session in the repo, so its size
+//       taxes all work done there; the cap is a floor-only ratchet that may only
+//       ever be lowered. An absent CLAUDE.md passes.
 //   snapshots-append-only [--base <ref>] [--root <dir>]
 //       fail if the branch modifies or deletes an existing per-tag deploy-pin
 //       snapshot under <root>/<tag>/ (default root src/generated, base
@@ -32,6 +37,7 @@
 //       from the RAINIX_RPC_SECRET_<NET> / RAINIX_RPC_VARS_<NET> env vars merged
 //       with hardcoded public archive defaults. Never prints a candidate URL.
 
+mod claude_md_cap;
 mod frozen_snapshots;
 mod no_submodules;
 mod rpc_preflight;
@@ -88,6 +94,18 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "claude-md-cap" => {
+            let dir = Path::new(args.get(2).map(String::as_str).unwrap_or("."));
+            let offenders = claude_md_cap::check(dir);
+            if offenders.is_empty() {
+                println!("claude-md-cap: clean");
+            } else {
+                for line in offenders {
+                    println!("{line}");
+                }
+                std::process::exit(1);
+            }
+        }
         "soldeer-gate" => {
             let pkg = flag(&args, "--package")
                 .unwrap_or_else(|| fail("soldeer-gate: --package <name> required"));
@@ -133,7 +151,8 @@ fn main() {
         other => {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
-                 (available: no-submodules, snapshots-append-only, soldeer-gate, rpc-preflight)"
+                 (available: no-submodules, claude-md-cap, snapshots-append-only, \
+                 soldeer-gate, rpc-preflight)"
             );
             std::process::exit(2);
         }
