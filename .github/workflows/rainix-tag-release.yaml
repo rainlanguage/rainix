@@ -60,12 +60,6 @@ on:
         required: false
         type: string
         default: ''
-      snapshot-generate-cmd:
-        description: >-
-          DEPRECATED / no-op. Freezing the release snapshot is no longer a consumer-supplied shell string — it is `rainix-static cut-release`, which owns the regenerate -> format -> freeze order rather than documenting it, because the inverted order silently freezes a stale `candidate` into an append-only dir while regeneration moves `candidate` on, publishing one address and permanently recording another. Retained only so existing callers that still pass it do not error; it is ignored and will be removed. Consumers should drop it, and pass `pointers-generate-cmd` instead if their pointer script is not at the conventional path.
-        required: false
-        type: string
-        default: ''
       test-cmd:
         description: >-
           Pre-publish verification gate. Run against the regenerated snapshot; for a deploy repo this is the fork suite that reads the live chain and asserts it matches the fresh pins, so a release that snapshots addresses the chain does not actually carry fails loud BEFORE publishing. Default `forge test`.
