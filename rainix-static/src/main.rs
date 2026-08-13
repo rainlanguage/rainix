@@ -13,11 +13,16 @@
 // Subcommands:
 //   no-submodules [dir]
 //       fail if the repo vendors git submodules.
-//   claude-md-cap [dir]
-//       fail if the repo's CLAUDE.md exceeds the byte cap. CLAUDE.md is loaded
-//       into context on every turn of every session in the repo, so its size
-//       taxes all work done there; the cap is a floor-only ratchet that may only
-//       ever be lowered. An absent CLAUDE.md passes.
+//   agent-context-cap [dir]
+//       fail if the agent context the repo loads at the START of every session
+//       exceeds the byte cap — it is in the window on every turn whether the
+//       turn needs it or not, so its size taxes all work done in the repo. The
+//       total is CLAUDE.md (or .claude/CLAUDE.md), plus everything they pull in
+//       transitively via @path imports, plus every .claude/rules/**.md without
+//       `paths:` frontmatter. On-demand context is NOT charged: path-scoped
+//       rules, subdirectory CLAUDE.md, CLAUDE.local.md. Prints the per-file
+//       breakdown on failure. The cap is a floor-only ratchet that may only
+//       ever be lowered. A repo with no agent context passes.
 //   snapshots-append-only [--base <ref>] [--root <dir>]
 //       fail if the branch modifies or deletes an existing per-tag deploy-pin
 //       snapshot under <root>/<tag>/ (default root src/generated, base
@@ -37,7 +42,7 @@
 //       from the RAINIX_RPC_SECRET_<NET> / RAINIX_RPC_VARS_<NET> env vars merged
 //       with hardcoded public archive defaults. Never prints a candidate URL.
 
-mod claude_md_cap;
+mod agent_context_cap;
 mod frozen_snapshots;
 mod no_submodules;
 mod rpc_preflight;
@@ -94,11 +99,14 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        "claude-md-cap" => {
+        "agent-context-cap" => {
             let dir = Path::new(args.get(2).map(String::as_str).unwrap_or("."));
-            let offenders = claude_md_cap::check(dir);
+            let (total, offenders) = agent_context_cap::check(dir);
             if offenders.is_empty() {
-                println!("claude-md-cap: clean");
+                println!(
+                    "agent-context-cap: clean — {total} bytes loaded at session start (cap {})",
+                    agent_context_cap::CAP_BYTES
+                );
             } else {
                 for line in offenders {
                     println!("{line}");
@@ -151,7 +159,7 @@ fn main() {
         other => {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
-                 (available: no-submodules, claude-md-cap, snapshots-append-only, \
+                 (available: no-submodules, agent-context-cap, snapshots-append-only, \
                  soldeer-gate, rpc-preflight)"
             );
             std::process::exit(2);
