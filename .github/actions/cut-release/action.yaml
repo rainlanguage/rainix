@@ -1,0 +1,31 @@
+name: cut-release
+description: >-
+  Cuts a deploy repo's release snapshot: regenerates the rolling src/generated/candidate/ pins from the current source, formats, and only then freezes a byte-identical copy as src/generated/<tag>/ for the foundry.toml [package].version. The ordering is the reason this is a tool and not a consumer script — freezing before regenerating writes a stale candidate into a dir the frozen-snapshots-append-only gate protects forever while the regeneration moves candidate on, so the release publishes one address and permanently records another, and nothing downstream compares the two. Refuses a version that is not strict X.Y.Z (its tag dir would be invisible to that gate — an orphan snapshot nothing protects), a missing or empty candidate, and any tag dir that already exists.
+inputs:
+  generate-cmd:
+    description: >-
+      Command that regenerates src/generated/candidate/ from the current source. Empty (the default) uses the org convention, `forge script ./script/BuildPointers.sol`. This is the ONLY repo-specific part of the freeze; everything else — the version read, the guards, the format, the copy and the byte-identity assertion — is the same everywhere and lives in rainix-static. It runs strictly BEFORE the freeze, so the inverted order cannot be expressed through it.
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Cut the release snapshot
+      shell: bash
+      env:
+        # Via env, not interpolated into the script body: a `with:` value spliced
+        # into `run:` text is a template-injection surface, and the binary reads
+        # it as a single argv element either way.
+        RAINIX_GENERATE_CMD: ${{ inputs.generate-cmd }}
+      run: |
+        set -euo pipefail
+        # Single source of truth: the Rust rainix-static binary (its unit tests
+        # run inside the nix build). The path: flake ref runs it — and the forge
+        # it drives, from the same sol-shell — out of this composite's own
+        # checkout, so the freeze logic always matches the action version
+        # regardless of any RAINIX_SHA the caller pins, and a new subcommand is
+        # usable the moment the action lands rather than after a sha bump. A
+        # path: ref also makes no api.github.com call, so it cannot hit the 429
+        # that pinning exists to avoid.
+        nix develop "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#sol-shell" -c \
+          rainix-static cut-release --generate-cmd "$RAINIX_GENERATE_CMD"
