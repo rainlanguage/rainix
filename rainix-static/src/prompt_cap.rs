@@ -176,9 +176,9 @@ fn expand(
 /// span or fence — a path shown as an example is documentation, not a load.
 ///
 /// A candidate must contain `.` or `/`: prose is full of bare words, and a
-/// reference to a file all but always carries an extension or a directory. Over
-/// -matching beyond that is safe, since a token resolving to nothing costs
-/// nothing, so wrapping punctuation is trimmed rather than parsed.
+/// reference to a file all but always carries an extension or a directory.
+/// Matching too much beyond that is safe, since a token resolving to nothing
+/// costs nothing, so wrapping punctuation is trimmed rather than parsed.
 pub(crate) fn reference_tokens(text: &str) -> Vec<String> {
     context_bytes::mask_code(text)
         .split_whitespace()
