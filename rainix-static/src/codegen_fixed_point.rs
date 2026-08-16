@@ -98,8 +98,10 @@ fn run_pipeline(root: &Path, command: &str, pass: u32, max_passes: u32) -> Resul
 /// that oscillates between two contents of the same path is correctly seen as a
 /// change.
 fn snapshot(root: &Path, index: &Path) -> Result<String, String> {
-    // A stale scratch index would carry entries for files a later pass deleted.
-    let _ = std::fs::remove_file(index);
+    // The scratch index carries over between observations, which `git add --all`
+    // is defined to reconcile: it updates entries whose content moved and drops
+    // entries whose file is gone, so the tree it writes describes the working
+    // tree as it is now and not the union of every pass so far.
     git(root, index, &["add", "--all"])?;
     git(root, index, &["write-tree"])
 }
@@ -305,6 +307,19 @@ mod tests {
     }
 
     #[test]
+    fn a_pass_that_deletes_a_file_counts_as_a_change() {
+        let f = Fixture::new();
+        // The scratch index is reused across observations, so a deletion is only
+        // seen because `git add --all` is left to reconcile removals too. An
+        // observation that only ever accumulated paths would call this converged
+        // on pass 1 and hand the currency check a tree it never watched settle.
+        let cmd = f.pipeline("rm -f src/generated/A.sol");
+
+        assert_eq!(run(&f.repo, 5, &cmd), Ok(Outcome::Converged { passes: 2 }));
+        assert!(!f.repo.join("src/generated/A.sol").exists());
+    }
+
+    #[test]
     fn gitignored_build_output_does_not_look_like_a_moving_tree() {
         let f = Fixture::new();
         // Rewriting out/ every pass is what forge does; it must not read as a
@@ -386,6 +401,9 @@ mod tests {
         let err = run(&dir, 5, "true").unwrap_err();
 
         assert!(err.contains("not a git repository"), "{err}");
+        // git's own message names no path, so an operator who pointed the loop
+        // at the wrong directory learns which one only if this says so.
+        assert!(err.contains(&dir.display().to_string()), "{err}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
