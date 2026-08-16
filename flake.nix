@@ -207,16 +207,19 @@
           cargoLock.lockFile = ./rainix-static/Cargo.lock;
           nativeCheckInputs = [ pkgs.git ];
           nativeBuildInputs = [ pkgs.makeWrapper ];
-          # The subcommands shell out to git (`ls-files`, `diff`) and curl
-          # (`rpc-preflight`'s probes, `soldeer-gate`'s fetches). The composite
-          # actions invoke this binary with `nix run`, i.e. OUTSIDE any devshell,
-          # so ambient PATH is whatever the runner image happens to ship. Wrap it
-          # with the pinned tools and a CA bundle so the checks are hermetic and
-          # cannot fail on a host with no curl, no git, or no root certs.
+          # The subcommands shell out to git (`ls-files`, `diff`,
+          # `codegen-fixed-point`'s tree observations), curl (`rpc-preflight`'s
+          # probes, `soldeer-gate`'s fetches) and bash (the regeneration pipeline
+          # `codegen-fixed-point` loops over). The composite actions invoke this
+          # binary with `nix run`, i.e. OUTSIDE any devshell, so ambient PATH is
+          # whatever the runner image happens to ship. Wrap it with the pinned
+          # tools and a CA bundle so the checks are hermetic and cannot fail on a
+          # host with no curl, no git, no bash, or no root certs.
           postInstall = ''
             wrapProgram $out/bin/rainix-static \
               --prefix PATH : ${
                 pkgs.lib.makeBinPath [
+                  pkgs.bash
                   pkgs.curl
                   pkgs.git
                 ]
