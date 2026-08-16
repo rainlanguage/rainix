@@ -101,6 +101,23 @@ jobs:
       # failure for a contract the explorer never actually rejected.
       - name: Verify
         run: |
+          # `required: true` only says a value was passed, not that it says
+          # anything. A blank `networks` gives the loop below zero iterations,
+          # so the step exits 0 having submitted nothing — a green run that
+          # verified nothing is the exact failure this whole workflow exists to
+          # prevent. A blank `contract` or `address` does reach forge and is
+          # rejected there, but only after a shell and an explorer round trip
+          # per network, and it lands in the failure list as if the explorer
+          # had rejected the source. Every one of them is a caller mistake, so
+          # refuse all three up front rather than let the run answer for them.
+          for required in VERIFY_CONTRACT VERIFY_ADDRESS VERIFY_NETWORKS
+          do
+            if [[ -z ${!required//[[:space:]]/} ]]
+            then
+              echo "::error::$required is blank; it must name a value to verify"
+              exit 1
+            fi
+          done
           failed=''
           for network in $VERIFY_NETWORKS
           do
