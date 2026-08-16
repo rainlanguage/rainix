@@ -32,6 +32,7 @@
 //! - Block-level HTML comments, which are stripped before injection, so a
 //!   maintainer note costs nothing and is not charged for.
 
+use crate::context_bytes::{self, Charge, Contributor, Walk};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -70,53 +71,50 @@ const _: () = assert!(
 /// anything deeper is not in the launch context and must not be charged.
 const MAX_IMPORT_DEPTH: usize = 4;
 
-/// One file that lands in the launch context, and what it costs.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) struct Contributor {
-    pub(crate) bytes: u64,
-    /// Path as reported to the user, plus why it is loaded.
-    pub(crate) label: String,
+/// What Claude Code loads and how: `@path` imports, resolved as written, with
+/// block HTML comments dropped because it strips them before injection.
+fn charge() -> Charge {
+    Charge {
+        tokens: import_tokens,
+        resolve: resolve_import,
+        strip: strip_block_html_comments,
+        verb: "imported by",
+        max_depth: MAX_IMPORT_DEPTH,
+    }
 }
 
 /// Total launch-loaded bytes and the per-file breakdown, largest first. Public
 /// for tests; `check` is what the subcommand calls.
 pub(crate) fn collect(dir: &Path) -> Vec<Contributor> {
-    let mut seen: BTreeSet<PathBuf> = BTreeSet::new();
-    let mut out: Vec<Contributor> = Vec::new();
+    let charge = charge();
+    let mut walk = Walk::new(dir, &charge);
 
     // Project memory. Both locations are alternatives for the same thing; if a
     // repo somehow has both, both are loaded, so both are charged.
     for rel in ["CLAUDE.md", ".claude/CLAUDE.md"] {
-        let p = dir.join(rel);
-        if let Some(text) = read_loaded(&p, &mut seen) {
-            out.push(Contributor {
-                bytes: text.len() as u64,
-                label: rel.to_string(),
-            });
-            expand_imports(dir, &p, &text, rel, 1, &mut seen, &mut out);
-        }
+        walk.root_file(&dir.join(rel), rel);
     }
 
     // Unscoped rules load at launch with project-memory priority. Scoped ones
-    // (`paths:` frontmatter) load only when a matching file is read.
+    // (`paths:` frontmatter) load only when a matching file is read. A rule is
+    // charged as a LEAF — `take`/`push`, not `root_file` — because that is what
+    // #299 measured; following `@path` out of a rule would raise every repo's
+    // total, which is a cap change and not a refactor.
     for p in rules_files(&dir.join(".claude/rules")) {
-        let Some(text) = read_loaded(&p, &mut seen) else {
+        let Some(text) = walk.take(&p) else {
             continue;
         };
-        let rel = display_path(dir, &p);
+        let rel = context_bytes::display_path(dir, &p);
         if is_path_scoped(&text) {
             continue;
         }
-        out.push(Contributor {
-            bytes: text.len() as u64,
-            label: format!(
-                "{rel} (unscoped rule — add `paths:` frontmatter to make it load on demand)"
-            ),
-        });
+        walk.push(
+            text.len() as u64,
+            format!("{rel} (unscoped rule — add `paths:` frontmatter to make it load on demand)"),
+        );
     }
 
-    out.sort_by(|a, b| b.bytes.cmp(&a.bytes).then_with(|| a.label.cmp(&b.label)));
-    out
+    walk.finish()
 }
 
 /// Returns `(total_bytes, offenders)`. Offenders is empty when clean. A total
@@ -124,7 +122,7 @@ pub(crate) fn collect(dir: &Path) -> Vec<Contributor> {
 /// `>` fails.
 pub(crate) fn check(dir: &Path) -> (u64, Vec<String>) {
     let contributors = collect(dir);
-    let total: u64 = contributors.iter().map(|c| c.bytes).sum();
+    let total = context_bytes::total(&contributors);
     if total <= CAP_BYTES {
         return (total, Vec::new());
     }
@@ -135,9 +133,7 @@ pub(crate) fn check(dir: &Path) -> (u64, Vec<String>) {
          a floor-only ratchet). Every file below is in the context window on every turn, \
          whether or not the turn needs it:"
     )];
-    for c in &contributors {
-        lines.push(format!("  {:>7}  {}", c.bytes, c.label));
-    }
+    lines.extend(context_bytes::breakdown(&contributors));
     lines.push(
         "Cut by asking of each line: would a capable agent looking at this repo get this WRONG, \
          or merely take a moment to find it? Directory layouts, dependency lists, architecture \
@@ -153,62 +149,6 @@ pub(crate) fn check(dir: &Path) -> (u64, Vec<String>) {
     (total, lines)
 }
 
-/// Content of a regular file that has not been counted yet, as it lands in
-/// context: block-level HTML comments stripped, because Claude Code strips them
-/// before injection. `None` for anything absent, non-regular, unreadable or
-/// already counted — an absent file is a PASS, this check caps context, it
-/// never requires any file to exist.
-///
-/// The `is_file` guard rejects non-regular paths — a directory, a fifo — up
-/// front rather than relying on the read to fail on them. Belt and braces: a
-/// directory would fail the read anyway, but a fifo would BLOCK it, and a CI
-/// job that hangs costs a runner for its whole timeout.
-fn read_loaded(path: &Path, seen: &mut BTreeSet<PathBuf>) -> Option<String> {
-    if !path.is_file() {
-        return None;
-    }
-    // Canonicalize so the same file reached two ways is charged once (and so an
-    // import cycle terminates).
-    let key = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    if !seen.insert(key) {
-        return None;
-    }
-    std::fs::read_to_string(path)
-        .ok()
-        .map(|s| strip_block_html_comments(&s))
-}
-
-/// Charge every `@path` import reachable from `text`, depth-first, stopping at
-/// `MAX_IMPORT_DEPTH` hops. A path that does not resolve to a file contributes
-/// nothing (it is not loaded); flagging it is the separate path-existence check.
-fn expand_imports(
-    root: &Path,
-    from: &Path,
-    text: &str,
-    from_label: &str,
-    depth: usize,
-    seen: &mut BTreeSet<PathBuf>,
-    out: &mut Vec<Contributor>,
-) {
-    if depth > MAX_IMPORT_DEPTH {
-        return;
-    }
-    for token in import_tokens(text) {
-        let Some(target) = resolve_import(from, &token) else {
-            continue;
-        };
-        let Some(body) = read_loaded(&target, seen) else {
-            continue;
-        };
-        let label = format!("{} (imported by {from_label})", display_path(root, &target));
-        out.push(Contributor {
-            bytes: body.len() as u64,
-            label: label.clone(),
-        });
-        expand_imports(root, &target, &body, &label, depth + 1, seen, out);
-    }
-}
-
 /// `@path` tokens in `text`, ignoring anything inside a code span or fence
 /// (a backticked `@README` is literal text, not an import).
 ///
@@ -216,7 +156,7 @@ fn expand_imports(
 /// costs nothing, so over-matching is harmless while under-matching would leave
 /// the cap evadable.
 fn import_tokens(text: &str) -> Vec<String> {
-    let masked = mask_code(text);
+    let masked = context_bytes::mask_code(text);
     let chars: Vec<char> = masked.chars().collect();
     let mut out = Vec::new();
     let mut i = 0;
@@ -245,8 +185,9 @@ fn import_tokens(text: &str) -> Vec<String> {
 
 /// Absolute path an import token names, or `None` when it cannot be resolved.
 /// Relative paths resolve against the IMPORTING file's directory, not the
-/// working directory.
-fn resolve_import(from: &Path, token: &str) -> Option<PathBuf> {
+/// working directory. An import may leave the repo (`~/`, an absolute path), so
+/// the repo root is not a bound here and is unused.
+fn resolve_import(_root: &Path, from: &Path, token: &str) -> Option<PathBuf> {
     if let Some(rest) = token.strip_prefix("~/") {
         return Some(PathBuf::from(std::env::var("HOME").ok()?).join(rest));
     }
@@ -255,90 +196,6 @@ fn resolve_import(from: &Path, token: &str) -> Option<PathBuf> {
         return Some(p.to_path_buf());
     }
     Some(from.parent()?.join(p))
-}
-
-/// Blank out fenced code blocks and inline code spans so a *quoted* `@path` is
-/// not read as an import. Offsets are not preserved — only import scanning uses
-/// this, never the byte measurement.
-fn mask_code(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut fence: Option<String> = None;
-    for line in text.lines() {
-        let marker = fence_marker(line.trim_start());
-        match (&fence, &marker) {
-            // Inside a fence: a run of the same char, at least as long, closes.
-            (Some(open), Some(m)) if m.starts_with(&open[..1]) && m.len() >= open.len() => {
-                fence = None;
-            }
-            (Some(_), _) => {}
-            (None, Some(m)) => fence = Some(m.clone()),
-            (None, None) => {
-                out.push_str(&mask_spans(line));
-            }
-        }
-        out.push('\n');
-    }
-    out
-}
-
-/// The opening/closing run of a fence line (3+ backticks or tildes), if any.
-fn fence_marker(trimmed: &str) -> Option<String> {
-    let c = trimmed.chars().next()?;
-    if c != '`' && c != '~' {
-        return None;
-    }
-    let run: String = trimmed.chars().take_while(|&x| x == c).collect();
-    (run.len() >= 3).then_some(run)
-}
-
-/// Blank inline code spans within one line. An unmatched backtick run is
-/// literal, per CommonMark, so it is left alone.
-fn mask_spans(line: &str) -> String {
-    let chars: Vec<char> = line.chars().collect();
-    let mut out = String::with_capacity(line.len());
-    let mut i = 0;
-    while i < chars.len() {
-        if chars[i] != '`' {
-            out.push(chars[i]);
-            i += 1;
-            continue;
-        }
-        let open_start = i;
-        while i < chars.len() && chars[i] == '`' {
-            i += 1;
-        }
-        let n = i - open_start;
-        let mut j = i;
-        let mut close = None;
-        while j < chars.len() {
-            if chars[j] == '`' {
-                let run_start = j;
-                while j < chars.len() && chars[j] == '`' {
-                    j += 1;
-                }
-                if j - run_start == n {
-                    close = Some(j);
-                    break;
-                }
-            } else {
-                j += 1;
-            }
-        }
-        match close {
-            Some(end) => {
-                for _ in open_start..end {
-                    out.push(' ');
-                }
-                i = end;
-            }
-            None => {
-                for _ in 0..n {
-                    out.push('`');
-                }
-            }
-        }
-    }
-    out
 }
 
 /// Drop HTML comments that occupy whole lines — Claude Code strips block-level
@@ -431,19 +288,6 @@ fn is_path_scoped(text: &str) -> bool {
     }
     // No closing delimiter: not frontmatter at all.
     false
-}
-
-/// Path relative to the repo root when possible, so reports are readable and
-/// stable across checkouts.
-fn display_path(root: &Path, p: &Path) -> String {
-    let rooted = std::fs::canonicalize(root);
-    let target = std::fs::canonicalize(p);
-    if let (Ok(r), Ok(t)) = (rooted, target) {
-        if let Ok(rel) = t.strip_prefix(&r) {
-            return rel.display().to_string();
-        }
-    }
-    p.display().to_string()
 }
 
 #[cfg(test)]
