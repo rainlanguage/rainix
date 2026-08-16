@@ -124,3 +124,23 @@ EOF
   [[ "$output" == *"declares no [package] name and version"* ]]
   [[ "$output" == *"skipping"* ]]
 }
+
+@test "a half-declared package is skipped rather than built" {
+  # Both fields are required to name what publishes. The fixture's tree fails to
+  # build as published, so either half alone reaching the build is exit 1 here.
+  sed -i '/^version = /d' "$work/foundry.toml"
+
+  run rainix-static soldeer-package-build --root "$work" --scratch "$scratch"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"declares no [package] name and version"* ]]
+  [[ "$output" == *"skipping"* ]]
+
+  sed -i 's/^name = .*/version = "0.1.0"/' "$work/foundry.toml"
+
+  run rainix-static soldeer-package-build --root "$work" --scratch "$scratch"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"declares no [package] name and version"* ]]
+  [[ "$output" == *"skipping"* ]]
+}
