@@ -147,10 +147,12 @@ Solidity artifacts from source and asserts `git diff --exit-code` — failing th
 PR if a maintainer changed source without committing the regenerated files. In a
 single job it runs whichever of these the repo has:
 
-- `./script/BuildPointers.sol` → `src/generated/*.pointers.sol`
+- `./script/build-meta.sh` → committed rain meta artifacts
+- `./script/Build.sol` → `src/generated/*.sol`
 - `forge build` + `./script/CopyArtifacts.sol --ffi` → committed ABI JSON
+- `./script/build.sh` → any other derived artifact
 
-then `forge fmt` and the `git diff` assert.
+then `forge fmt`, and the `git diff` assert once that pipeline has settled.
 
 ```yaml
 name: copy-artifacts
@@ -162,9 +164,34 @@ jobs:
 ```
 
 This replaces the former `rainix-build-pointers` reusable — a pointer-only repo
-just omits `CopyArtifacts.sol` (the copy step is skipped via `hashFiles`).
-Always runs through rainix's `sol-shell` (slim), regardless of the consumer's
-default devShell. `secrets: inherit` carries `CACHIX_AUTH_TOKEN`.
+just omits `CopyArtifacts.sol` (the copy step is skipped when the file is
+absent). Always runs through rainix's `sol-shell` (slim), regardless of the
+consumer's default devShell. `secrets: inherit` carries `CACHIX_AUTH_TOKEN`.
+
+##### The pipeline runs to a fixed point, not once
+
+Generated sources are inputs to their own generation: a pointer table is
+imported by the contract whose codehash that same table records, so one pass of
+the pipeline applies the generation function rather than reaching its fixed
+point. The job therefore repeats the whole pipeline until the working tree stops
+changing, and a repo already at its fixed point pays exactly one pass.
+
+`max-codegen-passes` (default `5`) bounds that. Exhausting it fails the job with
+its own error — a generation cycle that does not settle, distinct from committed
+artifacts that were merely not regenerated, which is what the currency check
+reports. Committing whichever pass happened to diff clean is the trap the bound
+exists to prevent: it records a `BYTECODE_HASH` for a contract compiled against
+a different pass of the same file. Raise the bound only for a repo whose
+generated sources genuinely nest deeper than five levels:
+
+```yaml
+jobs:
+  copy-artifacts:
+    uses: rainlanguage/rainix/.github/workflows/rainix-copy-artifacts.yaml@main
+    secrets: inherit
+    with:
+      max-codegen-passes: 8
+```
 
 #### rainix-rs-static
 

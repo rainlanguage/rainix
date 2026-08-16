@@ -45,6 +45,16 @@
 //       `forge soldeer push --dry-run` would upload against the latest published
 //       revision, and emit changed / version / next. Runs inside sol-shell, so
 //       `forge` and `curl` are on PATH.
+//   codegen-fixed-point --run <command> [--max-passes N] [--root <dir>]
+//       Run a repo's regeneration pipeline until the working tree stops
+//       changing, or fail once N passes are spent. Generated sources feed back
+//       into their own inputs, so one pass is one application of the generation
+//       function rather than its fixed point, and a tree that is several passes
+//       behind is indistinguishable from one that will never settle unless the
+//       loop and its bound are in the machine. The tree is observed as a git
+//       tree object built in a scratch index, so .gitignore applies, untracked
+//       output counts, and the repo's own index is left untouched for the
+//       currency check that follows.
 //   rpc-preflight [--root <dir>] [--github-env <file>] [--samples N]
 //                 [--timeout N] [--no-archive]
 //       Pick a working fork RPC endpoint per network and export it as
@@ -54,6 +64,7 @@
 //       with hardcoded public archive defaults. Never prints a candidate URL.
 
 mod agent_context_cap;
+mod codegen_fixed_point;
 mod context_bytes;
 mod frozen_snapshots;
 mod no_submodules;
@@ -170,6 +181,30 @@ fn main() {
                 }
             }
         }
+        "codegen-fixed-point" => {
+            let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
+            let command = flag(&args, "--run")
+                .unwrap_or_else(|| fail("codegen-fixed-point: --run <command> required"));
+            let max_passes = num(&args, "--max-passes", 5);
+            match codegen_fixed_point::run(Path::new(&root), max_passes, &command) {
+                Err(e) => fail(&format!("codegen-fixed-point: {e}")),
+                Ok(codegen_fixed_point::Outcome::Converged { passes }) => {
+                    println!("codegen-fixed-point: fixed point reached after {passes} pass(es)")
+                }
+                // Distinct from the currency check that follows: that one says
+                // the committed tree is behind, which is fixed by regenerating
+                // and committing. This one says regenerating will not help,
+                // because the generation never settles.
+                Ok(codegen_fixed_point::Outcome::NotConverged { passes }) => fail(&format!(
+                    "Codegen did not reach a fixed point in {passes} passes. Generated sources \
+                     feed back into their own inputs, so this is a generation cycle that does \
+                     not settle rather than artifacts that were not regenerated — committing \
+                     any one pass leaves a tree whose recorded codehashes describe a different \
+                     pass. Fix the cycle, or raise --max-passes if this repo genuinely needs \
+                     more than {passes}."
+                )),
+            }
+        }
         "rpc-preflight" => {
             let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
             // There is no stdout fallback on purpose: the selected URL may be
@@ -197,7 +232,8 @@ fn main() {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
                  (available: no-submodules, agent-context-cap, prompt-cap, \
-                 snapshots-append-only, soldeer-gate, rpc-preflight)"
+                 snapshots-append-only, soldeer-gate, rpc-preflight, \
+                 codegen-fixed-point)"
             );
             std::process::exit(2);
         }
