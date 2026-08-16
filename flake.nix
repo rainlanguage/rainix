@@ -469,6 +469,7 @@
             bats test/bats/devshell/sol-shell/sol-tasks.test.bats
             bats test/bats/devshell/sol-shell/slim.test.bats
             bats test/bats/devshell/sol-shell/closure.test.bats
+            bats test/bats/task/soldeer-package-build.test.bats
           '';
           additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs;
         };

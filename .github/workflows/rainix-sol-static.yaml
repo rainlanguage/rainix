@@ -48,6 +48,14 @@ jobs:
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
+      # Build the tree `.soldeerignore` would publish rather than the repo tree.
+      # The two are separate, hand-maintained definitions of what the library
+      # is, and the repo tree is always complete: a source the filter drops, or
+      # a shipped file whose import the filter drops, resolves in every other
+      # check here and only fails in a consumer's build after `soldeer install`.
+      # No-op for a repo whose foundry.toml declares no `[package]` name and
+      # version, since nothing publishes from it.
+      - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c rainix-static soldeer-package-build
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c slither .
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge fmt --check
       # Enforce Rain's one-contract-per-.sol-file convention (rainix#214).

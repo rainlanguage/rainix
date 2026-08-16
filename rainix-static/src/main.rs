@@ -45,6 +45,16 @@
 //       `forge soldeer push --dry-run` would upload against the latest published
 //       revision, and emit changed / version / next. Runs inside sol-shell, so
 //       `forge` and `curl` are on PATH.
+//   soldeer-package-build [--root <dir>] [--scratch <dir>]
+//       build the package exactly as it publishes: unpack what
+//       `forge soldeer push --dry-run` would upload into a scratch project,
+//       give it the build config, remappings, lockfile and dependencies a
+//       consumer supplies, and `forge build` it. `.soldeerignore` is a second
+//       definition of the library, disjoint from the source graph a repo-side
+//       build walks, so a shipped file whose import the filter drops is
+//       invisible to every other check. A repo whose foundry.toml declares no
+//       `[package]` name and version publishes nothing, and is skipped. Runs
+//       inside sol-shell, so `forge` is on PATH.
 //   rpc-preflight [--root <dir>] [--github-env <file>] [--samples N]
 //                 [--timeout N] [--no-archive]
 //       Pick a working fork RPC endpoint per network and export it as
@@ -60,6 +70,7 @@ mod no_submodules;
 mod prompt_cap;
 mod rpc_preflight;
 mod soldeer_gate;
+mod soldeer_package_build;
 
 use std::path::Path;
 
@@ -156,6 +167,11 @@ fn main() {
                 .unwrap_or_else(|| fail("soldeer-gate: --package <name> required"));
             soldeer_gate::run(&pkg, flag(&args, "--github-output").as_deref());
         }
+        "soldeer-package-build" => {
+            let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
+            let scratch = flag(&args, "--scratch");
+            soldeer_package_build::run(Path::new(&root), scratch.as_deref().map(Path::new));
+        }
         "snapshots-append-only" => {
             let base = flag(&args, "--base").unwrap_or_else(|| "origin/main".to_string());
             let root = flag(&args, "--root").unwrap_or_else(|| "src/generated".to_string());
@@ -197,7 +213,8 @@ fn main() {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
                  (available: no-submodules, agent-context-cap, prompt-cap, \
-                 snapshots-append-only, soldeer-gate, rpc-preflight)"
+                 snapshots-append-only, soldeer-gate, soldeer-package-build, \
+                 rpc-preflight)"
             );
             std::process::exit(2);
         }

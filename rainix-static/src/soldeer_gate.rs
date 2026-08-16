@@ -14,13 +14,19 @@ use std::process::Command;
 /// A file entry pulled from a package zip: (name, bytes).
 type Entry = (String, Vec<u8>);
 
-/// A foundry.toml `[package].version` line starts with `version`, then optional
-/// spaces/tabs, then `=`. Matches the old `^version[[:space:]]*=` sed anchor.
-fn is_version_line(line: &str) -> bool {
-    match line.strip_prefix("version") {
+/// A foundry.toml `[package]` field line starts with the key at column zero,
+/// then optional spaces/tabs, then `=`. Matches the `^<key>[[:space:]]*=` sed
+/// anchor.
+fn is_key_line(line: &str, key: &str) -> bool {
+    match line.strip_prefix(key) {
         Some(rest) => rest.trim_start_matches([' ', '\t']).starts_with('='),
         None => false,
     }
+}
+
+/// `is_key_line` for the `version` key.
+fn is_version_line(line: &str) -> bool {
+    is_key_line(line, "version")
 }
 
 /// Blank foundry.toml's version line to `version = "0.0.0"` so a bump alone is
@@ -68,7 +74,7 @@ fn norm_hash(entries: &mut Vec<Entry>) -> String {
 }
 
 /// Read a zip into (name, bytes) entries, skipping directory entries.
-fn read_zip(path: &Path) -> Vec<Entry> {
+pub(crate) fn read_zip(path: &Path) -> Vec<Entry> {
     let file = std::fs::File::open(path)
         .unwrap_or_else(|e| fail(&format!("open {}: {e}", path.display())));
     let mut archive = zip::ZipArchive::new(file)
@@ -135,12 +141,12 @@ fn parse_registry(json: &str) -> (Option<String>, Option<String>) {
     (ver, url)
 }
 
-/// First `[package].version` value in foundry.toml (the in-dev, unpublished
-/// version). Reads the value between the first pair of quotes on that line.
-fn read_local_version(dir: &Path) -> Option<String> {
+/// First `[package].<key>` value in foundry.toml. Reads the value between the
+/// first pair of quotes on that line.
+pub(crate) fn read_local_field(dir: &Path, key: &str) -> Option<String> {
     let content = std::fs::read_to_string(dir.join("foundry.toml")).ok()?;
     for line in content.lines() {
-        if is_version_line(line) {
+        if is_key_line(line, key) {
             let q1 = line.find('"')?;
             let rest = &line[q1 + 1..];
             let q2 = rest.find('"')?;
@@ -148,6 +154,11 @@ fn read_local_version(dir: &Path) -> Option<String> {
         }
     }
     None
+}
+
+/// The in-dev, unpublished `[package].version` from foundry.toml.
+fn read_local_version(dir: &Path) -> Option<String> {
+    read_local_field(dir, "version")
 }
 
 /// Run the Soldeer content gate for `pkg` and emit changed / version / next.
@@ -183,16 +194,16 @@ pub(crate) fn run(pkg: &str, gh_out: Option<&str>) {
 
     // Local package content: `forge soldeer push --dry-run` writes
     // <cwd-basename>.zip into the cwd.
-    remove_cwd_zips();
+    remove_zips(dir);
     let spec = format!("{pkg}~{local}");
     run_cmd(
         Command::new("forge").args(["soldeer", "push", &spec, "--dry-run"]),
         "forge soldeer push --dry-run",
     );
-    let local_zip = newest_cwd_zip().unwrap_or_else(|| fail("forge dry-run produced no .zip"));
+    let local_zip = newest_zip(dir).unwrap_or_else(|| fail("forge dry-run produced no .zip"));
     let mut local_entries = read_zip(&local_zip);
     let new_hash = norm_hash(&mut local_entries);
-    remove_cwd_zips();
+    remove_zips(dir);
 
     // Published content, hashed the same way; "none" when nothing is published.
     let old_hash = match (&remote, url.as_deref()) {
@@ -239,7 +250,7 @@ fn emit(gh_out: Option<&str>, lines: &str) {
 }
 
 /// Run a subprocess, inheriting stdio; fail loud on spawn error or nonzero exit.
-fn run_cmd(cmd: &mut Command, what: &str) {
+pub(crate) fn run_cmd(cmd: &mut Command, what: &str) {
     let status = cmd
         .status()
         .unwrap_or_else(|e| fail(&format!("{what}: failed to spawn: {e}")));
@@ -256,10 +267,10 @@ fn curl_stdout(url: &str) -> Option<String> {
         .then(|| String::from_utf8_lossy(&out.stdout).to_string())
 }
 
-/// Paths of `*.zip` files in the cwd.
-fn cwd_zips() -> Vec<PathBuf> {
+/// Paths of `*.zip` files directly in `dir`.
+fn zips_in(dir: &Path) -> Vec<PathBuf> {
     let mut v = Vec::new();
-    if let Ok(rd) = std::fs::read_dir(".") {
+    if let Ok(rd) = std::fs::read_dir(dir) {
         for e in rd.flatten() {
             let p = e.path();
             if p.extension().is_some_and(|x| x == "zip") {
@@ -270,15 +281,15 @@ fn cwd_zips() -> Vec<PathBuf> {
     v
 }
 
-fn remove_cwd_zips() {
-    for p in cwd_zips() {
+pub(crate) fn remove_zips(dir: &Path) {
+    for p in zips_in(dir) {
         let _ = std::fs::remove_file(p);
     }
 }
 
-/// Most recently modified `*.zip` in the cwd (the dry-run output).
-fn newest_cwd_zip() -> Option<PathBuf> {
-    cwd_zips()
+/// Most recently modified `*.zip` in `dir` (the dry-run output).
+pub(crate) fn newest_zip(dir: &Path) -> Option<PathBuf> {
+    zips_in(dir)
         .into_iter()
         .max_by_key(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok())
 }
