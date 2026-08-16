@@ -8,8 +8,18 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
+        # path: ref runs the check from THIS composite's own checkout, so the
+        # check version always matches the action version (same pattern as
+        # no-submodules) regardless of any RAINIX_SHA the caller pins.
+        RAINIX_STATIC="path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static"
+        # Where snapshots live is asked of the binary rather than spelled out
+        # again (rainlanguage/rainix#313): the same value backs the subcommand's
+        # own default --root below, so this probe cannot drift out of step with
+        # what the check then scans and silently skip every repo. Under `set -e`
+        # a failed lookup fails the step instead of probing "".
+        GENERATED_DIR="$(nix run "$RAINIX_STATIC" -- generated-dir)"
         # Nothing to enforce if the repo has no per-tag snapshots.
-        if ! ls src/generated/*/*.pointers.sol >/dev/null 2>&1; then
+        if ! ls "$GENERATED_DIR"/*/*.pointers.sol >/dev/null 2>&1; then
           echo "snapshots-append-only: no per-tag snapshots; skip"
           exit 0
         fi
@@ -22,8 +32,7 @@ runs:
           git fetch --no-tags --unshallow origin
         fi
         git fetch --no-tags origin "$BASE_REF"
-        # path: ref runs the check from THIS composite's own checkout, so the
-        # check version always matches the action version (same pattern as
-        # no-submodules) regardless of any RAINIX_SHA the caller pins.
-        nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- \
+        # No --root: the subcommand defaults it to the same canonical value the
+        # probe above read, so there is nothing here to keep in sync by hand.
+        nix run "$RAINIX_STATIC" -- \
           snapshots-append-only --base "origin/$BASE_REF"

@@ -43,15 +43,17 @@ fn blank_foundry_version(content: &[u8]) -> Vec<u8> {
     out.into_bytes()
 }
 
-/// Normalized content hash of a package's files. Excludes everything under
-/// `src/generated/` (per-release snapshots + generated aliasing libs — derived
-/// from source, and a fresh `<tag>/` dir appears every release, so hashing it
-/// would flag "changed" on every merge). Blanks foundry.toml's version line.
-/// Then hashes each remaining file as `name \0 content`, in byte-sorted name
-/// order, through one SHA-256 — so identical source yields an identical digest
-/// regardless of zip entry order.
+/// Normalized content hash of a package's files. Excludes everything under the
+/// canonical generated dir (per-release snapshots + generated aliasing libs —
+/// derived from source, and a fresh `<tag>/` dir appears every release, so
+/// hashing it would flag "changed" on every merge); the path comes from
+/// `crate::GENERATED_DIR`, never restated here. Blanks foundry.toml's version
+/// line. Then hashes each remaining file as `name \0 content`, in byte-sorted
+/// name order, through one SHA-256 — so identical source yields an identical
+/// digest regardless of zip entry order.
 fn norm_hash(entries: &mut Vec<Entry>) -> String {
-    entries.retain(|(name, _)| !name.starts_with("src/generated/"));
+    let generated = format!("{}/", crate::GENERATED_DIR);
+    entries.retain(|(name, _)| !name.starts_with(&generated));
     for (name, content) in entries.iter_mut() {
         if name == "foundry.toml" {
             *content = blank_foundry_version(content);
@@ -340,18 +342,38 @@ mod tests {
         assert_eq!(norm_hash(&mut a), norm_hash(&mut b));
     }
 
+    /// The excluded prefix is the ONE canonical generated dir, not a restatement
+    /// of it (rainlanguage/rainix#313) — so moving the constant moves the gate's
+    /// exclusion with it, instead of leaving the gate to see every regeneration
+    /// as a content change and republish forever.
     #[test]
-    fn norm_hash_excludes_generated() {
+    fn norm_hash_excludes_the_canonical_generated_dir() {
         let base = ("src/A.sol".to_string(), b"contract A {}".to_vec());
         let mut without = vec![base.clone()];
         let mut with_gen = vec![
             base,
             (
-                "src/generated/0.1.0/A.pointers.sol".to_string(),
+                format!("{}/0.1.0/A.pointers.sol", crate::GENERATED_DIR),
                 b"address constant X = 1;".to_vec(),
             ),
         ];
         assert_eq!(norm_hash(&mut without), norm_hash(&mut with_gen));
+    }
+
+    /// Only that dir is excluded: a sibling whose name merely starts with it is
+    /// hand-written source and must still count as content.
+    #[test]
+    fn norm_hash_excludes_only_that_dir() {
+        let base = ("src/A.sol".to_string(), b"contract A {}".to_vec());
+        let mut without = vec![base.clone()];
+        let mut with_sibling = vec![
+            base,
+            (
+                format!("{}Legacy/A.sol", crate::GENERATED_DIR),
+                b"contract Legacy {}".to_vec(),
+            ),
+        ];
+        assert_ne!(norm_hash(&mut without), norm_hash(&mut with_sibling));
     }
 
     #[test]

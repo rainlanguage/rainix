@@ -33,10 +33,18 @@ jobs:
       # check below passes without checking anything. The codegen script is
       # `script/Build.sol`, matched exactly: a repo that renames or drops it
       # goes red rather than skipping regeneration and reporting green.
+      #
+      # Where those sources live is asked of `rainix-static generated-dir` — the
+      # one value the frozen-snapshot check and the soldeer content gate read
+      # too (rainlanguage/rainix#313). A literal here would keep matching nothing
+      # once that directory moves, silently retiring this guard; `set -e` makes a
+      # failed lookup fail the step rather than skip it on an empty answer.
       - name: Regenerate generated sources
         run: |
-          if [ -d src/generated ] && [ ! -f script/Build.sol ]; then
-            echo "::error::src/generated/ is committed but script/Build.sol was not found, so the committed sources cannot be currency checked here. The codegen script must be script/Build.sol."
+          set -euo pipefail
+          GENERATED_DIR="$(nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c rainix-static generated-dir)"
+          if [ -d "$GENERATED_DIR" ] && [ ! -f script/Build.sol ]; then
+            echo "::error::$GENERATED_DIR/ is committed but script/Build.sol was not found, so the committed sources cannot be currency checked here. The codegen script must be script/Build.sol."
             exit 1
           fi
           if [ -f script/Build.sol ]; then
