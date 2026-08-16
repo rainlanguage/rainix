@@ -13,6 +13,16 @@
 // Subcommands:
 //   no-submodules [dir]
 //       fail if the repo vendors git submodules.
+//   agent-context-cap [dir]
+//       fail if the agent context the repo loads at the START of every session
+//       exceeds the byte cap — it is in the window on every turn whether the
+//       turn needs it or not, so its size taxes all work done in the repo. The
+//       total is CLAUDE.md (or .claude/CLAUDE.md), plus everything they pull in
+//       transitively via @path imports, plus every .claude/rules/**.md without
+//       `paths:` frontmatter. On-demand context is NOT charged: path-scoped
+//       rules, subdirectory CLAUDE.md, CLAUDE.local.md. Prints the per-file
+//       breakdown on failure. The cap is a floor-only ratchet that may only
+//       ever be lowered. A repo with no agent context passes.
 //   snapshots-append-only [--base <ref>] [--root <dir>]
 //       fail if the branch modifies or deletes an existing per-tag deploy-pin
 //       snapshot under <root>/<tag>/ (default root src/generated, base
@@ -32,6 +42,7 @@
 //       from the RAINIX_RPC_SECRET_<NET> / RAINIX_RPC_VARS_<NET> env vars merged
 //       with hardcoded public archive defaults. Never prints a candidate URL.
 
+mod agent_context_cap;
 mod frozen_snapshots;
 mod no_submodules;
 mod rpc_preflight;
@@ -88,6 +99,21 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "agent-context-cap" => {
+            let dir = Path::new(args.get(2).map(String::as_str).unwrap_or("."));
+            let (total, offenders) = agent_context_cap::check(dir);
+            if offenders.is_empty() {
+                println!(
+                    "agent-context-cap: clean — {total} bytes loaded at session start (cap {})",
+                    agent_context_cap::CAP_BYTES
+                );
+            } else {
+                for line in offenders {
+                    println!("{line}");
+                }
+                std::process::exit(1);
+            }
+        }
         "soldeer-gate" => {
             let pkg = flag(&args, "--package")
                 .unwrap_or_else(|| fail("soldeer-gate: --package <name> required"));
@@ -133,7 +159,8 @@ fn main() {
         other => {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
-                 (available: no-submodules, snapshots-append-only, soldeer-gate, rpc-preflight)"
+                 (available: no-submodules, agent-context-cap, snapshots-append-only, \
+                 soldeer-gate, rpc-preflight)"
             );
             std::process::exit(2);
         }
