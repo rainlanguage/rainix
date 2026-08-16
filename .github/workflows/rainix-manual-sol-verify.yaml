@@ -1,0 +1,152 @@
+name: rainix-manual-sol-verify
+# Explorer source verification for a contract that is ALREADY on chain, run by
+# hand.
+#
+# `rainix-manual-sol-artifacts` submits source only for what its own run
+# broadcast, so a deploy that lands and then fails verification cannot be
+# repaired by re-dispatching it: a deterministic deploy is idempotent, the
+# rerun broadcasts nothing, and `--verify` has nothing to submit. The run goes
+# green having verified nothing. This is the other half — it submits source for
+# an address that already has code, which is the case a rerun cannot reach.
+#
+# Never broadcasts, and takes no deploy key. `forge verify-contract` talks to
+# the explorer API and nothing else.
+on:
+  workflow_call:
+    inputs:
+      contract:
+        type: string
+        required: true
+        description: |
+          Fully qualified artifact path (`path:Contract`) whose source is
+          submitted, e.g. `src/concrete/AddressRegistry.sol:AddressRegistry`.
+          The compiler settings come from the caller's `foundry.toml`, so they
+          are the same ones the creation code on chain was built with.
+      address:
+        type: string
+        required: true
+        description: |
+          The address to submit the source for. A CREATE2 deployment holds one
+          address on every network, so one value covers the whole `networks`
+          list; a repo whose address differs per network dispatches this once
+          per network instead.
+      networks:
+        type: string
+        required: true
+        description: |
+          Whitespace separated `forge verify-contract --chain` values, one per
+          explorer to submit to. These are FOUNDRY's chain names, which are not
+          always the caller's `[rpc_endpoints]` aliases — `base-sepolia` is a
+          chain name and `base_sepolia` is rejected outright.
+    # Secrets consumed by the verify step. Declared here so callers in a
+    # different organization can pass them explicitly — `secrets: inherit`
+    # only forwards a caller's secrets within the same org, so a cross-org
+    # caller cannot reach them otherwise. All optional: an unset secret falls
+    # back to the `|| vars.* || ''` chain in the step `env`. Mirrors the
+    # declaration in `rainix-manual-sol-artifacts.yaml`, minus the deploy key
+    # and the RPCs, neither of which verification touches.
+    secrets:
+      CACHIX_AUTH_TOKEN:
+        required: false
+      EXPLORER_VERIFICATION_KEY:
+        required: false
+      CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY:
+        required: false
+      CI_DEPLOY_BASE_ETHERSCAN_API_KEY:
+        required: false
+      CI_DEPLOY_BASE_SEPOLIA_ETHERSCAN_API_KEY:
+        required: false
+      CI_DEPLOY_ETHEREUM_ETHERSCAN_API_KEY:
+        required: false
+      CI_DEPLOY_POLYGON_ETHERSCAN_API_KEY:
+        required: false
+      CI_DEPLOY_FLARE_ETHERSCAN_API_KEY:
+        required: false
+env:
+  RAINIX_SHA: 53e96a7d0a97d7c7c75c3b2412521324776fdac6
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      # Shared nix + cachix CI preamble (checkout, nix-quick-install, Cachix,
+      # cache-nix-action) — pinned action SHAs live in the composite. Fully
+      # qualified ref: a bare `./` would resolve against the calling repo.
+      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      # Cache Foundry's incremental compilation cache + artifacts so unchanged
+      # contracts aren't recompiled (forge build is the dominant CI cost).
+      - name: Cache Foundry build
+        uses: rainlanguage/rainix/.github/actions/cache@main
+        with:
+          path: |
+            cache
+            out
+          key: foundry-full-${{ runner.os }}-${{ hashFiles('src/**/*.sol', 'test/**/*.sol', 'script/**/*.sol', 'foundry.toml', 'soldeer.lock', 'remappings.txt') }}
+          restore-keys: |
+            foundry-full-${{ runner.os }}-
+      - name: Install soldeer dependencies
+        if: hashFiles('soldeer.lock') != ''
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
+      # Every network is attempted even after one fails, and the failures are
+      # reported together at the end. `forge script --verify` stops at the first
+      # explorer that rejects it, which is how a single bad API key on the first
+      # chain hid the state of four others; a verification pass that gives up
+      # early answers a question nobody asked.
+      #
+      # Paced because the Etherscan V2 key is one key for every chain, and its
+      # per-second limit is charged against all of them together. Back to back
+      # submissions across a network list burn through it and come back
+      # `Max calls per sec rate limit reached`, which reads as a verification
+      # failure for a contract the explorer never actually rejected.
+      - name: Verify
+        run: |
+          # `required: true` only says a value was passed, not that it says
+          # anything. A blank `networks` gives the loop below zero iterations,
+          # so the step exits 0 having submitted nothing — a green run that
+          # verified nothing is the exact failure this whole workflow exists to
+          # prevent. A blank `contract` or `address` does reach forge and is
+          # rejected there, but only after a shell and an explorer round trip
+          # per network, and it lands in the failure list as if the explorer
+          # had rejected the source. Every one of them is a caller mistake, so
+          # refuse all three up front rather than let the run answer for them.
+          for required in VERIFY_CONTRACT VERIFY_ADDRESS VERIFY_NETWORKS
+          do
+            if [[ -z ${!required//[[:space:]]/} ]]
+            then
+              echo "::error::$required is blank; it must name a value to verify"
+              exit 1
+            fi
+          done
+          failed=''
+          for network in $VERIFY_NETWORKS
+          do
+            echo "::group::$VERIFY_CONTRACT on $network"
+            nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c \
+              forge verify-contract --chain "$network" "$VERIFY_ADDRESS" "$VERIFY_CONTRACT" --watch \
+              || failed="$failed $network"
+            echo '::endgroup::'
+            sleep 15
+          done
+          if [ -n "$failed" ]
+          then
+            echo "::error::$VERIFY_CONTRACT at $VERIFY_ADDRESS failed verification on:$failed"
+            exit 1
+          fi
+        # Inputs travel as env rather than being interpolated into the script,
+        # so a value containing shell syntax is data here rather than code.
+        #
+        # Etherscan V2 is a single multichain API key: source all Etherscan-family
+        # networks from the one EXPLORER_VERIFICATION_KEY secret (legacy per-chain
+        # secret kept as fallback during migration). Flare/Songbird are NOT
+        # Etherscan (Routescan/Blockscout) so keep a chain-specific key.
+        env:
+          VERIFY_CONTRACT: ${{ inputs.contract }}
+          VERIFY_ADDRESS: ${{ inputs.address }}
+          VERIFY_NETWORKS: ${{ inputs.networks }}
+          CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY || vars.CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY || '' }}
+          CI_DEPLOY_BASE_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_BASE_ETHERSCAN_API_KEY || vars.CI_DEPLOY_BASE_ETHERSCAN_API_KEY || '' }}
+          CI_DEPLOY_BASE_SEPOLIA_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_BASE_SEPOLIA_ETHERSCAN_API_KEY || vars.CI_DEPLOY_BASE_SEPOLIA_ETHERSCAN_API_KEY || '' }}
+          CI_DEPLOY_ETHEREUM_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_ETHEREUM_ETHERSCAN_API_KEY || vars.CI_DEPLOY_ETHEREUM_ETHERSCAN_API_KEY || '' }}
+          CI_DEPLOY_POLYGON_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_POLYGON_ETHERSCAN_API_KEY || vars.CI_DEPLOY_POLYGON_ETHERSCAN_API_KEY || '' }}
+          CI_DEPLOY_FLARE_ETHERSCAN_API_KEY: ${{ secrets.CI_DEPLOY_FLARE_ETHERSCAN_API_KEY || vars.CI_DEPLOY_FLARE_ETHERSCAN_API_KEY || '' }}
