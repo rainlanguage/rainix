@@ -307,6 +307,19 @@ mod tests {
     }
 
     #[test]
+    fn a_pass_that_deletes_a_file_counts_as_a_change() {
+        let f = Fixture::new();
+        // The scratch index is reused across observations, so a deletion is only
+        // seen because `git add --all` is left to reconcile removals too. An
+        // observation that only ever accumulated paths would call this converged
+        // on pass 1 and hand the currency check a tree it never watched settle.
+        let cmd = f.pipeline("rm -f src/generated/A.sol");
+
+        assert_eq!(run(&f.repo, 5, &cmd), Ok(Outcome::Converged { passes: 2 }));
+        assert!(!f.repo.join("src/generated/A.sol").exists());
+    }
+
+    #[test]
     fn gitignored_build_output_does_not_look_like_a_moving_tree() {
         let f = Fixture::new();
         // Rewriting out/ every pass is what forge does; it must not read as a
