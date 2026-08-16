@@ -54,8 +54,13 @@ jobs:
       # a shipped file whose import the filter drops, resolves in every other
       # check here and only fails in a consumer's build after `soldeer install`.
       # No-op for a repo whose foundry.toml declares no `[package]` name and
-      # version, since nothing publishes from it.
-      - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c rainix-static soldeer-package-build
+      # version, since nothing publishes from it. A composite rather than a
+      # `run:`, because the check has to come from the action's own checkout:
+      # `rainix-static` inside the RAINIX_SHA-pinned shell is whatever that
+      # commit built, and carries no subcommand added after it.
+      - uses: rainlanguage/rainix/.github/actions/soldeer-package-build@main
+        with:
+          rainix-sha: ${{ env.RAINIX_SHA }}
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c slither .
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge fmt --check
       # Enforce Rain's one-contract-per-.sol-file convention (rainix#214).
