@@ -1,0 +1,37 @@
+name: codegen-fixed-point
+description: >-
+  Runs a repo's regeneration pipeline until its working tree stops changing, under a bound, so a generation cycle that never settles reports itself instead of arriving at the currency check wearing the same face as artifacts someone simply forgot to regenerate. Generated Solidity is an input to its own generation — a pointer table is imported by the contract whose codehash that same table records — so one pass applies the generation function rather than reaching its fixed point, and a tree one pass behind, a tree several passes behind, and a pipeline that will never converge are three states a single pass cannot tell apart. The bound is what makes the third reportable at all: an unbounded loop on an oscillating pipeline is a hung job, which is the same non-diagnosis as the single pass, paid for in runner minutes. The tree is observed as a git tree object written through a scratch index, so .gitignore applies for free (out/, cache/ and dependencies/ are rewritten every pass and committed by nobody), untracked output still counts as a change, comparison is by content rather than path, and the repo's own index is left unstaged for whatever currency check follows. A repo already at its fixed point costs exactly one pass — the same pipeline cost it paid with no loop around it.
+inputs:
+  run:
+    description: >-
+      The regeneration pipeline, as a shell script run by bash from the repo root once per pass. Every command it needs must be self-contained, including any `nix develop` wrapping: this runs outside every devshell, which is what lets one pipeline pick a different shell per command. A pass that exits non-zero stops the loop and reports itself rather than burning the bound, because a broken pipeline is not a non-converging one.
+    required: true
+  max-passes:
+    description: >-
+      Passes allowed before the repo is declared non-converging. One pass propagates one level of the generated-source dependency chain, so this bounds that nesting depth rather than counting retries; raising it is only ever correct for a repo whose generated sources genuinely nest deeper. Required rather than defaulted on purpose: the caller already publishes a default to ITS callers, and a second default here would be a second number to keep in step with the documentation naming it.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Regenerate committed artifacts to a fixed point
+      shell: bash
+      env:
+        # Via env, not interpolated into the script text: the pipeline is
+        # multi-line caller input and pasting it into the shell would make any
+        # caller of the reusable workflow an author of this script.
+        RAINIX_CODEGEN_RUN: ${{ inputs.run }}
+        RAINIX_CODEGEN_MAX_PASSES: ${{ inputs.max-passes }}
+      run: |
+        set -euo pipefail
+        # Single source of truth: the Rust rainix-static binary (its unit tests
+        # run inside the nix build). The path: flake ref runs it from this
+        # composite's own checkout, so the check version always matches the
+        # action version regardless of any RAINIX_SHA the caller pins. That is
+        # load-bearing here rather than merely tidy: a `github:…/$RAINIX_SHA`
+        # ref would resolve to a flake that predates this subcommand, so the
+        # step would fail with "unknown subcommand" from the moment it merged
+        # until a follow-up bumped the pin.
+        nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- \
+          codegen-fixed-point \
+          --max-passes "$RAINIX_CODEGEN_MAX_PASSES" \
+          --run "$RAINIX_CODEGEN_RUN"

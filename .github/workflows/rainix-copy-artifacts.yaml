@@ -66,9 +66,16 @@ jobs:
       # A repo already at its fixed point costs exactly one pass, the same as no
       # loop at all; the second pass is only ever paid by a build that is
       # already going red.
+      #
+      # Through the composite rather than `nix run github:…/$RAINIX_SHA`, for the
+      # reason the composite spells out: it resolves the binary from its own
+      # checkout, so the subcommand exists as soon as this workflow calls it. A
+      # pinned-flake ref could only name a commit that predates the subcommand.
       - name: Regenerate committed artifacts to a fixed point
-        run: |
-          nix run github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#rainix-static -- codegen-fixed-point --max-passes ${{ inputs.max-codegen-passes }} --run '
+        uses: rainlanguage/rainix/.github/actions/codegen-fixed-point@main
+        with:
+          max-passes: ${{ inputs.max-codegen-passes }}
+          run: |
             set -eu
             if [ -f script/build-meta.sh ]; then
               nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c ./script/build-meta.sh
@@ -84,7 +91,6 @@ jobs:
               ./script/build.sh
             fi
             nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge fmt
-          '
       - name: Assert committed artifacts match freshly built
         run: |
           if ! git diff --exit-code; then
