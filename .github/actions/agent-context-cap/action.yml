@@ -1,0 +1,15 @@
+name: agent-context-cap
+description: >-
+  Fails when the agent context the repo loads at the START of every session exceeds the org-wide byte cap. That context is in the window on every turn, whether or not the turn needs a word of it, so its size taxes all work done in the repo rather than costing only the readers it helps. The total is CLAUDE.md (or .claude/CLAUDE.md), plus everything they pull in transitively via @path imports, plus every .claude/rules/**.md without `paths:` frontmatter — all of which load at launch, so capping only one of them just moves the text sideways. On-demand context is not charged: path-scoped rules, subdirectory CLAUDE.md files, CLAUDE.local.md. The cap is a floor-only ratchet — it may only ever be lowered, never raised, so regrowth is impossible and existing fat can be wound out gradually. A repo over the cap cuts its context (or scopes a rule with `paths:`); it does not raise the number. A repo with no agent context passes: this caps context, it never requires any file to exist.
+runs:
+  using: composite
+  steps:
+    - name: Check agent-context byte cap
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Single source of truth: the Rust rainix-static binary (its unit tests
+        # run inside the nix build). The path: flake ref runs it from this
+        # composite's own checkout, so the check version always matches the
+        # action version regardless of any RAINIX_SHA the caller pins.
+        nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- agent-context-cap .

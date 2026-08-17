@@ -1,0 +1,30 @@
+name: prompt-cap
+description: >-
+  Caps the bytes of the prompt files a repo points this at. agent-context-cap caps what Claude Code loads before turn one; a runner prompt is the same tax paid harder — a shell script reads it whole, so every byte sits in the window for every turn of a run that can be hundreds of turns long, and nothing else in CI measures it. Same traversal, three differences: the roots are the caller's glob and the cap is on their TOTAL (a per-file cap is evaded by splitting the file, and a new prompt file must be charged rather than escape by not being named); nothing is stripped, because no loader drops anything from a file a script reads whole; and any repo file the prompt NAMES is charged with it, since telling the agent to read a file puts it in the window as surely as an `@import` does. That reaches one hop: an import expands transitively because the loader expands it, and here there is no loader, so what a named file goes on to mention is free. A path in a code span or fence is not charged either, nor is one that resolves to no file, nor one outside the repo. Which files are prompts is per-repo, so this is opt-in rather than wired into the shared static jobs. A glob that matches nothing is an error, not a pass.
+inputs:
+  paths:
+    description: >-
+      Globs naming the prompt files, one per line (commas also work), relative to the repo root. `*` and `?` match within one path segment, `**` spans directories. Prefer a glob wide enough to catch a prompt that does not exist yet — that is what makes splitting a file pointless.
+    required: true
+  cap:
+    description: >-
+      Maximum TOTAL bytes across everything the globs match, plus every repo file those prompts name. Set it BELOW what they weigh today: the point is the cut. Lowering it later is the ratchet; raising it is a line in a PR diff.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Check prompt byte cap
+      shell: bash
+      env:
+        # Via env, not interpolated into the script: the globs are multi-line
+        # caller input and must never be pasted into the shell text.
+        RAINIX_PROMPT_PATHS: ${{ inputs.paths }}
+        RAINIX_PROMPT_CAP: ${{ inputs.cap }}
+      run: |
+        set -euo pipefail
+        # Single source of truth: the Rust rainix-static binary (its unit tests
+        # run inside the nix build). The path: flake ref runs it from this
+        # composite's own checkout, so the check version always matches the
+        # action version regardless of any RAINIX_SHA the caller pins.
+        nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- \
+          prompt-cap --paths "$RAINIX_PROMPT_PATHS" --cap "$RAINIX_PROMPT_CAP"

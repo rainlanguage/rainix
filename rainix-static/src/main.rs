@@ -14,6 +14,27 @@
 // Subcommands:
 //   no-submodules [dir]
 //       fail if the repo vendors git submodules.
+//   agent-context-cap [dir]
+//       fail if the agent context the repo loads at the START of every session
+//       exceeds the byte cap — it is in the window on every turn whether the
+//       turn needs it or not, so its size taxes all work done in the repo. The
+//       total is CLAUDE.md (or .claude/CLAUDE.md), plus everything they pull in
+//       transitively via @path imports, plus every .claude/rules/**.md without
+//       `paths:` frontmatter. On-demand context is NOT charged: path-scoped
+//       rules, subdirectory CLAUDE.md, CLAUDE.local.md. Prints the per-file
+//       breakdown on failure. The cap is a floor-only ratchet that may only
+//       ever be lowered. A repo with no agent context passes.
+//   prompt-cap --paths <globs> --cap <bytes> [--root <dir>]
+//       the same check as agent-context-cap, over the prompt files a repo
+//       points it at: a prompt is read whole at launch and re-read on every
+//       turn of the run, so its bytes are paid per turn. The cap is on the
+//       TOTAL over the matched glob (a per-file cap is evaded by splitting the
+//       file), and any repo file a prompt NAMES is charged with it — one hop,
+//       since telling the agent to read a file loads it, while what that file
+//       mentions is nobody's instruction.
+//       Nothing is stripped: a shell script reads the bytes on disk. Which
+//       files are prompts and what they may weigh is per-repo, so both are an
+//       input, and a glob matching nothing is an error rather than a pass.
 //   snapshots-append-only [--base <ref>] [--root <dir>]
 //       fail if the branch modifies or deletes an existing per-tag deploy-pin
 //       snapshot under <root>/<tag>/ (default root src/generated, base
@@ -41,9 +62,12 @@
 //       from the RAINIX_RPC_SECRET_<NET> / RAINIX_RPC_VARS_<NET> env vars merged
 //       with hardcoded public archive defaults. Never prints a candidate URL.
 
+mod agent_context_cap;
+mod context_bytes;
 mod cut_release;
 mod frozen_snapshots;
 mod no_submodules;
+mod prompt_cap;
 mod rpc_preflight;
 mod soldeer_gate;
 
@@ -96,6 +120,45 @@ fn main() {
                     println!("{line}");
                 }
                 std::process::exit(1);
+            }
+        }
+        "agent-context-cap" => {
+            let dir = Path::new(args.get(2).map(String::as_str).unwrap_or("."));
+            let (total, offenders) = agent_context_cap::check(dir);
+            if offenders.is_empty() {
+                println!(
+                    "agent-context-cap: clean — {total} bytes loaded at session start (cap {})",
+                    agent_context_cap::CAP_BYTES
+                );
+            } else {
+                for line in offenders {
+                    println!("{line}");
+                }
+                std::process::exit(1);
+            }
+        }
+        "prompt-cap" => {
+            let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
+            let patterns = prompt_cap::parse_patterns(
+                &flag(&args, "--paths")
+                    .unwrap_or_else(|| fail("prompt-cap: --paths <globs> required, one per line")),
+            );
+            let cap =
+                flag(&args, "--cap").unwrap_or_else(|| fail("prompt-cap: --cap <bytes> required"));
+            let cap: u64 = cap.parse().unwrap_or_else(|_| {
+                fail(&format!("prompt-cap: --cap {cap:?} is not a byte count"))
+            });
+            match prompt_cap::check(Path::new(&root), &patterns, cap) {
+                Err(e) => fail(&format!("prompt-cap: {e}")),
+                Ok((total, offenders)) if offenders.is_empty() => {
+                    println!("prompt-cap: clean — {total} bytes of prompt (cap {cap})")
+                }
+                Ok((_, offenders)) => {
+                    for line in offenders {
+                        println!("{line}");
+                    }
+                    std::process::exit(1);
+                }
             }
         }
         "soldeer-gate" => {
@@ -155,8 +218,8 @@ fn main() {
         other => {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
-                 (available: no-submodules, snapshots-append-only, soldeer-gate, cut-release, \
-                 rpc-preflight)"
+                 (available: no-submodules, agent-context-cap, prompt-cap, \
+                 snapshots-append-only, soldeer-gate, cut-release, rpc-preflight)"
             );
             std::process::exit(2);
         }
