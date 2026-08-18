@@ -34,9 +34,13 @@
 //       Nothing is stripped: a shell script reads the bytes on disk. Which
 //       files are prompts and what they may weigh is per-repo, so both are an
 //       input, and a glob matching nothing is an error rather than a pass.
+//   generated-dir
+//       print the one directory generated Solidity sources live in. Every
+//       mechanism that needs that path reads it from here rather than spelling
+//       it again (rainlanguage/rainix#313).
 //   snapshots-append-only [--base <ref>] [--root <dir>]
 //       fail if the branch modifies or deletes an existing per-tag deploy-pin
-//       snapshot under <root>/<tag>/ (default root src/generated, base
+//       snapshot under <root>/<tag>/ (default root `generated-dir`, base
 //       origin/main). Snapshots are frozen once on the base branch; a release
 //       ADDS a new <tag>, never edits an existing one. Needs the base ref
 //       fetched with history (fetch-depth: 0 + `git fetch origin <base>`).
@@ -62,6 +66,16 @@ mod rpc_preflight;
 mod soldeer_gate;
 
 use std::path::Path;
+
+/// THE directory generated Solidity sources live in, org-wide.
+///
+/// One concept, one value: the copy-artifacts currency guard, the frozen
+/// deploy-pin snapshot check and the soldeer content gate all resolve the path
+/// through this constant (the two workflow-side ones via the `generated-dir`
+/// subcommand), instead of each spelling it out (rainlanguage/rainix#313).
+/// Restated, a literal keeps matching nothing once the real directory moves, and
+/// every check built on it goes quietly inert rather than red.
+pub(crate) const GENERATED_DIR: &str = "src/generated";
 
 /// Print a GitHub Actions error annotation and exit nonzero. Shared by every
 /// subcommand, so it lives at the crate root (`crate::fail`).
@@ -156,9 +170,10 @@ fn main() {
                 .unwrap_or_else(|| fail("soldeer-gate: --package <name> required"));
             soldeer_gate::run(&pkg, flag(&args, "--github-output").as_deref());
         }
+        "generated-dir" => println!("{GENERATED_DIR}"),
         "snapshots-append-only" => {
             let base = flag(&args, "--base").unwrap_or_else(|| "origin/main".to_string());
-            let root = flag(&args, "--root").unwrap_or_else(|| "src/generated".to_string());
+            let root = flag(&args, "--root").unwrap_or_else(|| GENERATED_DIR.to_string());
             match frozen_snapshots::check(&base, &root) {
                 Err(e) => fail(&e),
                 Ok(offenders) if offenders.is_empty() => println!("snapshots-append-only: clean"),
@@ -197,7 +212,8 @@ fn main() {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
                  (available: no-submodules, agent-context-cap, prompt-cap, \
-                 snapshots-append-only, soldeer-gate, rpc-preflight)"
+                 generated-dir, snapshots-append-only, soldeer-gate, \
+                 rpc-preflight)"
             );
             std::process::exit(2);
         }
