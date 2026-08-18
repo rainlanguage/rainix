@@ -22,8 +22,9 @@ jobs:
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
       # Currency-check every committed generated artifact by re-running each
-      # consumer-provided codegen step. The final git diff fails if any
-      # committed file has drifted from its source. The build-meta.sh hook is
+      # consumer-provided codegen step. The final currency check fails if any
+      # committed file has drifted from its source, or if regeneration wrote a
+      # file the repo does not track. The build-meta.sh hook is
       # consumer-supplied because rain meta build's invocation (input/output
       # filenames, meta type) varies per repo.
       - name: Regenerate meta artifacts
@@ -55,9 +56,17 @@ jobs:
         run: ./script/build.sh
       - name: Format (so generated artifacts match committed style)
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge fmt
+      # Staging first is what makes this a whole-tree comparison. `git diff`
+      # alone reads tracked content only, so a regeneration that writes to a
+      # path nothing has committed yet — a renamed contract, an added artifact —
+      # is invisible to it, while the artifact it supersedes stays committed and
+      # frozen at whatever the consumer's `src/**` still imports. `git add --all`
+      # respects .gitignore, so out/, cache/ and dependencies/ contribute
+      # nothing, and every addition, deletion and edit reaches the diff.
       - name: Assert committed artifacts match freshly built
         run: |
-          if ! git diff --exit-code; then
-            echo "::error::Committed artifacts are stale. Regenerate (script/build-meta.sh, script/Build.sol, script/CopyArtifacts.sol, script/build.sh, forge fmt) and commit."
+          git add --all
+          if ! git diff --cached --exit-code; then
+            echo "::error::Committed artifacts are stale, or regeneration wrote a file that is not committed. Regenerate (script/build-meta.sh, script/Build.sol, script/CopyArtifacts.sol, script/build.sh, forge fmt) and commit."
             exit 1
           fi
