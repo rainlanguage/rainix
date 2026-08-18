@@ -101,6 +101,11 @@ jobs:
       # submissions across a network list burn through it and come back
       # `Max calls per sec rate limit reached`, which reads as a verification
       # failure for a contract the explorer never actually rejected.
+      #
+      # `--retries 40 --delay 15` is 41 submission attempts over 10 minutes per
+      # network, against foundry's default 6 over 25 seconds. This is the repair
+      # path for a deploy that lost the race with the explorer's indexer, so it
+      # runs when the explorer is coldest. Only a failed attempt sleeps.
       - name: Verify
         run: |
           # `required: true` only says a value was passed, not that it says
@@ -125,7 +130,7 @@ jobs:
           do
             echo "::group::$VERIFY_CONTRACT on $network"
             nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c \
-              forge verify-contract --chain "$network" "$VERIFY_ADDRESS" "$VERIFY_CONTRACT" --watch \
+              forge verify-contract --chain "$network" "$VERIFY_ADDRESS" "$VERIFY_CONTRACT" --watch --retries 40 --delay 15 \
               || failed="$failed $network"
             echo '::endgroup::'
             sleep 15
