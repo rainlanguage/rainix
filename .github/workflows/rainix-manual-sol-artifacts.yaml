@@ -133,7 +133,21 @@ jobs:
           RAINIX_RPC_VARS_HYPEREVM: ${{ vars.RPC_URL_HYPEREVM_FORK }}
           RAINIX_RPC_SECRET_POLYGON: ${{ secrets.RPC_URL_POLYGON_FORK }}
           RAINIX_RPC_VARS_POLYGON: ${{ vars.RPC_URL_POLYGON_FORK }}
-      - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ${{ inputs.script }} -vvvvv --slow --broadcast ${{ inputs.verify && '--verify' || '' }} ${{ inputs.legacy && '--legacy' || '' }}
+      # Verification races the explorer's indexer. The submission goes out
+      # seconds after the broadcast, and an explorer that has not indexed the
+      # address yet answers `Unable to locate ContractCode`, which foundry
+      # retries — so the retry window IS the tolerance for indexing lag. The
+      # default 5/5 is 6 attempts over 25 seconds, which a cold explorer on a
+      # chain this deployer has never touched does not fit inside. 40/15 is 41
+      # attempts over 10 minutes. Only a failed attempt sleeps, so an explorer
+      # that answers first time costs nothing, and what is retried at all is
+      # narrow: the no-code-at-this-address answers, and an HTTP call that did
+      # not come back. Any other error an explorer returns — a bad key, a
+      # rejected source — still fails the run on the first response, unwaited.
+      # The `--watch` status poll that
+      # follows a successful submission is hard-coded in foundry (8 tries, 15
+      # seconds apart) and these flags do not reach it.
+      - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ${{ inputs.script }} -vvvvv --slow --broadcast ${{ inputs.verify && '--verify --retries 40 --delay 15' || '' }} ${{ inputs.legacy && '--legacy' || '' }}
         # <NETWORK>_RPC_URL is bound by the rpc-preflight step above, which picks
         # a candidate that is reachable right now rather than binding one URL
         # that may be dead.

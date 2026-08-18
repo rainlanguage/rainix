@@ -101,6 +101,21 @@ jobs:
       # submissions across a network list burn through it and come back
       # `Max calls per sec rate limit reached`, which reads as a verification
       # failure for a contract the explorer never actually rejected.
+      #
+      # `--retries 40 --delay 15` is 41 submission attempts over 10 minutes per
+      # network, against foundry's default 5/5 — 6 attempts over 25 seconds.
+      # This is the repair path for a deploy whose verification lost the race
+      # with the explorer's indexer, so it is dispatched at exactly the moment
+      # the explorer is coldest, and a window shorter than the lag reproduces
+      # the failure it exists to fix. Only a failed attempt sleeps, so a
+      # network whose explorer answers first time costs nothing, and the window
+      # is only ever spent where the explorer keeps saying the address holds no
+      # code or keeps failing to answer at all — a bad key or a rejected source
+      # still fails that network on the first response. The no-code answer is
+      # also what a mistyped `address` looks like, and every attempt logs it, so
+      # such a run says why long before it exits. Worst case is the whole list
+      # stuck that way: 10 minutes each, 70 for the seven-network default,
+      # inside the 6 hour job ceiling.
       - name: Verify
         run: |
           # `required: true` only says a value was passed, not that it says
@@ -125,7 +140,7 @@ jobs:
           do
             echo "::group::$VERIFY_CONTRACT on $network"
             nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c \
-              forge verify-contract --chain "$network" "$VERIFY_ADDRESS" "$VERIFY_CONTRACT" --watch \
+              forge verify-contract --chain "$network" "$VERIFY_ADDRESS" "$VERIFY_CONTRACT" --watch --retries 40 --delay 15 \
               || failed="$failed $network"
             echo '::endgroup::'
             sleep 15
