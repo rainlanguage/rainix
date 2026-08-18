@@ -103,23 +103,9 @@ jobs:
       # failure for a contract the explorer never actually rejected.
       #
       # `--retries 40 --delay 15` is 41 submission attempts over 10 minutes per
-      # network, against foundry's default 5/5 — 6 attempts over 25 seconds.
-      # This is the repair path for a deploy whose verification lost the race
-      # with the explorer's indexer, so it is dispatched at exactly the moment
-      # the explorer is coldest, and a window shorter than the lag reproduces
-      # the failure it exists to fix. Only a failed attempt sleeps, so a
-      # network whose explorer answers first time costs nothing, and the window
-      # is only ever spent where the explorer keeps saying the address holds no
-      # code or keeps failing to answer at all — a bad key or a rejected source
-      # still fails that network on the first response. The no-code answer is
-      # also what a mistyped `address` looks like, and every attempt logs it, so
-      # such a run says why long before it exits. The 10 minutes is submission
-      # retries alone. A network also carries the 15 second pacing sleep below,
-      # and up to 2 more minutes of `--watch` polling — foundry's own hard-coded
-      # 8 checks at 15 seconds — wherever a submission does land, on the last
-      # attempt, and then never leaves the explorer's queue. Every network stuck
-      # in the worst of that is 85 minutes 45 seconds for the seven-network
-      # default, inside the 6 hour job ceiling.
+      # network, against foundry's default 6 over 25 seconds. This is the repair
+      # path for a deploy that lost the race with the explorer's indexer, so it
+      # runs when the explorer is coldest. Only a failed attempt sleeps.
       - name: Verify
         run: |
           # `required: true` only says a value was passed, not that it says
