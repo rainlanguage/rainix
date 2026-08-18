@@ -1,0 +1,30 @@
+name: soldeer-package-build
+description: >-
+  Builds the tree `.soldeerignore` would publish rather than the repo tree. The two are separate, hand-maintained definitions of what the library is, and the repo tree is always complete: a source the filter drops, or a shipped file whose import the filter drops, resolves in every repo-side check and fails only in a consumer's `forge build` after `soldeer install`. No-op for a repo whose foundry.toml declares no `[package]` name and version, since nothing publishes from it.
+inputs:
+  rainix-sha:
+    description: >-
+      The rainix commit whose `sol-shell` supplies `forge`. Pass the calling workflow's `env.RAINIX_SHA` so the package is built with the same toolchain the job's other steps use.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Build the package as published
+      shell: bash
+      # The interpolation goes through env rather than into the script body:
+      # any repo can call this composite, so its input is untrusted text that
+      # must never be spliced into a shell command.
+      env:
+        RAINIX_SHA: ${{ inputs.rainix-sha }}
+      run: |
+        set -euo pipefail
+        # `forge` comes from the sol-shell the caller pins and has already
+        # realised for its other steps, so the package builds on the same
+        # toolchain as the repo tree. The check itself runs from this
+        # composite's own checkout via a path: ref, so its version tracks the
+        # action version rather than that pin — a subcommand added here works
+        # on a consumer's next push, and no api.github.com HEAD lookup is
+        # involved either way.
+        nix develop "github:rainlanguage/rainix/$RAINIX_SHA#sol-shell" \
+          -c nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" \
+          -- soldeer-package-build
