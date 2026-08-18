@@ -1,6 +1,16 @@
 name: rainix-copy-artifacts
 on:
   workflow_call:
+    inputs:
+      # One pass propagates one level of the generated-source dependency chain,
+      # so this bounds that depth rather than counting retries. Raising it is
+      # only ever correct for a repo whose generated sources genuinely nest
+      # deeper than the default.
+      max-codegen-passes:
+        description: Passes of the regeneration pipeline allowed before the repo is declared non-converging.
+        type: number
+        default: 5
+        required: false
 env:
   RAINIX_SHA: 53e96a7d0a97d7c7c75c3b2412521324776fdac6
 jobs:
@@ -21,40 +31,66 @@ jobs:
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
-      # Currency-check every committed generated artifact by re-running each
-      # consumer-provided codegen step. The final git diff fails if any
-      # committed file has drifted from its source. The build-meta.sh hook is
-      # consumer-supplied because rain meta build's invocation (input/output
-      # filenames, meta type) varies per repo.
-      - name: Regenerate meta artifacts
-        if: hashFiles('script/build-meta.sh') != ''
-        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c ./script/build-meta.sh
       # Committed generated sources must be regenerable here, or the currency
       # check below passes without checking anything. The codegen script is
       # `script/Build.sol`, matched exactly: a repo that renames or drops it
       # goes red rather than skipping regeneration and reporting green.
-      - name: Regenerate generated sources
+      - name: Require a codegen script for committed generated sources
         run: |
           if [ -d src/generated ] && [ ! -f script/Build.sol ]; then
             echo "::error::src/generated/ is committed but script/Build.sol was not found, so the committed sources cannot be currency checked here. The codegen script must be script/Build.sol."
             exit 1
           fi
-          if [ -f script/Build.sol ]; then
-            nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ./script/Build.sol
-          fi
-      - name: Build Solidity
-        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge build
-      - name: Copy forge artifacts into committed location
-        if: hashFiles('script/CopyArtifacts.sol') != ''
-        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ./script/CopyArtifacts.sol --ffi
-      # Catch-all post-forge regen hook: consumer-supplied. Runs outside any
-      # nix devshell so the script picks shells per command (subgraph-shell,
-      # sol-shell, etc.) for whatever derived artifacts it emits.
-      - name: Regenerate derived artifacts
-        if: hashFiles('script/build.sh') != ''
-        run: ./script/build.sh
-      - name: Format (so generated artifacts match committed style)
-        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge fmt
+      # Currency-check every committed generated artifact by re-running each
+      # consumer-provided codegen step. The final git diff fails if any
+      # committed file has drifted from its source. The build-meta.sh hook is
+      # consumer-supplied because rain meta build's invocation (input/output
+      # filenames, meta type) varies per repo; build.sh is the catch-all
+      # post-forge hook, and is the one command here that is NOT wrapped in a
+      # devshell, so it can pick shells per command (subgraph-shell, sol-shell,
+      # etc.) for whatever derived artifacts it emits.
+      #
+      # The pipeline is looped rather than run once because its output is part
+      # of its own input: a pointer table is imported by the contract whose
+      # codehash that same table records, so one pass is one application of the
+      # generation function and not its fixed point. Run once, a tree that is
+      # several passes behind and a generation cycle that will never settle both
+      # reach the currency check as "stale", and its advice — regenerate and
+      # commit — silently only fixes the first. `codegen-fixed-point` re-runs the
+      # pipeline until the working tree stops changing and fails with its own
+      # error once `max-codegen-passes` is spent, so the two are told apart by
+      # the machine instead of by a developer running the loop by hand until
+      # they guess it is never going to settle. It observes the tree in a
+      # scratch index, leaving the repo's own index to the check below.
+      #
+      # A repo already at its fixed point costs exactly one pass, the same as no
+      # loop at all; the second pass is only ever paid by a build that is
+      # already going red.
+      #
+      # Through the composite rather than `nix run github:…/$RAINIX_SHA`, for the
+      # reason the composite spells out: it resolves the binary from its own
+      # checkout, so the subcommand exists as soon as this workflow calls it. A
+      # pinned-flake ref could only name a commit that predates the subcommand.
+      - name: Regenerate committed artifacts to a fixed point
+        uses: rainlanguage/rainix/.github/actions/codegen-fixed-point@main
+        with:
+          max-passes: ${{ inputs.max-codegen-passes }}
+          run: |
+            set -eu
+            if [ -f script/build-meta.sh ]; then
+              nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c ./script/build-meta.sh
+            fi
+            if [ -f script/Build.sol ]; then
+              nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ./script/Build.sol
+            fi
+            nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge build
+            if [ -f script/CopyArtifacts.sol ]; then
+              nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ./script/CopyArtifacts.sol --ffi
+            fi
+            if [ -f script/build.sh ]; then
+              ./script/build.sh
+            fi
+            nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge fmt
       - name: Assert committed artifacts match freshly built
         run: |
           if ! git diff --exit-code; then
