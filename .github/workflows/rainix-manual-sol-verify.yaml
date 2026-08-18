@@ -113,9 +113,13 @@ jobs:
       # code or keeps failing to answer at all — a bad key or a rejected source
       # still fails that network on the first response. The no-code answer is
       # also what a mistyped `address` looks like, and every attempt logs it, so
-      # such a run says why long before it exits. Worst case is the whole list
-      # stuck that way: 10 minutes each, 70 for the seven-network default,
-      # inside the 6 hour job ceiling.
+      # such a run says why long before it exits. The 10 minutes is submission
+      # retries alone. A network also carries the 15 second pacing sleep below,
+      # and up to 2 more minutes of `--watch` polling — foundry's own hard-coded
+      # 8 checks at 15 seconds — wherever a submission does land, on the last
+      # attempt, and then never leaves the explorer's queue. Every network stuck
+      # in the worst of that is 85 minutes 45 seconds for the seven-network
+      # default, inside the 6 hour job ceiling.
       - name: Verify
         run: |
           # `required: true` only says a value was passed, not that it says
