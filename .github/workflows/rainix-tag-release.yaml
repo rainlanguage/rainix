@@ -54,12 +54,12 @@ on:
         required: false
         type: string
         default: sol-v
-      pointers-generate-cmd:
+      snapshot-generate-cmd:
         description: >-
-          Command that regenerates the rolling `src/generated/candidate/` pins from the current source, e.g. `forge script ./script/BuildPointers.sol` — which is also the default when this is empty, so a repo following the convention passes nothing. This is the ONLY repo-specific part of a release freeze: the version read, the guards, the format, the copy into `src/generated/<tag>/` and the byte-identity assertion are identical everywhere and live in `rainix-static cut-release`. It is deliberately a GENERATE command, not a freeze script — it runs strictly before the freeze, so the freeze-then-regenerate order (which permanently records an address the release does not publish) cannot be expressed.
+          Command that cuts the release: it regenerates the rolling `src/generated/candidate/` pins from the current source and freezes a copy of them as `src/generated/<tag>/`, in that order and in one call, then formats. `BuildScript.cutRelease()` is that call, so the default is the whole of it for a deploy repo whose `script/Build.sol` extends `BuildScript` and such a repo passes nothing. Run after `[package].version` is set to the release version, so the tag the freeze derives from it is the one being released.
         required: false
         type: string
-        default: ''
+        default: 'forge script ./script/Build.sol --sig "cutRelease()" && forge fmt'
       test-cmd:
         description: >-
           Pre-publish verification gate. Run against the regenerated snapshot; for a deploy repo this is the fork suite that reads the live chain and asserts it matches the fresh pins, so a release that snapshots addresses the chain does not actually carry fails loud BEFORE publishing. Default `forge test`.
@@ -198,24 +198,23 @@ jobs:
             exit 1
           }
       - name: Cut the release snapshot
-        # Regenerate the rolling candidate pins, format, then freeze a
-        # byte-identical copy as src/generated/<tag>/. Deterministic: the pins are
-        # computed from bytecode (address = f(bytecode) under CREATE2), so this
-        # needs no chain access and produces the exact snapshot the release
-        # publishes and commits.
-        #
-        # The ORDER is the reason this is a rainix tool rather than a consumer
-        # script (rainlanguage/rainix#301). Freezing before regenerating writes a
-        # drifted candidate into an append-only dir while the regeneration moves
-        # candidate on, so the release publishes one address and permanently
-        # records another — invisible downstream, because the repo's
-        # self-consistency test checks the REGENERATED candidate against source and
-        # nothing compares a numbered dir to candidate. The consumer supplies only
-        # the generate command, which runs strictly first, so the inversion has
-        # nowhere to live.
-        uses: rainlanguage/rainix/.github/actions/cut-release@main
-        with:
-          generate-cmd: ${{ inputs.pointers-generate-cmd }}
+        # One call regenerates the rolling src/generated/candidate/ pins and
+        # freezes a copy of them as src/generated/<tag>/, so there is no point
+        # between the two at which the record and the pins the release publishes
+        # can disagree. Deterministic: the pins are computed from bytecode
+        # (address = f(bytecode) under CREATE2), so this needs no chain access and
+        # produces the exact snapshot the release publishes and commits. The
+        # ordering, the version read, the append-only refusal and the guards
+        # around them all live in that call — LibRainDeploySnapshot.freeze, via
+        # BuildScript.cutRelease().
+        env:
+          # Via env, not interpolated into the script body: a workflow input
+          # spliced into `run:` text is a template-injection surface. The
+          # expansion is one word, which bash then reads as the script.
+          SNAPSHOT_GENERATE_CMD: ${{ inputs.snapshot-generate-cmd }}
+        # `set -euo pipefail` so a command written as `a; b` cannot hide a's
+        # failure behind b's success.
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c bash -c "set -euo pipefail; $SNAPSHOT_GENERATE_CMD"
       - name: Commit the release snapshot
         # Commit BEFORE the append-only gate and Soldeer push so both operate on a
         # clean, inspectable tree. The commit is what lands on main below.

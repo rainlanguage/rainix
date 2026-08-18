@@ -3,8 +3,7 @@
 // inline bash or Python in a workflow. Per the "tooling is Rust" rule (CLAUDE.md),
 // logic — hashing, JSON parsing, version math, content gates — lives here as one
 // testable binary; workflows only orchestrate it. Each subcommand is its own
-// module: static checks in `no_submodules`, CI release tooling in `soldeer_gate`
-// and `cut_release`.
+// module: static checks in `no_submodules`, CI release tooling in `soldeer_gate`.
 //
 // Static checks print their offenders and exit nonzero on failure ("<name>: clean"
 // otherwise). Tooling subcommands print machine outputs (key=value lines) to the
@@ -46,14 +45,6 @@
 //       `forge soldeer push --dry-run` would upload against the latest published
 //       revision, and emit changed / version / next. Runs inside sol-shell, so
 //       `forge` and `curl` are on PATH.
-//   cut-release [--root <dir>] [--generate-cmd <cmd>]
-//       Deploy-repo release freeze: regenerate <root>/candidate/ with the pointer
-//       generation command (default `forge script ./script/BuildPointers.sol`),
-//       `forge fmt`, then copy it to <root>/<tag> for the foundry.toml
-//       [package].version (default root src/generated). Regenerate-then-freeze is
-//       enforced here so no caller can invert it — the reverse order permanently
-//       records an address the release does not publish. Runs inside sol-shell,
-//       so `forge` is on PATH.
 //   rpc-preflight [--root <dir>] [--github-env <file>] [--samples N]
 //                 [--timeout N] [--no-archive]
 //       Pick a working fork RPC endpoint per network and export it as
@@ -64,7 +55,6 @@
 
 mod agent_context_cap;
 mod context_bytes;
-mod cut_release;
 mod frozen_snapshots;
 mod no_submodules;
 mod prompt_cap;
@@ -166,18 +156,6 @@ fn main() {
                 .unwrap_or_else(|| fail("soldeer-gate: --package <name> required"));
             soldeer_gate::run(&pkg, flag(&args, "--github-output").as_deref());
         }
-        "cut-release" => {
-            let root = flag(&args, "--root").unwrap_or_else(|| "src/generated".to_string());
-            // An empty --generate-cmd is an unset workflow input, not a request to
-            // run nothing: fall back to the convention.
-            let cmd = flag(&args, "--generate-cmd")
-                .filter(|c| !c.trim().is_empty())
-                .unwrap_or_else(|| cut_release::DEFAULT_GENERATE_CMD.to_string());
-            match cut_release::run(&root, &cmd) {
-                Err(e) => fail(&e),
-                Ok(tag) => println!("cut-release: froze {root}/candidate -> {root}/{tag}"),
-            }
-        }
         "snapshots-append-only" => {
             let base = flag(&args, "--base").unwrap_or_else(|| "origin/main".to_string());
             let root = flag(&args, "--root").unwrap_or_else(|| "src/generated".to_string());
@@ -219,7 +197,7 @@ fn main() {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
                  (available: no-submodules, agent-context-cap, prompt-cap, \
-                 snapshots-append-only, soldeer-gate, cut-release, rpc-preflight)"
+                 snapshots-append-only, soldeer-gate, rpc-preflight)"
             );
             std::process::exit(2);
         }

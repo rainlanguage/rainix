@@ -137,9 +137,7 @@ fn parse_registry(json: &str) -> (Option<String>, Option<String>) {
 
 /// First `[package].version` value in foundry.toml (the in-dev, unpublished
 /// version). Reads the value between the first pair of quotes on that line.
-/// Shared with `cut-release`, which reads the same line as the release version:
-/// one parser, so the two lifecycles can never disagree about what that line is.
-pub(crate) fn read_local_version(dir: &Path) -> Option<String> {
+fn read_local_version(dir: &Path) -> Option<String> {
     let content = std::fs::read_to_string(dir.join("foundry.toml")).ok()?;
     for line in content.lines() {
         if is_version_line(line) {
