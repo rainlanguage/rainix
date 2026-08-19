@@ -487,6 +487,7 @@ mod tests {
         assert!(is_metadata_header("[package]"));
         assert!(is_metadata_header("  [package]  "));
         assert!(is_metadata_header("[external.package] # release metadata"));
+        assert!(!is_metadata_header("[package] name = \"x\""));
         assert!(!is_metadata_header("[package.metadata]"));
         assert!(!is_metadata_header("[external.package.extra]"));
         assert!(!is_metadata_header("[profile.default]"));
