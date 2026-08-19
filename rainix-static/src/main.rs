@@ -41,10 +41,19 @@
 //       ADDS a new <tag>, never edits an existing one. Needs the base ref
 //       fetched with history (fetch-depth: 0 + `git fetch origin <base>`).
 //   soldeer-gate --package <name> [--github-output <file>]
-//       Soldeer next-version content gate: compare the normalized content of what
-//       `forge soldeer push --dry-run` would upload against the latest published
-//       revision, and emit changed / version / next. Runs inside sol-shell, so
-//       `forge` and `curl` are on PATH.
+//       Soldeer content gate: compare the normalized content of what
+//       `forge soldeer push --dry-run` would upload against the newest published
+//       revision, derive the publish version from the registry
+//       (max(patch_bump(newest published), local [package].version) under
+//       semver ordering; the local version line is only a floor), and emit
+//       changed / version. Runs inside sol-shell, so `forge` and `curl` are
+//       on PATH.
+//   soldeer-set-version --version <x.y.z>
+//       rewrite the cwd's foundry.toml first `version = "…"` line (the
+//       [package] version) to the given version, in place. rainix-autopublish
+//       runs it in the CI checkout just before `forge soldeer push`, so the
+//       uploaded zip carries the version it is published under; the rewrite is
+//       never committed or pushed.
 //   rpc-preflight [--root <dir>] [--github-env <file>] [--samples N]
 //                 [--timeout N] [--no-archive]
 //       Pick a working fork RPC endpoint per network and export it as
@@ -156,6 +165,13 @@ fn main() {
                 .unwrap_or_else(|| fail("soldeer-gate: --package <name> required"));
             soldeer_gate::run(&pkg, flag(&args, "--github-output").as_deref());
         }
+        "soldeer-set-version" => {
+            let version = flag(&args, "--version")
+                .unwrap_or_else(|| fail("soldeer-set-version: --version <x.y.z> required"));
+            if let Err(e) = soldeer_gate::set_version(Path::new("."), &version) {
+                fail(&e);
+            }
+        }
         "snapshots-append-only" => {
             let base = flag(&args, "--base").unwrap_or_else(|| "origin/main".to_string());
             let root = flag(&args, "--root").unwrap_or_else(|| "src/generated".to_string());
@@ -197,7 +213,8 @@ fn main() {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
                  (available: no-submodules, agent-context-cap, prompt-cap, \
-                 snapshots-append-only, soldeer-gate, rpc-preflight)"
+                 snapshots-append-only, soldeer-gate, soldeer-set-version, \
+                 rpc-preflight)"
             );
             std::process::exit(2);
         }
