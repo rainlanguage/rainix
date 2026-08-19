@@ -130,7 +130,10 @@ fn publish_version(local: &str, remote: Option<&str>) -> Result<String, String> 
              cannot derive the publish version from the registry"
         )
     })?;
-    let bumped = [rv[0], rv[1], rv[2] + 1];
+    let patch = rv[2].checked_add(1).ok_or_else(|| {
+        format!("published revision ({r}) has patch u64::MAX; cannot patch-bump past it")
+    })?;
+    let bumped = [rv[0], rv[1], patch];
     Ok(if l > bumped {
         local.to_string()
     } else {
@@ -179,20 +182,56 @@ pub(crate) fn set_version(dir: &Path, version: &str) -> Result<(), String> {
     std::fs::write(&path, out).map_err(|e| format!("write {}: {e}", path.display()))
 }
 
-/// Extract (latest published version, its zip url) from the Soldeer revision
-/// API response. Either is None when absent.
-fn parse_registry(json: &str) -> (Option<String>, Option<String>) {
-    let v: serde_json::Value = serde_json::from_str(json).unwrap_or(serde_json::Value::Null);
-    let d0 = v.get("data").and_then(|d| d.get(0));
-    let ver = d0
-        .and_then(|x| x.get("version"))
-        .and_then(|x| x.as_str())
-        .map(str::to_string);
-    let url = d0
-        .and_then(|x| x.get("url"))
-        .and_then(|x| x.as_str())
-        .map(str::to_string);
-    (ver, url)
+/// The newest published revision on the Soldeer registry: version + zip url.
+#[derive(Debug, PartialEq)]
+struct Revision {
+    version: String,
+    url: String,
+}
+
+/// Decide what the registry said from the revision API's HTTP status + body.
+/// Ok(Some(_)) is the newest published revision; Ok(None) is a genuine first
+/// publish. Everything else — a non-registry HTTP status, unparseable JSON,
+/// or a revision missing its version/url — is an error: a failed lookup must
+/// never be mistaken for "nothing published yet". First publish has exactly
+/// two shapes, both pinned against the live API: HTTP 404 carrying the
+/// registry's own fail envelope ({"status":"fail"} — how it answers an
+/// unknown project), and HTTP 200 with an explicitly empty data array (the
+/// project exists with zero revisions).
+fn registry_revision(status: u16, body: &str) -> Result<Option<Revision>, String> {
+    if status != 200 && status != 404 {
+        return Err(format!("soldeer registry returned HTTP {status}: {body}"));
+    }
+    let v: serde_json::Value = serde_json::from_str(body).map_err(|e| {
+        format!("soldeer registry returned HTTP {status} with unparseable JSON ({e}): {body}")
+    })?;
+    if status == 404 {
+        return if v.get("status").and_then(|s| s.as_str()) == Some("fail") {
+            Ok(None)
+        } else {
+            Err(format!(
+                "soldeer registry returned HTTP 404 without the registry's fail envelope: {body}"
+            ))
+        };
+    }
+    let data = v
+        .get("data")
+        .and_then(|d| d.as_array())
+        .ok_or_else(|| format!("soldeer registry response has no data array: {body}"))?;
+    let Some(d0) = data.first() else {
+        return Ok(None);
+    };
+    let field = |k: &str| {
+        d0.get(k)
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .ok_or_else(|| format!("soldeer registry revision has no {k}: {body}"))
+    };
+    Ok(Some(Revision {
+        version: field("version")?,
+        url: field("url")?,
+    }))
 }
 
 /// First `[package].version` value in foundry.toml (the version FLOOR).
@@ -216,17 +255,21 @@ pub(crate) fn run(pkg: &str, gh_out: Option<&str>) {
     let local =
         read_local_version(dir).unwrap_or_else(|| fail("foundry.toml has no [package].version"));
 
-    // Newest published revision (version + zip url); {} on any fetch failure.
-    let json = curl_stdout(&format!(
+    // Newest published revision (version + zip url) from the registry. A
+    // transport failure, non-registry HTTP status, or malformed response is a
+    // loud gate error — never a first publish (which would derive an
+    // already-published version and attempt an invalid upload).
+    let (status, body) = curl_status_body(&format!(
         "https://api.soldeer.xyz/api/v1/revision?project_name={pkg}&offset=0&limit=1"
     ))
-    .unwrap_or_else(|| "{}".to_string());
-    let (remote, url) = parse_registry(&json);
+    .unwrap_or_else(|e| fail(&e));
+    let remote = registry_revision(status, &body).unwrap_or_else(|e| fail(&e));
 
     // The registry derives the publish version; the local version line is
     // only a floor. local == published is the normal steady state (nothing
     // ever writes the version line back to the branch).
-    let publish = publish_version(&local, remote.as_deref()).unwrap_or_else(|e| fail(&e));
+    let publish = publish_version(&local, remote.as_ref().map(|r| r.version.as_str()))
+        .unwrap_or_else(|e| fail(&e));
 
     // Local package content: `forge soldeer push --dry-run` writes
     // <cwd-basename>.zip into the cwd.
@@ -242,24 +285,29 @@ pub(crate) fn run(pkg: &str, gh_out: Option<&str>) {
     remove_cwd_zips();
 
     // Published content, hashed the same way; "none" when nothing is published.
-    let old_hash = match (&remote, url.as_deref()) {
-        (Some(_), Some(u)) if !u.is_empty() => {
+    let old_hash = match &remote {
+        Some(rev) => {
             let tmp = std::env::temp_dir().join("soldeer_pub.zip");
             run_cmd(
-                Command::new("curl").args(["-fsSL", u, "-o"]).arg(&tmp),
+                Command::new("curl")
+                    .args(["-fsSL", &rev.url, "-o"])
+                    .arg(&tmp),
                 "curl published zip",
             );
             let mut pub_entries = read_zip(&tmp);
             let _ = std::fs::remove_file(&tmp);
             norm_hash(&mut pub_entries)
         }
-        _ => "none".to_string(),
+        None => "none".to_string(),
     };
 
     let changed = old_hash != new_hash;
     eprintln!(
         "soldeer gate: remote={} local={local} publish={publish} OLD={old_hash} NEW={new_hash}",
-        remote.as_deref().unwrap_or("none")
+        remote
+            .as_ref()
+            .map(|r| r.version.as_str())
+            .unwrap_or("none")
     );
 
     emit(gh_out, &gate_output(changed, &publish));
@@ -297,12 +345,37 @@ fn run_cmd(cmd: &mut Command, what: &str) {
     }
 }
 
-/// GET a URL with curl, returning its body on success.
-fn curl_stdout(url: &str) -> Option<String> {
-    let out = Command::new("curl").args(["-fsSL", url]).output().ok()?;
-    out.status
-        .success()
-        .then(|| String::from_utf8_lossy(&out.stdout).to_string())
+/// GET a URL with curl, returning (HTTP status, body). Deliberately NOT `-f`:
+/// `-f` swallows the status and body of an HTTP-level failure, and the
+/// registry answers an unknown project with a 404 whose body the caller must
+/// see. `-w` appends the status code after the body on its own line.
+/// Transport failures (spawn, DNS, connect, TLS) are errors.
+fn curl_status_body(url: &str) -> Result<(u16, String), String> {
+    let out = Command::new("curl")
+        .args(["-sSL", "-w", "\n%{http_code}", url])
+        .output()
+        .map_err(|e| format!("curl {url}: failed to spawn: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "curl {url}: {} ({})",
+            String::from_utf8_lossy(&out.stderr).trim(),
+            out.status
+        ));
+    }
+    split_status_body(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// Split curl `-w '\n%{http_code}'` stdout into (status, body): everything
+/// after the LAST newline is the status code, everything before it the body.
+fn split_status_body(stdout: &str) -> Result<(u16, String), String> {
+    let (body, code) = stdout
+        .rsplit_once('\n')
+        .ok_or_else(|| format!("curl output has no status-code line: {stdout}"))?;
+    let status = code
+        .trim()
+        .parse()
+        .map_err(|_| format!("curl status-code line ({code}) is not a number"))?;
+    Ok((status, body.to_string()))
 }
 
 /// Paths of `*.zip` files in the cwd.
@@ -476,6 +549,21 @@ mod tests {
     }
 
     #[test]
+    fn publish_version_errors_on_patch_overflow() {
+        // A published patch of u64::MAX cannot be bumped: loud error, never a
+        // wraparound or panic — regardless of how high the local floor is.
+        let e = publish_version("0.1.0", Some("1.2.18446744073709551615")).unwrap_err();
+        assert!(e.contains("18446744073709551615"), "{e}");
+        assert!(e.contains("patch-bump"), "{e}");
+        assert!(publish_version("9.9.9", Some("1.2.18446744073709551615")).is_err());
+        // One below the boundary still bumps normally.
+        assert_eq!(
+            publish_version("0.1.0", Some("1.2.18446744073709551614")).unwrap(),
+            "1.2.18446744073709551615"
+        );
+    }
+
+    #[test]
     fn publish_version_rejects_unparseable() {
         assert!(publish_version("0.1.0", Some("garbage")).is_err());
         assert!(publish_version("garbage", None).is_err());
@@ -535,13 +623,103 @@ mod tests {
     }
 
     #[test]
-    fn registry_parse() {
-        let (v, u) = parse_registry(r#"{"data":[{"version":"1.2.3","url":"http://x/z.zip"}]}"#);
-        assert_eq!(v.as_deref(), Some("1.2.3"));
-        assert_eq!(u.as_deref(), Some("http://x/z.zip"));
-        assert_eq!(parse_registry("{}"), (None, None));
-        assert_eq!(parse_registry(r#"{"data":[]}"#), (None, None));
-        assert_eq!(parse_registry("not json"), (None, None));
+    fn registry_newest_revision_extracted() {
+        // Live API shape for a published project (extra fields present).
+        let rev = registry_revision(
+            200,
+            r#"{"data":[{"version":"1.2.3","url":"http://x/z.zip","deleted":false,"downloads":7}],"status":"success"}"#,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            rev,
+            Revision {
+                version: "1.2.3".to_string(),
+                url: "http://x/z.zip".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn registry_empty_revision_list_is_first_publish() {
+        // Project exists with zero revisions: the explicit empty data array.
+        assert_eq!(
+            registry_revision(200, r#"{"data":[],"status":"success"}"#).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn registry_unknown_project_404_is_first_publish() {
+        // Live API shape for a never-published project: HTTP 404 carrying the
+        // registry's own fail envelope.
+        assert_eq!(
+            registry_revision(
+                404,
+                r#"{"message":"Project not found or access denied","status":"fail"}"#
+            )
+            .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn registry_404_without_fail_envelope_is_an_error() {
+        // A 404 that is not the registry's own answer (an outage page, a
+        // proxy) must not be mistaken for "nothing published yet".
+        assert!(registry_revision(404, "<html>not the registry</html>").is_err());
+        assert!(registry_revision(404, r#"{"data":[]}"#).is_err());
+        assert!(registry_revision(404, r#"{"status":"success"}"#).is_err());
+    }
+
+    #[test]
+    fn registry_http_error_status_is_an_error() {
+        assert!(registry_revision(500, r#"{"status":"fail"}"#).is_err());
+        assert!(registry_revision(502, "<html>bad gateway</html>").is_err());
+        assert!(registry_revision(503, "").is_err());
+        // A success-shaped body on an error status must not be trusted —
+        // neither as a revision nor as a first publish.
+        assert!(
+            registry_revision(
+                500,
+                r#"{"data":[{"version":"1.2.3","url":"http://x/z.zip"}],"status":"success"}"#
+            )
+            .is_err()
+        );
+        assert!(registry_revision(500, r#"{"data":[],"status":"success"}"#).is_err());
+    }
+
+    #[test]
+    fn registry_malformed_response_is_an_error() {
+        assert!(registry_revision(200, "not json").is_err());
+        assert!(registry_revision(200, "{}").is_err()); // no data array
+        assert!(registry_revision(200, r#"{"data":"x"}"#).is_err()); // data not an array
+    }
+
+    #[test]
+    fn registry_revision_missing_fields_is_an_error() {
+        assert!(registry_revision(200, r#"{"data":[{"url":"http://x/z.zip"}]}"#).is_err());
+        assert!(registry_revision(200, r#"{"data":[{"version":"1.2.3"}]}"#).is_err());
+        assert!(
+            registry_revision(200, r#"{"data":[{"version":"","url":"http://x/z.zip"}]}"#).is_err()
+        );
+        assert!(registry_revision(200, r#"{"data":[{"version":"1.2.3","url":""}]}"#).is_err());
+    }
+
+    #[test]
+    fn curl_output_splits_into_status_and_body() {
+        assert_eq!(
+            split_status_body("body\n200").unwrap(),
+            (200, "body".to_string())
+        );
+        // The LAST newline splits: bodies may contain newlines of their own.
+        assert_eq!(
+            split_status_body("{\"a\":1}\nmore\n404").unwrap(),
+            (404, "{\"a\":1}\nmore".to_string())
+        );
+        assert_eq!(split_status_body("\n404").unwrap(), (404, String::new()));
+        assert!(split_status_body("no-newline").is_err());
+        assert!(split_status_body("body\nnot-a-number").is_err());
     }
 
     #[test]
