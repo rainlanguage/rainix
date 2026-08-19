@@ -1,9 +1,14 @@
-//! `soldeer-gate` — Soldeer next-version content gate.
+//! `soldeer-gate` — Soldeer registry-derived content gate.
 //!
 //! Compares the normalized content of what `forge soldeer push --dry-run` would
-//! upload against the latest published revision, enforces the next-version
-//! ahead-invariant, and emits `changed` / `version` / `next`. Runs inside
-//! sol-shell, so `forge` and `curl` are on PATH.
+//! upload against the newest published revision, derives the publish version
+//! from the registry (`max(patch_bump(newest published), local floor)` under
+//! semver ordering), and emits `changed` / `version`. Runs inside sol-shell,
+//! so `forge` and `curl` are on PATH.
+//!
+//! Also home to `soldeer-set-version`, which rewrites foundry.toml's version
+//! line in the CI checkout so the published zip carries the version it is
+//! published under; the workflow never commits or pushes that rewrite.
 
 use crate::fail;
 use sha2::{Digest, Sha256};
@@ -104,19 +109,74 @@ fn parse_ver(v: &str) -> Option<[u64; 3]> {
     Some([a, b, c])
 }
 
-/// True iff `a` is strictly ahead of `b` in version order. Fail-closed: an
-/// unparseable operand is treated as NOT ahead.
-fn ver_gt(a: &str, b: &str) -> bool {
-    match (parse_ver(a), parse_ver(b)) {
-        (Some(x), Some(y)) => x > y,
-        _ => false,
-    }
+/// The version to publish. The registry is the authoritative version ledger:
+/// its newest published revision, patch-bumped, is the baseline, and the
+/// repo's `[package].version` is only a FLOOR — whichever is higher under
+/// semver (numeric, not string) ordering wins. No published revision yet
+/// means a first publish, which uses the local version as-is. A version that
+/// does not parse as major.minor.patch is an error on either side: the local
+/// floor is meaningless unless it can be ordered, and a published version
+/// that cannot be ordered against must not be silently guessed past.
+fn publish_version(local: &str, remote: Option<&str>) -> Result<String, String> {
+    let l = parse_ver(local).ok_or_else(|| {
+        format!("foundry.toml [package].version ({local}) is not a major.minor.patch version")
+    })?;
+    let Some(r) = remote else {
+        return Ok(local.to_string());
+    };
+    let rv = parse_ver(r).ok_or_else(|| {
+        format!(
+            "published revision ({r}) is not a major.minor.patch version; \
+             cannot derive the publish version from the registry"
+        )
+    })?;
+    let bumped = [rv[0], rv[1], rv[2] + 1];
+    Ok(if l > bumped {
+        local.to_string()
+    } else {
+        format!("{}.{}.{}", bumped[0], bumped[1], bumped[2])
+    })
 }
 
-/// The next unpublished version: bump `v`'s patch component.
-fn bump_patch(v: &str) -> String {
-    let p = parse_ver(v).unwrap_or([0, 0, 0]);
-    format!("{}.{}.{}", p[0], p[1], p[2] + 1)
+/// Rewrite the FIRST `[package].version` line (same first-match anchor as
+/// `read_local_version`) to `version`, preserving every other byte. Errors on
+/// a non-major.minor.patch `version` or when no version line exists.
+fn set_first_version_line(content: &str, version: &str) -> Result<String, String> {
+    if parse_ver(version).is_none() {
+        return Err(format!(
+            "version ({version}) is not a major.minor.patch version"
+        ));
+    }
+    let mut out = String::with_capacity(content.len());
+    let mut done = false;
+    for line in content.split_inclusive('\n') {
+        let (body, nl) = match line.strip_suffix('\n') {
+            Some(b) => (b, "\n"),
+            None => (line, ""),
+        };
+        if !done && is_version_line(body) {
+            out.push_str(&format!("version = \"{version}\""));
+            out.push_str(nl);
+            done = true;
+        } else {
+            out.push_str(line);
+        }
+    }
+    if !done {
+        return Err("foundry.toml has no [package].version line".to_string());
+    }
+    Ok(out)
+}
+
+/// `soldeer-set-version`: rewrite `dir`/foundry.toml's version line in place.
+/// Errors are returned, not exited on, so the caller (main) owns the process
+/// exit and the unit tests stay a plain in-process assertion.
+pub(crate) fn set_version(dir: &Path, version: &str) -> Result<(), String> {
+    let path = dir.join("foundry.toml");
+    let content =
+        std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let out = set_first_version_line(&content, version)?;
+    std::fs::write(&path, out).map_err(|e| format!("write {}: {e}", path.display()))
 }
 
 /// Extract (latest published version, its zip url) from the Soldeer revision
@@ -135,8 +195,8 @@ fn parse_registry(json: &str) -> (Option<String>, Option<String>) {
     (ver, url)
 }
 
-/// First `[package].version` value in foundry.toml (the in-dev, unpublished
-/// version). Reads the value between the first pair of quotes on that line.
+/// First `[package].version` value in foundry.toml (the version FLOOR).
+/// Reads the value between the first pair of quotes on that line.
 fn read_local_version(dir: &Path) -> Option<String> {
     let content = std::fs::read_to_string(dir.join("foundry.toml")).ok()?;
     for line in content.lines() {
@@ -150,41 +210,28 @@ fn read_local_version(dir: &Path) -> Option<String> {
     None
 }
 
-/// Run the Soldeer content gate for `pkg` and emit changed / version / next.
+/// Run the Soldeer content gate for `pkg` and emit changed / version.
 pub(crate) fn run(pkg: &str, gh_out: Option<&str>) {
     let dir = Path::new(".");
     let local =
         read_local_version(dir).unwrap_or_else(|| fail("foundry.toml has no [package].version"));
-    if parse_ver(&local).is_none() {
-        fail(&format!(
-            "foundry.toml [package].version ({local}) is not a major.minor.patch version"
-        ));
-    }
 
-    // Latest published revision (version + zip url); {} on any fetch failure.
+    // Newest published revision (version + zip url); {} on any fetch failure.
     let json = curl_stdout(&format!(
         "https://api.soldeer.xyz/api/v1/revision?project_name={pkg}&offset=0&limit=1"
     ))
     .unwrap_or_else(|| "{}".to_string());
     let (remote, url) = parse_registry(&json);
 
-    // Next-version invariant: the in-dev version must be AHEAD of what is
-    // published. If a prior run published but its bump-commit push failed,
-    // local would equal remote — fail loud with a clear action, not a silent
-    // re-publish / mis-bump.
-    if let Some(r) = &remote {
-        if !ver_gt(&local, r) {
-            fail(&format!(
-                "foundry.toml [package].version ({local}) is not ahead of the published revision ({r}); \
-                 the next-version lifecycle needs it to be the next UNPUBLISHED version — bump [package].version above {r}."
-            ));
-        }
-    }
+    // The registry derives the publish version; the local version line is
+    // only a floor. local == published is the normal steady state (nothing
+    // ever writes the version line back to the branch).
+    let publish = publish_version(&local, remote.as_deref()).unwrap_or_else(|e| fail(&e));
 
     // Local package content: `forge soldeer push --dry-run` writes
     // <cwd-basename>.zip into the cwd.
     remove_cwd_zips();
-    let spec = format!("{pkg}~{local}");
+    let spec = format!("{pkg}~{publish}");
     run_cmd(
         Command::new("forge").args(["soldeer", "push", &spec, "--dry-run"]),
         "forge soldeer push --dry-run",
@@ -210,16 +257,18 @@ pub(crate) fn run(pkg: &str, gh_out: Option<&str>) {
     };
 
     let changed = old_hash != new_hash;
-    let next = bump_patch(&local);
     eprintln!(
-        "soldeer gate: remote={} publish={local} next={next} OLD={old_hash} NEW={new_hash}",
+        "soldeer gate: remote={} local={local} publish={publish} OLD={old_hash} NEW={new_hash}",
         remote.as_deref().unwrap_or("none")
     );
 
-    emit(
-        gh_out,
-        &format!("changed={changed}\nversion={local}\nnext={next}\n"),
-    );
+    emit(gh_out, &gate_output(changed, &publish));
+}
+
+/// The gate's machine output: the changed verdict and the derived publish
+/// version, as GitHub-output key=value lines.
+fn gate_output(changed: bool, publish: &str) -> String {
+    format!("changed={changed}\nversion={publish}\n")
 }
 
 /// Write key=value output lines to --github-output, or stdout when absent.
@@ -375,18 +424,114 @@ mod tests {
     }
 
     #[test]
-    fn version_parse_compare_bump() {
+    fn version_parse() {
         assert_eq!(parse_ver("1.2.3"), Some([1, 2, 3]));
         assert_eq!(parse_ver("1.2"), None);
         assert_eq!(parse_ver("1.2.3.4"), None);
         assert_eq!(parse_ver("1.2.x"), None);
-        assert!(ver_gt("0.1.2", "0.1.1"));
-        assert!(ver_gt("0.2.0", "0.1.9"));
-        assert!(!ver_gt("0.1.1", "0.1.1")); // equal is not ahead
-        assert!(!ver_gt("0.1.0", "0.1.1"));
-        assert!(!ver_gt("bad", "0.1.1")); // fail-closed
-        assert_eq!(bump_patch("0.1.2"), "0.1.3");
-        assert_eq!(bump_patch("1.0.9"), "1.0.10");
+    }
+
+    #[test]
+    fn publish_version_first_publish_uses_local() {
+        assert_eq!(publish_version("0.1.0", None).unwrap(), "0.1.0");
+        assert_eq!(publish_version("2.3.4", None).unwrap(), "2.3.4");
+    }
+
+    #[test]
+    fn publish_version_steady_state_patch_bumps_published() {
+        // local == newest published is the normal steady state (the workflow
+        // never writes the version line back); the registry drives the bump.
+        assert_eq!(publish_version("0.1.2", Some("0.1.2")).unwrap(), "0.1.3");
+    }
+
+    #[test]
+    fn publish_version_stale_low_local_is_ignored() {
+        // The version line is only a floor; the registry has moved past it.
+        assert_eq!(publish_version("0.1.0", Some("0.4.7")).unwrap(), "0.4.8");
+        // Even a local BEHIND the published version is harmless.
+        assert_eq!(publish_version("0.1.0", Some("0.1.5")).unwrap(), "0.1.6");
+    }
+
+    #[test]
+    fn publish_version_local_ahead_wins_as_floor() {
+        // A deliberate minor/major jump in the repo outruns the registry bump.
+        assert_eq!(publish_version("0.2.0", Some("0.1.9")).unwrap(), "0.2.0");
+        assert_eq!(publish_version("1.0.0", Some("0.9.9")).unwrap(), "1.0.0");
+    }
+
+    #[test]
+    fn publish_version_local_equal_to_bump_is_the_bump() {
+        assert_eq!(publish_version("0.1.3", Some("0.1.2")).unwrap(), "0.1.3");
+    }
+
+    #[test]
+    fn publish_version_orders_semver_not_strings() {
+        // 0.1.9 patch-bumps to 0.1.10, which orders ABOVE 0.1.9 numerically
+        // (a string compare would order "0.1.10" below "0.1.9").
+        assert_eq!(publish_version("0.1.0", Some("0.1.9")).unwrap(), "0.1.10");
+        assert_eq!(publish_version("0.1.9", Some("0.1.9")).unwrap(), "0.1.10");
+        // A local floor of 0.1.10 beats a bumped 0.1.10 tie exactly.
+        assert_eq!(publish_version("0.1.10", Some("0.1.9")).unwrap(), "0.1.10");
+        assert_eq!(publish_version("1.0.9", Some("1.0.9")).unwrap(), "1.0.10");
+    }
+
+    #[test]
+    fn publish_version_rejects_unparseable() {
+        assert!(publish_version("0.1.0", Some("garbage")).is_err());
+        assert!(publish_version("garbage", None).is_err());
+        assert!(publish_version("garbage", Some("0.1.0")).is_err());
+        assert!(publish_version("0.1", Some("0.1.0")).is_err());
+    }
+
+    #[test]
+    fn set_version_line_rewrites_first_match_only() {
+        let src = "version = \"0.1.0\"\nversion = \"0.2.0\"\n";
+        let out = set_first_version_line(src, "0.4.2").unwrap();
+        assert_eq!(out, "version = \"0.4.2\"\nversion = \"0.2.0\"\n");
+    }
+
+    #[test]
+    fn set_version_line_preserves_everything_else() {
+        let src = "[package]\nname = \"x\"\nversion = \"0.1.0\"\n# version = \"9\"\n";
+        let out = set_first_version_line(src, "0.9.9").unwrap();
+        assert_eq!(
+            out,
+            "[package]\nname = \"x\"\nversion = \"0.9.9\"\n# version = \"9\"\n"
+        );
+    }
+
+    #[test]
+    fn set_version_line_keeps_missing_trailing_newline() {
+        let out = set_first_version_line("version = \"1.0.0\"", "2.0.0").unwrap();
+        assert_eq!(out, "version = \"2.0.0\"");
+    }
+
+    #[test]
+    fn set_version_line_errors_without_version_line() {
+        assert!(set_first_version_line("[package]\nname = \"x\"\n", "1.0.0").is_err());
+    }
+
+    #[test]
+    fn set_version_line_rejects_non_semver() {
+        assert!(set_first_version_line("version = \"1.0.0\"\n", "not-a-version").is_err());
+        assert!(set_first_version_line("version = \"1.0.0\"\n", "1.0").is_err());
+    }
+
+    #[test]
+    fn gate_output_emits_changed_and_publish_version() {
+        assert_eq!(gate_output(true, "0.1.3"), "changed=true\nversion=0.1.3\n");
+        assert_eq!(
+            gate_output(false, "0.4.8"),
+            "changed=false\nversion=0.4.8\n"
+        );
+    }
+
+    #[test]
+    fn set_version_writes_foundry_toml() {
+        let d = tmp_dir();
+        std::fs::write(d.join("foundry.toml"), "[package]\nversion = \"0.1.0\"\n").unwrap();
+        set_version(&d, "0.9.9").unwrap();
+        assert_eq!(read_local_version(&d).as_deref(), Some("0.9.9"));
     }
 
     #[test]

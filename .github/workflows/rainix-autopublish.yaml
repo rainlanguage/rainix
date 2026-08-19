@@ -25,13 +25,13 @@ on:
         default: ''
       soldeer-package:
         description: >-
-          optional Soldeer registry package name (e.g. rain-erc). When set, the workflow runs the next-version release lifecycle: `[package].version` is the NEXT, in-development version (not yet on the registry). On a content change vs the published revision it publishes that version and bumps `[package].version` to the next, in one merge-driven process — no manual version bump. The bump does NOT generate per-release artifacts: a version's deploy-pin snapshot is built and committed by the PR that defines that version's content, so a next-version slot never carries a placeholder snapshot on main (main snapshots are frozen constants consumers pin against).
+          optional Soldeer registry package name (e.g. rain-erc). When set, the workflow publishes on a content change vs the newest published revision. The registry is the version ledger: the publish version is `max(patch_bump(newest published), [package].version)` under semver ordering, so the repo's version line is only an optional FLOOR — edit it in an ordinary PR for a deliberate minor/major jump. First publish (no revisions on the registry yet) uses the local version as-is. The workflow NEVER commits or pushes to the consumer branch: the version line is rewritten to the publish version in the CI checkout only (so the uploaded zip is self-consistent), and the `sol-v<version>` tag + GitHub release are pushed as a tag ref, independent of any branch push — publishing works unchanged on branch-protected mains. A version's deploy-pin snapshot is built and committed by the PR that defines that version's content (main snapshots are frozen constants consumers pin against).
         required: false
         type: string
         default: ''
       soldeer-generate-cmd:
         description: >-
-          DEPRECATED / no-op. The version bump no longer generates per-release artifacts — a version's deploy-pin snapshot is built and committed by the PR that defines that version's content, never pre-generated onto main at bump time. Retained only so existing callers that still pass it do not error; it is ignored and will be removed. Consumers should drop it (and instead build snapshots in the PR, e.g. a pre-commit hook or a CI regenerate-and-verify check).
+          DEPRECATED / no-op. Publishing does not generate per-release artifacts — a version's deploy-pin snapshot is built and committed by the PR that defines that version's content, never generated onto main by this workflow. Retained only so existing callers that still pass it do not error; it is ignored and will be removed. Consumers should drop it (and instead build snapshots in the PR, e.g. a pre-commit hook or a CI regenerate-and-verify check).
         required: false
         type: string
         default: ''
@@ -169,20 +169,22 @@ jobs:
             echo "new=$NEW" >> $GITHUB_OUTPUT
             if [ "$OLD" = "$NEW" ]; then echo "changed=false" >> $GITHUB_OUTPUT; else echo "changed=true" >> $GITHUB_OUTPUT; fi
           '
-      # Soldeer content gate (next-version lifecycle). `[package].version` is the
-      # NEXT, unpublished version. `rainix-static soldeer-gate` compares the
+      # Soldeer content gate. `rainix-static soldeer-gate` compares the
       # NORMALIZED content of what `forge soldeer push --dry-run` would upload
-      # against the latest published revision, hashing SOURCE ONLY — everything
+      # against the newest published revision, hashing SOURCE ONLY — everything
       # under `src/generated/` (the per-release `<tag>/` snapshots and generated
       # aliasing libs) is excluded, since it is derived from source and a fresh
       # `<tag>/` dir appears every release, which would otherwise flag "changed"
       # on every merge and republish identical bytecode forever; foundry.toml's
-      # version line is blanked so a bump alone is never a content change. It
-      # fetches the registry + published zip, enforces the next-version invariant
-      # (the in-dev version must be AHEAD of what is published — else a prior
-      # run's failed bump-push is caught loud, not silently re-published), and
-      # emits changed / version / next. The gate logic is Rust, not inline bash
-      # or Python (rainix-static/src/main.rs); the workflow just runs it inside
+      # version line is blanked so a version edit alone is never a content
+      # change. It derives the publish version from the registry —
+      # max(patch_bump(newest published), local [package].version) under semver
+      # ordering, the local line being only a floor, and a first publish (no
+      # revisions yet) using the local version as-is — and emits
+      # changed / version. local == published is the normal steady state, not
+      # an error: nothing ever writes the version line back to the branch. The
+      # gate logic is Rust, not inline bash or Python
+      # (rainix-static/src/main.rs); the workflow just runs it inside
       # sol-shell, where forge and curl are on PATH.
       - name: Soldeer content gate
         if: ${{ inputs.soldeer-package != '' }}
@@ -232,55 +234,60 @@ jobs:
           echo "NPM_VERSION=$NEW" >> $GITHUB_ENV
           git add package.json package-lock.json
           git commit -m "Package Release npm-${NEW}"
-      # Publish the CURRENT in-dev version (steps.soldeer.outputs.version) from
-      # the PRE-bump tree, so the package's contents match the version it is
-      # published under. Runs before the version bump below (which edits
-      # foundry.toml). If the later bump-commit push fails after this publishes,
-      # the next run's stale-toml guard fails loud with a clear action (bump the
-      # version).
+      # Publish the registry-derived version (steps.soldeer.outputs.version).
+      # foundry.toml's version line is rewritten to it in the CI checkout ONLY,
+      # so the uploaded zip is self-consistent; nothing commits or pushes the
+      # rewrite to the consumer branch (a following cargo/npm Tag-and-push
+      # discards it with `git checkout -- .` before rebasing). The rewrite is
+      # Rust (rainix-static soldeer-set-version), not sed.
       - name: Publish to Soldeer
         if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
         env:
           SOLDEER_API_TOKEN: ${{ secrets.SOLDEER_API_TOKEN }}
           SOLDEER_PACKAGE: ${{ inputs.soldeer-package }}
           SOLDEER_VERSION: ${{ steps.soldeer.outputs.version }}
-        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer push "$SOLDEER_PACKAGE~$SOLDEER_VERSION"
-      # Bump [package].version to the next unpublished version and commit it as
-      # one "Package Release" (the prefix makes the job-level skip guard ignore
-      # the push this triggers). The bump does NOT generate per-release
-      # artifacts: a version's deploy-pin snapshot is built and committed by the
-      # PR that defines that version's content. So the next-version slot never
-      # carries a placeholder snapshot on main that a later PR would have to
-      # rewrite — snapshots on main are frozen constants that consumers pin
-      # against, and must never change. The bump is content-neutral (the version
-      # line is blanked in the change-gate hash) and leaves the deploy lib
-      # aliasing the last published tag, so main stays green until a PR builds the
-      # next version's snapshot.
-      - name: Bump Soldeer version
-        if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
-        # Pass interpolations through env, never into the shell script directly
-        # (avoids GitHub Actions template injection).
-        env:
-          SOLDEER_PACKAGE: ${{ inputs.soldeer-package }}
-          NEXT: ${{ steps.soldeer.outputs.next }}
         run: |
           set -euo pipefail
-          sed -i -E "0,/^version[[:space:]]*=.*/s//version = \"$NEXT\"/" foundry.toml
-          # --no-verify: an automated version bump must not be gated on the repo's
-          # pre-commit hooks.
-          git commit --no-verify foundry.toml -m "Package Release: soldeer $SOLDEER_PACKAGE $NEXT"
-      # Tag + push everything in one shot. cargo tags are namespaced
-      # <crate>-v<version>; rebase onto any concurrent push first (only the
-      # shared Cargo.lock is expected to conflict).
+          nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c rainix-static soldeer-set-version --version "$SOLDEER_VERSION"
+          nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer push "$SOLDEER_PACKAGE~$SOLDEER_VERSION"
+      # Tag the published content — the commit that triggered this run — and
+      # push ONLY the tag ref. Deliberately decoupled from any branch push:
+      # consumer mains are commonly branch-protected, and the sol-v tag +
+      # release must not depend on a branch push being allowed. There is no
+      # soldeer bump commit at all; the branch is never written.
+      - name: Tag Soldeer release
+        if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
+        env:
+          SOLDEER_VERSION: ${{ steps.soldeer.outputs.version }}
+        run: |
+          set -euo pipefail
+          git tag "sol-v$SOLDEER_VERSION" "${{ github.sha }}"
+          git push origin "refs/tags/sol-v$SOLDEER_VERSION"
+      # The soldeer GitHub release rides directly on the tag above, before any
+      # branch push, for the same decoupling reason.
+      - name: GitHub Release (soldeer)
+        if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
+        uses: rainlanguage/rainix/.github/actions/gh-release@main
+        with:
+          tag-name: sol-v${{ steps.soldeer.outputs.version }}
+          name: Soldeer Release sol-v${{ steps.soldeer.outputs.version }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      # Tag + push the cargo/npm release commits in one shot. cargo tags are
+      # namespaced <crate>-v<version>; rebase onto any concurrent push first
+      # (only the shared Cargo.lock is expected to conflict). Soldeer is absent
+      # here on purpose: it never creates a commit, and its tag is pushed by
+      # its own step above.
       - name: Tag and push
-        if: ${{ steps.cargo.outputs.changed == 'true' || steps.npm.outputs.changed == 'true' || steps.soldeer.outputs.changed == 'true' }}
+        if: ${{ steps.cargo.outputs.changed == 'true' || steps.npm.outputs.changed == 'true' }}
         run: |
           set -euo pipefail
           git fetch origin
           # Entering the devShell can rewrite generated tracked files (e.g. a
-          # nix-store pre-commit-config symlink), dirtying the tree. The release
-          # commit is already made, so restore any such leftovers before the
-          # rebase, or it aborts with "cannot rebase: You have unstaged changes".
+          # nix-store pre-commit-config symlink), and a soldeer publish leaves
+          # its checkout-only foundry.toml version rewrite behind — both dirty
+          # the tree. The release commit is already made, so restore all such
+          # leftovers before the rebase, or it aborts with "cannot rebase: You
+          # have unstaged changes".
           git checkout -- .
           if ! git rebase "origin/${{ github.ref_name }}"; then
             if [ -n "${{ inputs.crates }}" ] || [ -n "${{ inputs.crate }}" ]; then
@@ -300,7 +307,6 @@ jobs:
             done
           fi
           if [ -n "${{ env.NPM_VERSION }}" ]; then git tag npm-${{ env.NPM_VERSION }}; fi
-          if [ "${{ steps.soldeer.outputs.changed }}" = "true" ]; then git tag sol-v${{ steps.soldeer.outputs.version }}; fi
           git push origin HEAD
           git push origin --tags
       # Package npm tarball for upload step.
@@ -327,7 +333,8 @@ jobs:
           token: ${{ secrets.NPM_PUBLISH_PRIVATE_TOKEN }}
           access: public
           package: npm_package_${{ env.NPM_VERSION }}.tgz
-      # GitHub Releases. One per crate (loop), plus npm/soldeer.
+      # GitHub Releases. One per crate (loop), plus npm; the soldeer release
+      # is created earlier, right after its tag push.
       - name: GitHub Release (cargo)
         if: ${{ steps.cargo.outputs.changed == 'true' }}
         run: |
@@ -345,11 +352,4 @@ jobs:
           tag-name: npm-${{ env.NPM_VERSION }}
           name: NPM Package Release ${{ env.NPM_VERSION }}
           files: npm_package_${{ env.NPM_VERSION }}.tgz
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: GitHub Release (soldeer)
-        if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
-        uses: rainlanguage/rainix/.github/actions/gh-release@main
-        with:
-          tag-name: sol-v${{ steps.soldeer.outputs.version }}
-          name: Soldeer Release sol-v${{ steps.soldeer.outputs.version }}
           github-token: ${{ secrets.GITHUB_TOKEN }}

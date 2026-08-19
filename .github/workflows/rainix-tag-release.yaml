@@ -6,9 +6,10 @@ name: rainix-tag-release
 # The two lifecycles are mutually exclusive and a repo is strictly one or the
 # other:
 #
-#   * A LIBRARY repo (rainix-autopublish) runs the next-version lifecycle:
-#     [package].version is the NEXT, unpublished version, one ahead of the
-#     registry; a content change on merge publishes it and bumps to the next.
+#   * A LIBRARY repo (rainix-autopublish) publishes on content change at
+#     merge: the publish version is derived from the registry (newest
+#     published revision, patch-bumped, with [package].version as an optional
+#     floor) and nothing is ever committed or pushed back to the branch.
 #     Consumers import its abstract surface (interfaces/libs); it never pins a
 #     deployed address, so it carries no per-tag deploy-pin snapshot.
 #
@@ -19,11 +20,12 @@ name: rainix-tag-release
 #     version, and moves ONLY at release time, in lockstep with the snapshot it
 #     describes.
 #
-# Running the next-version lifecycle on a deploy repo is the bug this exists to
-# remove: autopublish bumps [package].version on every merge, while the frozen
-# DEPLOY_TAG only advances at deploy time, so a version-vs-DEPLOY_TAG identity
-# test (e.g. `testDeployTag`) is red on main between every merge and the next
-# deploy — trained to be ignored, which is how a real regression rides through.
+# Running the merge-driven lifecycle on a deploy repo is the bug this exists
+# to remove: autopublish advances the published version on every content
+# merge, while the frozen DEPLOY_TAG only advances at deploy time, so the
+# repo's release identity (version-vs-DEPLOY_TAG, e.g. `testDeployTag`)
+# breaks on main between every merge and the next deploy — trained to be
+# ignored, which is how a real regression rides through.
 #
 # Here nothing moves on merge: a PR lands source only, main stays at the last
 # release (its live contracts still match its pins), and a human TAG is the sole
