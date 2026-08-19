@@ -8,8 +8,9 @@ name: rainix-tag-release
 #
 #   * A LIBRARY repo (rainix-autopublish) publishes on content change at
 #     merge: the publish version is derived from the registry (newest
-#     published revision, patch-bumped, with [package].version as an optional
-#     floor) and nothing is ever committed or pushed back to the branch.
+#     published revision, patch-bumped) with `next-v<x.y.z>` git tags carrying
+#     any larger version intent, foundry.toml holds no release metadata, and
+#     nothing is ever committed or pushed back to the branch.
 #     Consumers import its abstract surface (interfaces/libs); it never pins a
 #     deployed address, so it carries no per-tag deploy-pin snapshot.
 #
@@ -103,7 +104,7 @@ on:
       RPC_URL_POLYGON_FORK:
         required: false
 env:
-  RAINIX_SHA: 558d5d82856d91a479d9d748017b0ab6b9f27a2d
+  RAINIX_SHA: 5c00627bfaa83920c87596310be4c3f7b345b23d
 jobs:
   # The release tag must point at a commit already merged to the release branch.
   # `on: push: tags` fires for ANY tag, including one cut from an unmerged branch;

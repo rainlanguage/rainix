@@ -1,14 +1,14 @@
 //! `soldeer-gate` — Soldeer registry-derived content gate.
 //!
 //! Compares the normalized content of what `forge soldeer push --dry-run` would
-//! upload against the newest published revision, derives the publish version
-//! from the registry (`max(patch_bump(newest published), local floor)` under
-//! semver ordering), and emits `changed` / `version`. Runs inside sol-shell,
-//! so `forge` and `curl` are on PATH.
-//!
-//! Also home to `soldeer-set-version`, which rewrites foundry.toml's version
-//! line in the CI checkout so the published zip carries the version it is
-//! published under; the workflow never commits or pushes that rewrite.
+//! upload against the newest published revision, derives the publish version as
+//! `max(patch_bump(newest published), newest next-v intent tag merged into
+//! HEAD)` under semver ordering, and emits `changed` / `version`. foundry.toml
+//! is never read for release metadata and never rewritten: the
+//! `[external.package]` / legacy `[package]` section is excluded from the
+//! content hash so carrying it, editing it, or deleting it is content-neutral.
+//! Runs inside sol-shell; `forge`, `curl` and `git` are on PATH (the nix
+//! package wraps the binary with pinned git + curl).
 
 use crate::fail;
 use sha2::{Digest, Sha256};
@@ -19,39 +19,89 @@ use std::process::Command;
 /// A file entry pulled from a package zip: (name, bytes).
 type Entry = (String, Vec<u8>);
 
-/// A foundry.toml `[package].version` line starts with `version`, then optional
-/// spaces/tabs, then `=`. Matches the old `^version[[:space:]]*=` sed anchor.
-fn is_version_line(line: &str) -> bool {
-    match line.strip_prefix("version") {
-        Some(rest) => rest.trim_start_matches([' ', '\t']).starts_with('='),
-        None => false,
-    }
-}
-
-/// Blank foundry.toml's version line to `version = "0.0.0"` so a bump alone is
-/// never seen as a content change. Every other line is preserved verbatim.
-fn blank_foundry_version(content: &[u8]) -> Vec<u8> {
-    let text = String::from_utf8_lossy(content);
-    let mut out = String::with_capacity(text.len());
-    for line in text.split_inclusive('\n') {
-        let (body, nl) = match line.strip_suffix('\n') {
-            Some(b) => (b, "\n"),
-            None => (line, ""),
-        };
-        if is_version_line(body) {
-            out.push_str("version = \"0.0.0\"");
-            out.push_str(nl);
-        } else {
-            out.push_str(line);
+/// True if the line is a release-metadata section header: `[external.package]`,
+/// or the legacy `[package]` form. Surrounding whitespace and a trailing
+/// `# comment` are allowed (TOML permits both); `[package.metadata]` and other
+/// dotted extensions are NOT release metadata and do not match.
+fn is_metadata_header(line: &str) -> bool {
+    let t = line.trim();
+    for header in ["[external.package]", "[package]"] {
+        if let Some(rest) = t.strip_prefix(header) {
+            let r = rest.trim_start();
+            if r.is_empty() || r.starts_with('#') {
+                return true;
+            }
         }
     }
-    out.into_bytes()
+    false
+}
+
+/// True if the line opens ANY toml table — where the next section starts.
+fn is_any_header(line: &str) -> bool {
+    line.trim_start().starts_with('[')
+}
+
+/// True for a full-line `#` comment.
+fn is_comment_line(line: &str) -> bool {
+    line.trim_start().starts_with('#')
+}
+
+/// Strip every release-metadata section from foundry.toml content: the
+/// `[external.package]` (or legacy `[package]`) header, everything under it up
+/// to the next section header or EOF, and the contiguous full-line comment
+/// block sitting directly above the header (a comment documents the section
+/// below it, so it leaves with the section). By the same rule, a comment block
+/// sitting directly above the NEXT header belongs to that next section and
+/// stays. Every kept byte is preserved verbatim, so hashing the stripped bytes
+/// makes deleting, editing, or never having had the section (attached comment
+/// included) content-neutral, while any other foundry.toml change stays
+/// visible.
+fn strip_release_metadata(content: &[u8]) -> Vec<u8> {
+    let text = String::from_utf8_lossy(content);
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    let mut keep = vec![true; lines.len()];
+    let mut i = 0;
+    while i < lines.len() {
+        if !is_metadata_header(lines[i]) {
+            i += 1;
+            continue;
+        }
+        // Attached preceding comment block leaves with the section.
+        let mut start = i;
+        while start > 0 && is_comment_line(lines[start - 1]) {
+            start -= 1;
+        }
+        // Section body runs to the next header (or EOF) …
+        let mut next = i + 1;
+        while next < lines.len() && !is_any_header(lines[next]) {
+            next += 1;
+        }
+        // … minus the comment block attached to that next header.
+        let mut end = next;
+        if next < lines.len() {
+            while end > i + 1 && is_comment_line(lines[end - 1]) {
+                end -= 1;
+            }
+        }
+        for k in keep.iter_mut().take(end).skip(start) {
+            *k = false;
+        }
+        i = next;
+    }
+    lines
+        .iter()
+        .zip(&keep)
+        .filter(|(_, &k)| k)
+        .map(|(l, _)| *l)
+        .collect::<String>()
+        .into_bytes()
 }
 
 /// Normalized content hash of a package's files. Excludes everything under
 /// `src/generated/` (per-release snapshots + generated aliasing libs — derived
 /// from source, and a fresh `<tag>/` dir appears every release, so hashing it
-/// would flag "changed" on every merge). Blanks foundry.toml's version line.
+/// would flag "changed" on every merge). Strips foundry.toml's release-metadata
+/// section (see `strip_release_metadata`) so release metadata is never content.
 /// Then hashes each remaining file as `name \0 content`, in byte-sorted name
 /// order, through one SHA-256 — so identical source yields an identical digest
 /// regardless of zip entry order.
@@ -59,7 +109,7 @@ fn norm_hash(entries: &mut Vec<Entry>) -> String {
     entries.retain(|(name, _)| !name.starts_with("src/generated/"));
     for (name, content) in entries.iter_mut() {
         if name == "foundry.toml" {
-            *content = blank_foundry_version(content);
+            *content = strip_release_metadata(content);
         }
     }
     entries.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
@@ -109,20 +159,50 @@ fn parse_ver(v: &str) -> Option<[u64; 3]> {
     Some([a, b, c])
 }
 
+/// The highest `next-v<major.minor.patch>` intent version among git tag names
+/// (one per line, as `git tag --merged HEAD` prints them), semver-ordered.
+/// A tag without the `next-v` prefix is not an intent tag and is ignored; a
+/// `next-v` tag whose remainder is not major.minor.patch is a loud error — a
+/// typo'd intent must never be silently skipped (fail-safe, the same posture
+/// as registry failures). Ok(None) when no intent tags exist.
+fn max_intent_tag(tag_lines: &str) -> Result<Option<[u64; 3]>, String> {
+    let mut max: Option<[u64; 3]> = None;
+    for tag in tag_lines.lines().map(str::trim) {
+        let Some(rest) = tag.strip_prefix("next-v") else {
+            continue;
+        };
+        let v = parse_ver(rest).ok_or_else(|| {
+            format!(
+                "intent tag {tag} does not parse as next-v<major.minor.patch>; \
+                 fix or delete the tag"
+            )
+        })?;
+        if Some(v) > max {
+            max = Some(v);
+        }
+    }
+    Ok(max)
+}
+
 /// The version to publish. The registry is the authoritative version ledger:
-/// its newest published revision, patch-bumped, is the baseline, and the
-/// repo's `[package].version` is only a FLOOR — whichever is higher under
-/// semver (numeric, not string) ordering wins. No published revision yet
-/// means a first publish, which uses the local version as-is. A version that
-/// does not parse as major.minor.patch is an error on either side: the local
-/// floor is meaningless unless it can be ordered, and a published version
-/// that cannot be ordered against must not be silently guessed past.
-fn publish_version(local: &str, remote: Option<&str>) -> Result<String, String> {
-    let l = parse_ver(local).ok_or_else(|| {
-        format!("foundry.toml [package].version ({local}) is not a major.minor.patch version")
-    })?;
+/// its newest published revision, patch-bumped, is the baseline, and a next-v
+/// intent tag merged into HEAD can only raise it — whichever is higher under
+/// semver (numeric, not string) ordering wins, so consumed or stale intent
+/// tags are inert. No published revision yet is a first publish, which
+/// REQUIRES an intent tag as the explicit version seed. A published version
+/// that cannot be ordered against must not be silently guessed past: loud
+/// error.
+fn publish_version(remote: Option<&str>, intent: Option<[u64; 3]>) -> Result<String, String> {
+    let fmt = |v: [u64; 3]| format!("{}.{}.{}", v[0], v[1], v[2]);
     let Some(r) = remote else {
-        return Ok(local.to_string());
+        let seed = intent.ok_or_else(|| {
+            "nothing is published yet and no next-v intent tag is merged into HEAD; \
+             a first publish requires an explicit version seed — tag the commit to \
+             release (e.g. `git tag next-v0.1.0 && git push origin next-v0.1.0`) \
+             and re-run"
+                .to_string()
+        })?;
+        return Ok(fmt(seed));
     };
     let rv = parse_ver(r).ok_or_else(|| {
         format!(
@@ -134,52 +214,29 @@ fn publish_version(local: &str, remote: Option<&str>) -> Result<String, String> 
         format!("published revision ({r}) has patch u64::MAX; cannot patch-bump past it")
     })?;
     let bumped = [rv[0], rv[1], patch];
-    Ok(if l > bumped {
-        local.to_string()
-    } else {
-        format!("{}.{}.{}", bumped[0], bumped[1], bumped[2])
-    })
+    Ok(fmt(match intent {
+        Some(i) if i > bumped => i,
+        _ => bumped,
+    }))
 }
 
-/// Rewrite the FIRST `[package].version` line (same first-match anchor as
-/// `read_local_version`) to `version`, preserving every other byte. Errors on
-/// a non-major.minor.patch `version` or when no version line exists.
-fn set_first_version_line(content: &str, version: &str) -> Result<String, String> {
-    if parse_ver(version).is_none() {
-        return Err(format!(
-            "version ({version}) is not a major.minor.patch version"
-        ));
+/// A shallow checkout cannot tell which tags are merged into HEAD — an intent
+/// tag on an ancestor outside the shallow window is silently invisible, and
+/// the gate would derive the wrong version. Refuse to run on one. Input is
+/// `git rev-parse --is-shallow-repository` output.
+fn require_full_history(is_shallow: &str) -> Result<(), String> {
+    match is_shallow.trim() {
+        "false" => Ok(()),
+        "true" => Err(
+            "checkout is shallow: `git tag --merged HEAD` cannot see intent tags on \
+             commits outside the shallow window; fetch full history \
+             (actions/checkout fetch-depth: 0) and re-run"
+                .to_string(),
+        ),
+        other => Err(format!(
+            "git rev-parse --is-shallow-repository printed {other:?}, expected true or false"
+        )),
     }
-    let mut out = String::with_capacity(content.len());
-    let mut done = false;
-    for line in content.split_inclusive('\n') {
-        let (body, nl) = match line.strip_suffix('\n') {
-            Some(b) => (b, "\n"),
-            None => (line, ""),
-        };
-        if !done && is_version_line(body) {
-            out.push_str(&format!("version = \"{version}\""));
-            out.push_str(nl);
-            done = true;
-        } else {
-            out.push_str(line);
-        }
-    }
-    if !done {
-        return Err("foundry.toml has no [package].version line".to_string());
-    }
-    Ok(out)
-}
-
-/// `soldeer-set-version`: rewrite `dir`/foundry.toml's version line in place.
-/// Errors are returned, not exited on, so the caller (main) owns the process
-/// exit and the unit tests stay a plain in-process assertion.
-pub(crate) fn set_version(dir: &Path, version: &str) -> Result<(), String> {
-    let path = dir.join("foundry.toml");
-    let content =
-        std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    let out = set_first_version_line(&content, version)?;
-    std::fs::write(&path, out).map_err(|e| format!("write {}: {e}", path.display()))
 }
 
 /// The newest published revision on the Soldeer registry: version + zip url.
@@ -234,26 +291,23 @@ fn registry_revision(status: u16, body: &str) -> Result<Option<Revision>, String
     }))
 }
 
-/// First `[package].version` value in foundry.toml (the version FLOOR).
-/// Reads the value between the first pair of quotes on that line.
-fn read_local_version(dir: &Path) -> Option<String> {
-    let content = std::fs::read_to_string(dir.join("foundry.toml")).ok()?;
-    for line in content.lines() {
-        if is_version_line(line) {
-            let q1 = line.find('"')?;
-            let rest = &line[q1 + 1..];
-            let q2 = rest.find('"')?;
-            return Some(rest[..q2].to_string());
-        }
-    }
-    None
-}
-
 /// Run the Soldeer content gate for `pkg` and emit changed / version.
 pub(crate) fn run(pkg: &str, gh_out: Option<&str>) {
-    let dir = Path::new(".");
-    let local =
-        read_local_version(dir).unwrap_or_else(|| fail("foundry.toml has no [package].version"));
+    // Version intent: next-v tags merged into HEAD. git supplies the data;
+    // which tags are intent tags and which intent wins are decisions in
+    // tested pure functions (max_intent_tag / publish_version). Reachability
+    // needs full history, so a shallow checkout is refused up front rather
+    // than silently hiding a real intent tag.
+    let shallow = capture_stdout(
+        Command::new("git").args(["rev-parse", "--is-shallow-repository"]),
+        "git rev-parse --is-shallow-repository",
+    );
+    require_full_history(&shallow).unwrap_or_else(|e| fail(&e));
+    let tags = capture_stdout(
+        Command::new("git").args(["tag", "--merged", "HEAD"]),
+        "git tag --merged HEAD",
+    );
+    let intent = max_intent_tag(&tags).unwrap_or_else(|e| fail(&e));
 
     // Newest published revision (version + zip url) from the registry. A
     // transport failure, non-registry HTTP status, or malformed response is a
@@ -265,10 +319,9 @@ pub(crate) fn run(pkg: &str, gh_out: Option<&str>) {
     .unwrap_or_else(|e| fail(&e));
     let remote = registry_revision(status, &body).unwrap_or_else(|e| fail(&e));
 
-    // The registry derives the publish version; the local version line is
-    // only a floor. local == published is the normal steady state (nothing
-    // ever writes the version line back to the branch).
-    let publish = publish_version(&local, remote.as_ref().map(|r| r.version.as_str()))
+    // The registry patch-bump is the baseline; an intent tag can only raise
+    // it. A first publish requires an intent tag as the explicit seed.
+    let publish = publish_version(remote.as_ref().map(|r| r.version.as_str()), intent)
         .unwrap_or_else(|e| fail(&e));
 
     // Local package content: `forge soldeer push --dry-run` writes
@@ -303,11 +356,14 @@ pub(crate) fn run(pkg: &str, gh_out: Option<&str>) {
 
     let changed = old_hash != new_hash;
     eprintln!(
-        "soldeer gate: remote={} local={local} publish={publish} OLD={old_hash} NEW={new_hash}",
+        "soldeer gate: remote={} intent={} publish={publish} OLD={old_hash} NEW={new_hash}",
         remote
             .as_ref()
             .map(|r| r.version.as_str())
-            .unwrap_or("none")
+            .unwrap_or("none"),
+        intent
+            .map(|v| format!("{}.{}.{}", v[0], v[1], v[2]))
+            .unwrap_or_else(|| "none".to_string()),
     );
 
     emit(gh_out, &gate_output(changed, &publish));
@@ -343,6 +399,22 @@ fn run_cmd(cmd: &mut Command, what: &str) {
     if !status.success() {
         fail(&format!("{what}: exited with {status}"));
     }
+}
+
+/// Run a subprocess and return its stdout; fail loud (with its stderr) on
+/// spawn error or nonzero exit.
+fn capture_stdout(cmd: &mut Command, what: &str) -> String {
+    let out = cmd
+        .output()
+        .unwrap_or_else(|e| fail(&format!("{what}: failed to spawn: {e}")));
+    if !out.status.success() {
+        fail(&format!(
+            "{what}: {} ({})",
+            String::from_utf8_lossy(&out.stderr).trim(),
+            out.status
+        ));
+    }
+    String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
 /// GET a URL with curl, returning (HTTP status, body). Deliberately NOT `-f`:
@@ -408,58 +480,129 @@ fn newest_cwd_zip() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
-    static N: AtomicUsize = AtomicUsize::new(0);
+    #[test]
+    fn metadata_header_detection() {
+        assert!(is_metadata_header("[external.package]"));
+        assert!(is_metadata_header("[package]"));
+        assert!(is_metadata_header("  [package]  "));
+        assert!(is_metadata_header("[external.package] # release metadata"));
+        assert!(!is_metadata_header("[package] name = \"x\""));
+        assert!(!is_metadata_header("[package.metadata]"));
+        assert!(!is_metadata_header("[external.package.extra]"));
+        assert!(!is_metadata_header("[profile.default]"));
+        assert!(!is_metadata_header("# [package]"));
+        assert!(!is_metadata_header("[packagex]"));
+        assert!(!is_metadata_header("name = \"[package]\""));
+    }
 
-    fn tmp_dir() -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "rainix-static-soldeer-test-{}-{}",
-            std::process::id(),
-            N.fetch_add(1, Ordering::SeqCst)
-        ));
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    /// The real consumer shape (rain.datacontract): a stale comment block
+    /// directly above [external.package]. The ruled consumer sweep deletes the
+    /// section AND that comment; both sides must normalize identically.
+    #[test]
+    fn strip_removes_external_package_section_and_attached_comment() {
+        let with = b"# Release metadata, not foundry config: autopublish reads `version`.\n\
+                     # `[external.*]` is the section foundry reserves for another tool.\n\
+                     [external.package]\n\
+                     name = \"rain-datacontract\"\n\
+                     version = \"0.1.2\"\n\
+                     \n\
+                     [profile.default]\n\
+                     libs = [\"dependencies\"]\n";
+        let swept = b"[profile.default]\nlibs = [\"dependencies\"]\n";
+        assert_eq!(strip_release_metadata(with), strip_release_metadata(swept));
+        assert_eq!(strip_release_metadata(swept), swept.to_vec());
     }
 
     #[test]
-    fn version_line_detection() {
-        assert!(is_version_line("version = \"0.1.2\""));
-        assert!(is_version_line("version=\"0.1.2\""));
-        assert!(is_version_line("version\t = \"0.1.2\""));
-        assert!(!is_version_line("  version = \"0.1.2\"")); // leading ws => not the [package] anchor
-        assert!(!is_version_line("versionx = 1"));
-        assert!(!is_version_line("# version = 1"));
+    fn strip_removes_legacy_package_section() {
+        let with = b"[package]\n\
+                     name = \"rain-math-float\"\n\
+                     version = \"0.1.7\"\n\
+                     \n\
+                     [profile.default]\n\
+                     src = 'src'\n";
+        let swept = b"[profile.default]\nsrc = 'src'\n";
+        assert_eq!(strip_release_metadata(with), strip_release_metadata(swept));
     }
 
     #[test]
-    fn blank_only_the_version_line() {
-        let src = b"[package]\nname = \"rain-erc\"\nversion = \"9.9.9\"\ndescription = \"v\"\n";
-        let out = blank_foundry_version(src);
-        let s = String::from_utf8(out).unwrap();
-        assert!(s.contains("version = \"0.0.0\""));
-        assert!(!s.contains("9.9.9"));
-        assert!(s.contains("name = \"rain-erc\"")); // untouched
-        assert!(s.contains("description = \"v\""));
+    fn strip_is_identity_without_metadata_section() {
+        let src = b"[profile.default]\nsolc = \"0.8.25\"\n\n[fuzz]\nruns = 1024\n";
+        assert_eq!(strip_release_metadata(src), src.to_vec());
     }
 
     #[test]
-    fn norm_hash_ignores_version_bump() {
-        let mut a = vec![
-            (
-                "foundry.toml".to_string(),
-                b"[package]\nversion = \"0.1.0\"\n".to_vec(),
-            ),
-            ("src/A.sol".to_string(), b"contract A {}".to_vec()),
-        ];
-        let mut b = vec![
-            (
-                "foundry.toml".to_string(),
-                b"[package]\nversion = \"0.9.9\"\n".to_vec(),
-            ),
-            ("src/A.sol".to_string(), b"contract A {}".to_vec()),
-        ];
-        assert_eq!(norm_hash(&mut a), norm_hash(&mut b));
+    fn strip_makes_section_edits_neutral() {
+        let a = b"[external.package]\nname = \"x\"\nversion = \"0.1.0\"\n\n[fuzz]\nruns = 1\n";
+        let b = b"[external.package]\nname = \"y\"\nversion = \"9.9.9\"\nextra = 1\n\n[fuzz]\nruns = 1\n";
+        assert_eq!(strip_release_metadata(a), strip_release_metadata(b));
+    }
+
+    /// A comment block directly above the NEXT header documents that next
+    /// section — it survives the strip on both the section-carrying and the
+    /// swept file, so the sweep stays neutral around it.
+    #[test]
+    fn strip_keeps_comment_attached_to_next_header() {
+        let with = b"[package]\n\
+                     name = \"x\"\n\
+                     version = \"1.0.0\"\n\
+                     \n\
+                     # Fuzz runs tuned for CI wall-clock.\n\
+                     [fuzz]\n\
+                     runs = 1024\n";
+        let swept = b"# Fuzz runs tuned for CI wall-clock.\n[fuzz]\nruns = 1024\n";
+        assert_eq!(strip_release_metadata(with), strip_release_metadata(swept));
+        assert_eq!(strip_release_metadata(with), swept.to_vec());
+    }
+
+    #[test]
+    fn strip_removes_section_at_eof() {
+        let with = b"[profile.default]\nsolc = \"0.8.25\"\n\n# meta\n[package]\nname = \"x\"\nversion = \"1.0.0\"\n";
+        let swept = b"[profile.default]\nsolc = \"0.8.25\"\n\n";
+        assert_eq!(strip_release_metadata(with), strip_release_metadata(swept));
+    }
+
+    #[test]
+    fn strip_removes_both_sections_when_present() {
+        let with = b"[package]\nname = \"x\"\n\n[external.package]\nname = \"x\"\nversion = \"1.0.0\"\n\n[fuzz]\nruns = 1\n";
+        let swept = b"[fuzz]\nruns = 1\n";
+        assert_eq!(strip_release_metadata(with), strip_release_metadata(swept));
+    }
+
+    #[test]
+    fn norm_hash_ignores_release_metadata_section() {
+        let body = |toml: &[u8]| {
+            vec![
+                ("foundry.toml".to_string(), toml.to_vec()),
+                ("src/A.sol".to_string(), b"contract A {}".to_vec()),
+            ]
+        };
+        let mut carrying = body(
+            b"# stale release-metadata comment\n[external.package]\nname = \"x\"\nversion = \"0.1.0\"\n\n[profile.default]\nsolc = \"0.8.25\"\n",
+        );
+        let mut edited = body(
+            b"# stale release-metadata comment\n[external.package]\nname = \"x\"\nversion = \"0.9.9\"\n\n[profile.default]\nsolc = \"0.8.25\"\n",
+        );
+        let mut swept = body(b"[profile.default]\nsolc = \"0.8.25\"\n");
+        let h = norm_hash(&mut carrying);
+        assert_eq!(h, norm_hash(&mut edited));
+        assert_eq!(h, norm_hash(&mut swept));
+    }
+
+    #[test]
+    fn norm_hash_detects_non_metadata_foundry_change() {
+        let mut a = vec![(
+            "foundry.toml".to_string(),
+            b"[external.package]\nversion = \"0.1.0\"\n\n[profile.default]\nsolc = \"0.8.25\"\n"
+                .to_vec(),
+        )];
+        let mut b = vec![(
+            "foundry.toml".to_string(),
+            b"[external.package]\nversion = \"0.1.0\"\n\n[profile.default]\nsolc = \"0.8.26\"\n"
+                .to_vec(),
+        )];
+        assert_ne!(norm_hash(&mut a), norm_hash(&mut b));
     }
 
     #[test]
@@ -505,104 +648,164 @@ mod tests {
     }
 
     #[test]
-    fn publish_version_first_publish_uses_local() {
-        assert_eq!(publish_version("0.1.0", None).unwrap(), "0.1.0");
-        assert_eq!(publish_version("2.3.4", None).unwrap(), "2.3.4");
+    fn intent_tags_non_matching_ignored() {
+        // Ordinary tags are not intent tags: no error, no intent.
+        assert_eq!(
+            max_intent_tag("v1.0.0\nsol-v0.1.2\nrelease-2024\nnpm-1.2.3\n").unwrap(),
+            None
+        );
+        assert_eq!(max_intent_tag("").unwrap(), None);
+        assert_eq!(max_intent_tag("\n\n").unwrap(), None);
+    }
+
+    #[test]
+    fn intent_tag_parses_next_v() {
+        assert_eq!(max_intent_tag("next-v0.2.0\n").unwrap(), Some([0, 2, 0]));
+        // Mixed with non-matching tags, which stay ignored.
+        assert_eq!(
+            max_intent_tag("sol-v0.1.9\nnext-v0.2.0\nv3.0.0\n").unwrap(),
+            Some([0, 2, 0])
+        );
+    }
+
+    #[test]
+    fn intent_tags_max_is_semver_not_string_or_date_order() {
+        // Multiple intent tags: the max under NUMERIC semver ordering wins
+        // (string ordering would put 0.1.9 above 0.1.10), regardless of the
+        // order git prints them in.
+        assert_eq!(
+            max_intent_tag("next-v0.1.10\nnext-v0.1.9\nnext-v0.0.2\n").unwrap(),
+            Some([0, 1, 10])
+        );
+        assert_eq!(
+            max_intent_tag("next-v0.1.9\nnext-v0.1.10\n").unwrap(),
+            Some([0, 1, 10])
+        );
+        assert_eq!(
+            max_intent_tag("next-v1.0.0\nnext-v0.99.99\n").unwrap(),
+            Some([1, 0, 0])
+        );
+    }
+
+    #[test]
+    fn intent_tag_malformed_is_loud_error() {
+        for bad in [
+            "next-v1.2",
+            "next-v1.2.3.4",
+            "next-vX",
+            "next-viking",
+            "next-v",
+        ] {
+            let e = max_intent_tag(bad).unwrap_err();
+            assert!(e.contains(bad), "{e}");
+            assert!(e.contains("next-v<major.minor.patch>"), "{e}");
+        }
+        // A valid intent tag does not excuse a malformed one alongside it.
+        assert!(max_intent_tag("next-v0.2.0\nnext-v1.2\n").is_err());
+    }
+
+    #[test]
+    fn publish_version_first_publish_requires_intent_tag() {
+        let e = publish_version(None, None).unwrap_err();
+        // The error names the fix: create a next-v tag.
+        assert!(e.contains("next-v"), "{e}");
+        assert!(e.contains("git tag next-v"), "{e}");
+    }
+
+    #[test]
+    fn publish_version_first_publish_uses_intent_tag() {
+        assert_eq!(publish_version(None, Some([0, 2, 0])).unwrap(), "0.2.0");
+        assert_eq!(publish_version(None, Some([2, 3, 4])).unwrap(), "2.3.4");
     }
 
     #[test]
     fn publish_version_steady_state_patch_bumps_published() {
-        // local == newest published is the normal steady state (the workflow
-        // never writes the version line back); the registry drives the bump.
-        assert_eq!(publish_version("0.1.2", Some("0.1.2")).unwrap(), "0.1.3");
+        // No intent tags (or only consumed ones): the registry drives the bump.
+        assert_eq!(publish_version(Some("0.1.2"), None).unwrap(), "0.1.3");
     }
 
     #[test]
-    fn publish_version_stale_low_local_is_ignored() {
-        // The version line is only a floor; the registry has moved past it.
-        assert_eq!(publish_version("0.1.0", Some("0.4.7")).unwrap(), "0.4.8");
-        // Even a local BEHIND the published version is harmless.
-        assert_eq!(publish_version("0.1.0", Some("0.1.5")).unwrap(), "0.1.6");
+    fn publish_version_stale_intent_tag_is_inert() {
+        // A consumed/stale intent tag at or below the bump changes nothing.
+        assert_eq!(
+            publish_version(Some("0.4.7"), Some([0, 2, 0])).unwrap(),
+            "0.4.8"
+        );
+        assert_eq!(
+            publish_version(Some("0.1.5"), Some([0, 1, 5])).unwrap(),
+            "0.1.6"
+        );
     }
 
     #[test]
-    fn publish_version_local_ahead_wins_as_floor() {
-        // A deliberate minor/major jump in the repo outruns the registry bump.
-        assert_eq!(publish_version("0.2.0", Some("0.1.9")).unwrap(), "0.2.0");
-        assert_eq!(publish_version("1.0.0", Some("0.9.9")).unwrap(), "1.0.0");
+    fn publish_version_intent_tag_above_bump_wins() {
+        // A deliberate minor/major jump is expressed as a next-v tag.
+        assert_eq!(
+            publish_version(Some("0.1.9"), Some([0, 2, 0])).unwrap(),
+            "0.2.0"
+        );
+        assert_eq!(
+            publish_version(Some("0.9.9"), Some([1, 0, 0])).unwrap(),
+            "1.0.0"
+        );
     }
 
     #[test]
-    fn publish_version_local_equal_to_bump_is_the_bump() {
-        assert_eq!(publish_version("0.1.3", Some("0.1.2")).unwrap(), "0.1.3");
+    fn publish_version_intent_equal_to_bump_is_the_bump() {
+        assert_eq!(
+            publish_version(Some("0.1.2"), Some([0, 1, 3])).unwrap(),
+            "0.1.3"
+        );
     }
 
     #[test]
     fn publish_version_orders_semver_not_strings() {
         // 0.1.9 patch-bumps to 0.1.10, which orders ABOVE 0.1.9 numerically
         // (a string compare would order "0.1.10" below "0.1.9").
-        assert_eq!(publish_version("0.1.0", Some("0.1.9")).unwrap(), "0.1.10");
-        assert_eq!(publish_version("0.1.9", Some("0.1.9")).unwrap(), "0.1.10");
-        // A local floor of 0.1.10 beats a bumped 0.1.10 tie exactly.
-        assert_eq!(publish_version("0.1.10", Some("0.1.9")).unwrap(), "0.1.10");
-        assert_eq!(publish_version("1.0.9", Some("1.0.9")).unwrap(), "1.0.10");
+        assert_eq!(publish_version(Some("0.1.9"), None).unwrap(), "0.1.10");
+        assert_eq!(
+            publish_version(Some("0.1.9"), Some([0, 1, 9])).unwrap(),
+            "0.1.10"
+        );
+        // An intent of 0.1.10 ties the bumped 0.1.10 exactly.
+        assert_eq!(
+            publish_version(Some("0.1.9"), Some([0, 1, 10])).unwrap(),
+            "0.1.10"
+        );
+        assert_eq!(publish_version(Some("1.0.9"), None).unwrap(), "1.0.10");
     }
 
     #[test]
     fn publish_version_errors_on_patch_overflow() {
         // A published patch of u64::MAX cannot be bumped: loud error, never a
-        // wraparound or panic — regardless of how high the local floor is.
-        let e = publish_version("0.1.0", Some("1.2.18446744073709551615")).unwrap_err();
+        // wraparound or panic — regardless of how high the intent tag is.
+        let e = publish_version(Some("1.2.18446744073709551615"), None).unwrap_err();
         assert!(e.contains("18446744073709551615"), "{e}");
         assert!(e.contains("patch-bump"), "{e}");
-        assert!(publish_version("9.9.9", Some("1.2.18446744073709551615")).is_err());
+        assert!(publish_version(Some("1.2.18446744073709551615"), Some([9, 9, 9])).is_err());
         // One below the boundary still bumps normally.
         assert_eq!(
-            publish_version("0.1.0", Some("1.2.18446744073709551614")).unwrap(),
+            publish_version(Some("1.2.18446744073709551614"), None).unwrap(),
             "1.2.18446744073709551615"
         );
     }
 
     #[test]
-    fn publish_version_rejects_unparseable() {
-        assert!(publish_version("0.1.0", Some("garbage")).is_err());
-        assert!(publish_version("garbage", None).is_err());
-        assert!(publish_version("garbage", Some("0.1.0")).is_err());
-        assert!(publish_version("0.1", Some("0.1.0")).is_err());
+    fn publish_version_rejects_unparseable_remote() {
+        assert!(publish_version(Some("garbage"), None).is_err());
+        assert!(publish_version(Some("garbage"), Some([1, 0, 0])).is_err());
+        assert!(publish_version(Some("0.1"), Some([1, 0, 0])).is_err());
     }
 
     #[test]
-    fn set_version_line_rewrites_first_match_only() {
-        let src = "version = \"0.1.0\"\nversion = \"0.2.0\"\n";
-        let out = set_first_version_line(src, "0.4.2").unwrap();
-        assert_eq!(out, "version = \"0.4.2\"\nversion = \"0.2.0\"\n");
-    }
-
-    #[test]
-    fn set_version_line_preserves_everything_else() {
-        let src = "[package]\nname = \"x\"\nversion = \"0.1.0\"\n# version = \"9\"\n";
-        let out = set_first_version_line(src, "0.9.9").unwrap();
-        assert_eq!(
-            out,
-            "[package]\nname = \"x\"\nversion = \"0.9.9\"\n# version = \"9\"\n"
-        );
-    }
-
-    #[test]
-    fn set_version_line_keeps_missing_trailing_newline() {
-        let out = set_first_version_line("version = \"1.0.0\"", "2.0.0").unwrap();
-        assert_eq!(out, "version = \"2.0.0\"");
-    }
-
-    #[test]
-    fn set_version_line_errors_without_version_line() {
-        assert!(set_first_version_line("[package]\nname = \"x\"\n", "1.0.0").is_err());
-    }
-
-    #[test]
-    fn set_version_line_rejects_non_semver() {
-        assert!(set_first_version_line("version = \"1.0.0\"\n", "not-a-version").is_err());
-        assert!(set_first_version_line("version = \"1.0.0\"\n", "1.0").is_err());
+    fn shallow_checkout_is_refused() {
+        assert!(require_full_history("false\n").is_ok());
+        let e = require_full_history("true\n").unwrap_err();
+        assert!(e.contains("shallow"), "{e}");
+        assert!(e.contains("fetch-depth: 0"), "{e}");
+        // Unexpected output is an error, never treated as "not shallow".
+        assert!(require_full_history("").is_err());
+        assert!(require_full_history("maybe").is_err());
     }
 
     #[test]
@@ -612,14 +815,6 @@ mod tests {
             gate_output(false, "0.4.8"),
             "changed=false\nversion=0.4.8\n"
         );
-    }
-
-    #[test]
-    fn set_version_writes_foundry_toml() {
-        let d = tmp_dir();
-        std::fs::write(d.join("foundry.toml"), "[package]\nversion = \"0.1.0\"\n").unwrap();
-        set_version(&d, "0.9.9").unwrap();
-        assert_eq!(read_local_version(&d).as_deref(), Some("0.9.9"));
     }
 
     #[test]
@@ -679,13 +874,11 @@ mod tests {
         assert!(registry_revision(503, "").is_err());
         // A success-shaped body on an error status must not be trusted —
         // neither as a revision nor as a first publish.
-        assert!(
-            registry_revision(
-                500,
-                r#"{"data":[{"version":"1.2.3","url":"http://x/z.zip"}],"status":"success"}"#
-            )
-            .is_err()
-        );
+        assert!(registry_revision(
+            500,
+            r#"{"data":[{"version":"1.2.3","url":"http://x/z.zip"}],"status":"success"}"#
+        )
+        .is_err());
         assert!(registry_revision(500, r#"{"data":[],"status":"success"}"#).is_err());
     }
 
@@ -720,19 +913,5 @@ mod tests {
         assert_eq!(split_status_body("\n404").unwrap(), (404, String::new()));
         assert!(split_status_body("no-newline").is_err());
         assert!(split_status_body("body\nnot-a-number").is_err());
-    }
-
-    #[test]
-    fn local_version_read() {
-        let d = tmp_dir();
-        std::fs::write(
-            d.join("foundry.toml"),
-            "[package]\nname = \"x\"\nversion = \"0.4.2\"\n",
-        )
-        .unwrap();
-        assert_eq!(read_local_version(&d).as_deref(), Some("0.4.2"));
-        let e = tmp_dir();
-        std::fs::write(e.join("foundry.toml"), "[package]\nname = \"x\"\n").unwrap();
-        assert_eq!(read_local_version(&e), None);
     }
 }

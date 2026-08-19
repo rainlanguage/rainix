@@ -25,7 +25,7 @@ on:
         default: ''
       soldeer-package:
         description: >-
-          optional Soldeer registry package name (e.g. rain-erc). When set, the workflow publishes on a content change vs the newest published revision. The registry is the version ledger: the publish version is `max(patch_bump(newest published), [package].version)` under semver ordering, so the repo's version line is only an optional FLOOR — edit it in an ordinary PR for a deliberate minor/major jump. First publish (no revisions on the registry yet) uses the local version as-is. The workflow NEVER commits or pushes to the consumer branch: the version line is rewritten to the publish version in the CI checkout only (so the uploaded zip is self-consistent), and the `sol-v<version>` tag + GitHub release are pushed as a tag ref, independent of any branch push — publishing works unchanged on branch-protected mains. A version's deploy-pin snapshot is built and committed by the PR that defines that version's content (main snapshots are frozen constants consumers pin against).
+          optional Soldeer registry package name (e.g. rain-erc). When set, the workflow publishes on a content change vs the newest published revision. The registry is the version ledger and git tags carry version intent: the publish version is `max(patch_bump(newest published), newest next-v<x.y.z> tag merged into the pushed head)` under semver ordering — push a `next-v<x.y.z>` tag for a deliberate minor/major jump; consumed or stale intent tags are inert under the max. First publish (no revisions on the registry yet) REQUIRES a next-v tag as the explicit version seed. foundry.toml carries NO release metadata: it is never read for a version and never rewritten, and an `[external.package]` / legacy `[package]` section still present in a consumer is simply ignored (excluded from the content hash), so deleting it is content-neutral. The workflow NEVER commits or pushes to the consumer branch: the `sol-v<version>` tag + GitHub release are pushed as a tag ref, independent of any branch push — publishing works unchanged on branch-protected mains. A version's deploy-pin snapshot is built and committed by the PR that defines that version's content (main snapshots are frozen constants consumers pin against).
         required: false
         type: string
         default: ''
@@ -49,7 +49,7 @@ on:
       SOLDEER_API_TOKEN:
         required: false
 env:
-  RAINIX_SHA: 558d5d82856d91a479d9d748017b0ab6b9f27a2d
+  RAINIX_SHA: 5c00627bfaa83920c87596310be4c3f7b345b23d
 jobs:
   release:
     if: ${{ !startsWith(github.event.head_commit.message, 'Package Release') }}
@@ -85,6 +85,12 @@ jobs:
           # falls back to GITHUB_TOKEN over HTTPS — pushes still succeed,
           # they just won't trigger tag-listening workflows.
           ssh-key: ${{ secrets.PUBLISH_PRIVATE_KEY }}
+          # Full history + tags: the soldeer gate derives version intent from
+          # next-v tags merged into the pushed head (`git tag --merged HEAD`),
+          # which needs the tags AND the ancestry to judge reachability. The
+          # gate refuses to run on a shallow checkout rather than silently
+          # missing an intent tag.
+          fetch-depth: '0'
       - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
@@ -190,16 +196,16 @@ jobs:
       # aliasing libs) is excluded, since it is derived from source and a fresh
       # `<tag>/` dir appears every release, which would otherwise flag "changed"
       # on every merge and republish identical bytecode forever; foundry.toml's
-      # version line is blanked so a version edit alone is never a content
-      # change. It derives the publish version from the registry —
-      # max(patch_bump(newest published), local [package].version) under semver
-      # ordering, the local line being only a floor, and a first publish (no
-      # revisions yet) using the local version as-is — and emits
-      # changed / version. local == published is the normal steady state, not
-      # an error: nothing ever writes the version line back to the branch. The
-      # gate logic is Rust, not inline bash or Python
+      # `[external.package]` / legacy `[package]` release-metadata section (and
+      # the comment block attached above it) is excluded from the hash, so
+      # carrying, editing, or deleting that section is never a content change.
+      # It derives the publish version as max(patch_bump(newest published),
+      # newest next-v intent tag merged into HEAD) under semver ordering — a
+      # first publish (no revisions yet) requires a next-v tag as the explicit
+      # seed, and a malformed next-v tag is a loud error — and emits
+      # changed / version. The gate logic is Rust, not inline bash or Python
       # (rainix-static/src/main.rs); the workflow just runs it inside
-      # sol-shell, where forge and curl are on PATH.
+      # sol-shell, where forge, curl and git are on PATH.
       - name: Soldeer content gate
         if: ${{ inputs.soldeer-package != '' }}
         id: soldeer
@@ -248,12 +254,10 @@ jobs:
           echo "NPM_VERSION=$NEW" >> $GITHUB_ENV
           git add package.json package-lock.json
           git commit -m "Package Release npm-${NEW}"
-      # Publish the registry-derived version (steps.soldeer.outputs.version).
-      # foundry.toml's version line is rewritten to it in the CI checkout ONLY,
-      # so the uploaded zip is self-consistent; nothing commits or pushes the
-      # rewrite to the consumer branch (a following cargo/npm Tag-and-push
-      # discards it with `git checkout -- .` before rebasing). The rewrite is
-      # Rust (rainix-static soldeer-set-version), not sed.
+      # Publish the gate-derived version (steps.soldeer.outputs.version). The
+      # version lives in the push spec only: foundry.toml is not read for
+      # release metadata and not rewritten — the uploaded zip carries whatever
+      # foundry.toml the repo has.
       - name: Publish to Soldeer
         if: ${{ inputs.soldeer-package != '' && steps.soldeer.outputs.changed == 'true' }}
         env:
@@ -262,7 +266,6 @@ jobs:
           SOLDEER_VERSION: ${{ steps.soldeer.outputs.version }}
         run: |
           set -euo pipefail
-          nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c rainix-static soldeer-set-version --version "$SOLDEER_VERSION"
           nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer push "$SOLDEER_PACKAGE~$SOLDEER_VERSION"
       # Tag the published content — the commit that triggered this run — and
       # push ONLY the tag ref. Deliberately decoupled from any branch push:
@@ -297,11 +300,10 @@ jobs:
           set -euo pipefail
           git fetch origin
           # Entering the devShell can rewrite generated tracked files (e.g. a
-          # nix-store pre-commit-config symlink), and a soldeer publish leaves
-          # its checkout-only foundry.toml version rewrite behind — both dirty
-          # the tree. The release commit is already made, so restore all such
-          # leftovers before the rebase, or it aborts with "cannot rebase: You
-          # have unstaged changes".
+          # nix-store pre-commit-config symlink), which dirties the tree. The
+          # release commit is already made, so restore all such leftovers
+          # before the rebase, or it aborts with "cannot rebase: You have
+          # unstaged changes".
           git checkout -- .
           if ! git rebase "origin/${{ github.ref_name }}"; then
             if [ -n "${{ inputs.crates }}" ] || [ -n "${{ inputs.crate }}" ]; then
