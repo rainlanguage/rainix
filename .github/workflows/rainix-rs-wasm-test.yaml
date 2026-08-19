@@ -2,7 +2,7 @@ name: rainix-rs-wasm-test
 on:
   workflow_call:
 env:
-  RAINIX_SHA: 05a6683dcf584a7f580fcf0c3376fb8df61215c3
+  RAINIX_SHA: 558d5d82856d91a479d9d748017b0ab6b9f27a2d
 jobs:
   rs-wasm-test:
     runs-on: ubuntu-latest

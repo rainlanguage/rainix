@@ -49,11 +49,25 @@ on:
       SOLDEER_API_TOKEN:
         required: false
 env:
-  RAINIX_SHA: 05a6683dcf584a7f580fcf0c3376fb8df61215c3
+  RAINIX_SHA: 558d5d82856d91a479d9d748017b0ab6b9f27a2d
 jobs:
   release:
     if: ${{ !startsWith(github.event.head_commit.message, 'Package Release') }}
     runs-on: ubuntu-latest
+    # Serialize publish runs per caller repo + ref + soldeer package: without
+    # this, near-simultaneous pushes both derive the same registry version and
+    # the loser dies on Soldeer's duplicate rejection (harmless — no branch
+    # writes — but a red run). Job-level concurrency inside a called workflow
+    # is honored by GitHub (workflow-level would be ignored), so this covers
+    # consumers whose caller has no concurrency group of its own; callers that
+    # do carry one (e.g. a `package-release-<ref>` group) just serialize twice
+    # under distinct group names, which composes safely.
+    # cancel-in-progress false: a running publish is never killed mid-flight;
+    # a superseded PENDING job is replaced by the newest queued one, whose
+    # checkout contains everything the superseded push contained.
+    concurrency:
+      group: rainix-autopublish-${{ github.repository }}-${{ github.ref }}-${{ inputs.soldeer-package }}
+      cancel-in-progress: false
     permissions:
       id-token: write
       contents: write
