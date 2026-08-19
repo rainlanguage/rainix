@@ -49,7 +49,7 @@ on:
       SOLDEER_API_TOKEN:
         required: false
 env:
-  RAINIX_SHA: 558d5d82856d91a479d9d748017b0ab6b9f27a2d
+  RAINIX_SHA: 5c00627bfaa83920c87596310be4c3f7b345b23d
 jobs:
   release:
     if: ${{ !startsWith(github.event.head_commit.message, 'Package Release') }}
