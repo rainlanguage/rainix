@@ -7,9 +7,15 @@ inputs:
       Optional deploy key (e.g. `secrets.PUBLISH_PRIVATE_KEY`) for a checkout whose pushes should trigger downstream workflows. A composite action cannot read `secrets.*`, so the caller must plumb the secret through here. Empty (the default) falls back to the standard GITHUB_TOKEN checkout.
     required: false
     default: ''
+  fetch-depth:
+    description: >-
+      Passed through to actions/checkout. The default shallow checkout suits most jobs; pass '0' for full history plus all tags — required wherever reachability is computed (e.g. rainix-autopublish's soldeer gate reads `git tag --merged HEAD` for next-v intent tags, and refuses to run on a shallow checkout).
+    required: false
+    default: '1'
 runs:
   using: composite
   steps:
     - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       with:
         ssh-key: ${{ inputs.ssh-key }}
+        fetch-depth: ${{ inputs.fetch-depth }}
