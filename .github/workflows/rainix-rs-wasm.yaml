@@ -2,7 +2,7 @@ name: rainix-rs-wasm
 on:
   workflow_call:
 env:
-  RAINIX_SHA: 5c00627bfaa83920c87596310be4c3f7b345b23d
+  RAINIX_SHA: 864816f68b114f7596f8e1f6f00315ef48783072
 jobs:
   rs-wasm:
     runs-on: ubuntu-latest

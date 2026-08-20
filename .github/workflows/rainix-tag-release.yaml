@@ -1,7 +1,7 @@
 name: rainix-tag-release
-# Tag-triggered release for DEPLOY repos (verify + publish + snapshot; the deploy
-# itself stays manual — see below). The counterpart to rainix-autopublish's
-# merge-driven publish for LIBRARY repos.
+# Tag-triggered release for DEPLOY repos (verify + publish; the deploy itself and
+# the snapshot cut both happen BEFORE this workflow — see below). The counterpart
+# to rainix-autopublish's merge-driven publish for LIBRARY repos.
 #
 # The two lifecycles are mutually exclusive and a repo is strictly one or the
 # other:
@@ -17,23 +17,37 @@ name: rainix-tag-release
 #   * A DEPLOY repo (this workflow) records deployed addresses. Its
 #     src/generated/<tag>/ snapshot pins the address + codehash of what it
 #     deployed, frozen so consumers can rely on them (enforced by the
-#     frozen-snapshots-append-only gate). [package].version is the LAST released
-#     version, and moves ONLY at release time, in lockstep with the snapshot it
-#     describes.
+#     frozen-snapshots-append-only gate at PR time). [package].version is the
+#     LAST released version, and moves ONLY at release time, in lockstep with the
+#     snapshot it describes.
 #
-# Running the merge-driven lifecycle on a deploy repo is the bug this exists
-# to remove: autopublish advances the published version on every content
-# merge, while the frozen DEPLOY_TAG only advances at deploy time, so the
-# repo's release identity (version-vs-DEPLOY_TAG, e.g. `testDeployTag`)
-# breaks on main between every merge and the next deploy — trained to be
-# ignored, which is how a real regression rides through.
+# The release is PUSH-FREE (rainlanguage/rainix#338). Deploy repo mains are
+# branch-protected, and rainix-autopublish was already made push-free in
+# #335/#336; a deploy release must work the same way. So this workflow never
+# commits and never pushes to any branch — a push to a protected main is rejected
+# (GH006) and would fail the release after publishing.
 #
-# Here nothing moves on merge: a PR lands source only, main stays at the last
-# release (its live contracts still match its pins), and a human TAG is the sole
-# release trigger. The tag names the version; this workflow regenerates the
-# snapshot for it, verifies the live chain against the fresh pins, publishes to
-# Soldeer, and commits the new (append-only) snapshot back to main so the daily
-# drift sweep always has the current release's pins to check.
+# The release flow, in order:
+#   1. Deploy on-chain (the repo's own human-driven rainix-manual-sol-artifacts
+#      dispatch — NOT this workflow; see below).
+#   2. Open a PR that regenerates + commits the frozen src/generated/<version>/
+#      snapshot and bumps [package].version. That PR's normal CI runs the
+#      frozen-snapshots-append-only gate (rainix-sol-static) and the fork suite
+#      that asserts the live chain matches the pins (rainix-sol-test), so the
+#      deploy pins consumers trust are reviewed and verified BEFORE they publish.
+#   3. A human merges the PR (normal protected-merge) and pushes a
+#      `sol-v<version>` tag on the merged commit.
+#   4. This workflow runs on that tag: it re-derives the version from the tag,
+#      re-runs the snapshot generator to prove the tagged commit's snapshot is a
+#      fresh deterministic regeneration (the fail-closed publish guard below),
+#      re-attests the live chain matches the pins, then publishes to Soldeer and
+#      creates the GitHub release. main already carries the snapshot (from the
+#      merged PR), so the daily drift sweep and the repo's own snapshot tests keep
+#      reading src/generated/<version>/ from main unchanged.
+#
+# Because the snapshot reaches main via the reviewed PR and never via this
+# workflow, the workflow has nothing to commit — it is read-only publish + tag +
+# GitHub-release.
 #
 # The on-chain DEPLOY is deliberately NOT part of this workflow. A deploy is
 # flaky by nature — per-network, funds-dependent, and at the mercy of RPC
@@ -44,6 +58,11 @@ name: rainix-tag-release
 # broadcast; it ATTESTS that the broadcast already landed: the `verify` step (the
 # repo's fork suite) checks prod exists at the freshly regenerated pins, and a
 # release whose pins don't resolve on-chain fails there and publishes nothing.
+#
+# The publish guard is the point of the push-free change: the workflow no longer
+# cuts the snapshot, so a human could tag a commit whose snapshot was never
+# regenerated (mistag, stale PR, hand-edit) and it would publish silently. The
+# guard fails closed against that — see the `Publish guard` step.
 on:
   workflow_call:
     inputs:
@@ -70,14 +89,17 @@ on:
         type: string
         default: forge test
       main-branch:
-        description: The branch the release snapshot is committed back to.
+        description: >-
+          The release branch the tagged commit must already be merged into (the guard's tag-on-main ancestry check). Nothing is committed back to it — the snapshot reaches main via the reviewed PR, not this workflow.
         required: false
         type: string
         default: main
     secrets:
+      # The release is push-free: this workflow makes no commit and no branch
+      # push, so PUBLISH_PRIVATE_KEY (deploy key), CI_GIT_EMAIL and CI_GIT_USER
+      # are no longer used here. They stay declared (required: false) so callers
+      # that pass them by name — rather than `secrets: inherit` — do not break.
       PUBLISH_PRIVATE_KEY:
-        # A deploy key whose push events (unlike GITHUB_TOKEN pushes) trigger the
-        # downstream git-clean / rainix-sol workflows on the commit-back to main.
         required: false
       CI_GIT_EMAIL:
         required: false
@@ -104,7 +126,7 @@ on:
       RPC_URL_POLYGON_FORK:
         required: false
 env:
-  RAINIX_SHA: 5c00627bfaa83920c87596310be4c3f7b345b23d
+  RAINIX_SHA: 864816f68b114f7596f8e1f6f00315ef48783072
 jobs:
   # The release tag must point at a commit already merged to the release branch.
   # `on: push: tags` fires for ANY tag, including one cut from an unmerged branch;
@@ -137,31 +159,27 @@ jobs:
   release:
     needs: guard
     runs-on: ubuntu-latest
-    # contents: write for the commit-back to main + the gh-release composite. No
-    # id-token: nothing here uses OIDC (Soldeer uses SOLDEER_API_TOKEN, the release
-    # uses GITHUB_TOKEN).
+    # contents: write for the gh-release composite only. No branch push here (the
+    # release is push-free), and no id-token: nothing uses OIDC (Soldeer uses
+    # SOLDEER_API_TOKEN, the release uses GITHUB_TOKEN).
     permissions:
       contents: write
     steps:
-      # Deploy-key checkout so the commit-back to main can push and trigger
-      # downstream workflows. The pinned checkout / cache-nix / nix-install /
-      # Cachix SHAs all live once in the composites; the nix preamble then runs
-      # with checkout:'false'.
+      # Plain (GITHUB_TOKEN) checkout of the tagged commit: the release makes no
+      # branch push, so it needs no deploy key. The pinned checkout / cache-nix /
+      # nix-install / Cachix SHAs all live once in the composites; the nix preamble
+      # then runs with checkout:'false'.
       - uses: rainlanguage/rainix/.github/actions/checkout@main
-        with:
-          ssh-key: ${{ secrets.PUBLISH_PRIVATE_KEY }}
       - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
           checkout: 'false'
-      - name: Git config
-        run: |
-          git config --global user.email "${{ secrets.CI_GIT_EMAIL || 'github-actions[bot]@users.noreply.github.com' }}"
-          git config --global user.name "${{ secrets.CI_GIT_USER || 'github-actions[bot]' }}"
-          # Entering the devShell writes a generated .pre-commit-config.yaml into
-          # the tree; hide it via the local exclude so it never dirties the release
-          # commit (repo-agnostic, no consumer needs to .gitignore it).
-          echo ".pre-commit-config.yaml" >> .git/info/exclude
+      - name: Hide devShell leftovers from the determinism check
+        # Entering the devShell writes a generated .pre-commit-config.yaml into the
+        # tree; hide it via the local exclude so it never counts as a change in the
+        # publish guard's `git status` determinism check (repo-agnostic, no consumer
+        # needs to .gitignore it).
+        run: echo ".pre-commit-config.yaml" >> .git/info/exclude
       - name: Install soldeer dependencies
         if: ${{ hashFiles('soldeer.lock') != '' }}
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
@@ -178,72 +196,18 @@ jobs:
             *) echo "::error::tag '$TAG' does not start with tag-prefix '$TAG_PREFIX'" >&2; exit 1 ;;
           esac
           # Require MAJOR.MINOR.PATCH. Beyond rejecting junk tags (sol-vfoo), this
-          # guarantees VERSION carries no characters special to the sed below
-          # (`&`, `\`, `/`), so it cannot corrupt foundry.toml.
+          # guarantees VERSION is `[0-9.]+` — safe to interpolate into the
+          # snapshot-dir path (dots→underscores) below and free of shell/path
+          # metacharacters.
           if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "::error::version '$VERSION' from tag '$TAG' is not MAJOR.MINOR.PATCH" >&2
             exit 1
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "Release version: $VERSION"
-      - name: Set foundry.toml version to the release version
-        # The tag names the version; set it BEFORE regenerating so the snapshot's
-        # DEPLOY_TAG bakes in the same value (a version-vs-DEPLOY_TAG identity test
-        # then holds by construction). Targets the first `version =` line, which is
-        # [package].version.
-        run: |
-          set -euo pipefail
-          sed -i -E "0,/^version[[:space:]]*=.*/s//version = \"${VERSION}\"/" foundry.toml
-          # Fail loud if the substitution matched nothing (no [package].version line
-          # to move) rather than silently releasing an unchanged version.
-          grep -qxE "version = \"${VERSION}\"" foundry.toml || {
-            echo "::error::foundry.toml has no [package] version line to set to ${VERSION}" >&2
-            exit 1
-          }
-      - name: Cut the release snapshot
-        # One call regenerates the rolling src/generated/candidate/ pins and
-        # freezes a copy of them as src/generated/<tag>/, so there is no point
-        # between the two at which the record and the pins the release publishes
-        # can disagree. Deterministic: the pins are computed from bytecode
-        # (address = f(bytecode) under CREATE2), so this needs no chain access and
-        # produces the exact snapshot the release publishes and commits. The
-        # ordering, the version read, the append-only refusal and the guards
-        # around them all live in that call — LibRainDeploySnapshot.freeze, via
-        # BuildScript.cutRelease().
-        env:
-          # Via env, not interpolated into the script body: a workflow input
-          # spliced into `run:` text is a template-injection surface. The
-          # expansion is one word, which bash then reads as the script.
-          SNAPSHOT_GENERATE_CMD: ${{ inputs.snapshot-generate-cmd }}
-        # `set -euo pipefail` so a command written as `a; b` cannot hide a's
-        # failure behind b's success.
-        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c bash -c "set -euo pipefail; $SNAPSHOT_GENERATE_CMD"
-      - name: Commit the release snapshot
-        # Commit BEFORE the append-only gate and Soldeer push so both operate on a
-        # clean, inspectable tree. The commit is what lands on main below.
-        run: |
-          set -euo pipefail
-          # Stage the release: the foundry.toml version bump AND the regenerated
-          # snapshot (tracked edits + the new src/generated/<version>/). Do NOT
-          # `git checkout` first — that would revert the version bump and any
-          # regenerated tracked file, leaving a commit that misses them and breaks
-          # the version/snapshot lockstep. The one devShell leftover
-          # (.pre-commit-config.yaml) is already hidden via .git/info/exclude in the
-          # Git config step, so `git add -A` will not stage it.
-          git add -A
-          if git diff --cached --quiet; then
-            echo "::error::snapshot regeneration produced no changes for ${VERSION}; nothing to release" >&2
-            exit 1
-          fi
-          git commit --no-verify -m "Package Release: soldeer ${{ inputs.soldeer-package }} ${VERSION}"
-      - name: Enforce append-only snapshots
-        # The release must only ADD src/generated/<version>/; a frozen snapshot for
-        # an already-released tag must never change (consumers pin its constants).
-        uses: rainlanguage/rainix/.github/actions/frozen-snapshots-append-only@main
-      # The fork suite below rolls back to the freshly regenerated pins, so it
-      # needs archive endpoints. Candidate URLs travel as env, never as `with:`
-      # inputs — GitHub renders a composite's resolved inputs into the log and a
-      # keyed URL embeds its API key.
+      # The fork suite below needs archive endpoints. Candidate URLs travel as env,
+      # never as `with:` inputs — GitHub renders a composite's resolved inputs into
+      # the log and a keyed URL embeds its API key.
       - name: RPC preflight
         uses: rainlanguage/rainix/.github/actions/rpc-preflight@main
         env:
@@ -274,29 +238,58 @@ jobs:
         # candidate that is healthy right now, which a static one-URL mapping
         # cannot do.
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c bash -c '${{ inputs.test-cmd }}'
+      - name: Regenerate the release snapshot (read-only determinism check)
+        # Option A lands the frozen src/generated/<version>/ snapshot on main via a
+        # reviewed PR; this workflow does NOT cut it. To prove the tagged commit
+        # carries a snapshot that IS a fresh deterministic regeneration — not stale,
+        # hand-edited, or never cut — regenerate it here and let the publish guard
+        # below require a clean tree. The generator freezes a NEW <version>/ dir and
+        # may refuse to overwrite an existing one (e.g. cut-release.sh), so remove
+        # the committed dir first; git still holds it, and the guard checks presence
+        # against HEAD and diffs the regenerated tree against HEAD. Nothing is
+        # committed or pushed — the runner tree is thrown away. Deterministic from
+        # bytecode (address = f(bytecode) under CREATE2), so no chain access here;
+        # the on-chain attestation is the fork suite above.
+        #
+        # This runs AFTER the fork suite (test-cmd), immediately before publish, so
+        # the guard's clean-tree check covers any tracked file the suite may have
+        # touched too — nothing runs between the guard and `forge soldeer push`, so
+        # what publishes is exactly what the guard verified.
+        env:
+          # Via env, not interpolated into the script body: a workflow input
+          # spliced into `run:` text is a template-injection surface. The
+          # expansion is one word, which bash then reads as the script.
+          SNAPSHOT_GENERATE_CMD: ${{ inputs.snapshot-generate-cmd }}
+        # `set -euo pipefail` so a command written as `a; b` cannot hide a's
+        # failure behind b's success.
+        run: |
+          set -euo pipefail
+          # VERSION is validated strict X.Y.Z above, so DIR is [0-9_]+.
+          DIR="${VERSION//./_}"
+          rm -rf "src/generated/${DIR}"
+          nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c bash -c "set -euo pipefail; $SNAPSHOT_GENERATE_CMD"
+      - name: Publish guard (fail-closed)
+        # The point of the push-free change: refuse to publish a tag whose commit
+        # did not actually cut this release's snapshot. Runs immediately before
+        # publish so what it verifies is what publishes. All three must hold or the
+        # release fails loud and publishes NOTHING — foundry.toml [package].version
+        # == the tag version; src/generated/<version>/ present in the tagged commit;
+        # and the regeneration above changed nothing (git status clean → the
+        # committed snapshot is a deterministic regeneration, not stale/hand-edited,
+        # and the fork suite left no tracked file dirty). Logic is Rust (rainix-static
+        # release-guard), unit-tested and mutation-covered; the append-only gate ran
+        # at PR time (rainix-sol-static). VERSION comes from $GITHUB_ENV, never a
+        # ${{ }} splice, so it cannot inject into the command.
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c rainix-static release-guard --version "$VERSION"
       - name: Publish to Soldeer
-        # Pushes the working tree (== the release commit's tree, snapshot present)
-        # under the exact version the tag names.
+        # Pushes the working tree — the tagged commit's tree, whose snapshot the
+        # publish guard just verified is present and deterministic — under the exact
+        # version the tag names. No branch is written: main already carries this
+        # snapshot from the reviewed PR that cut it.
         env:
           SOLDEER_API_TOKEN: ${{ secrets.SOLDEER_API_TOKEN }}
           SOLDEER_PACKAGE: ${{ inputs.soldeer-package }}
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer push "$SOLDEER_PACKAGE~$VERSION"
-      - name: Commit the snapshot back to main
-        # main carries the CURRENT release's pins so the daily drift sweep has live
-        # constants to check. The tag was made on the main tip; rebase in any
-        # concurrent move first, then push the release commit to main. src/generated
-        # is append-only (a new <version>/ dir), so a concurrent release is the only
-        # thing that could conflict, and it fails loud rather than silently.
-        env:
-          MAIN: ${{ inputs.main-branch }}
-        run: |
-          set -euo pipefail
-          git fetch --no-tags origin "$MAIN"
-          if ! git rebase "origin/$MAIN"; then
-            echo "::error::release commit does not rebase cleanly onto origin/$MAIN (concurrent release?); resolve manually" >&2
-            exit 1
-          fi
-          git push origin "HEAD:$MAIN"
       - name: GitHub Release
         uses: rainlanguage/rainix/.github/actions/gh-release@main
         with:
