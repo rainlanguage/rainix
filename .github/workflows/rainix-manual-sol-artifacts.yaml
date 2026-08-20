@@ -83,7 +83,7 @@ on:
       CI_DEPLOY_FLARE_ETHERSCAN_API_KEY:
         required: false
 env:
-  RAINIX_SHA: 5c00627bfaa83920c87596310be4c3f7b345b23d
+  RAINIX_SHA: a1ef2ae97e9f4617c75ae4a87e756f1a452c1009
 jobs:
   deploy:
     runs-on: ubuntu-latest
