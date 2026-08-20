@@ -448,6 +448,7 @@
             bats test/bats/devshell/default/prettier-bundle.test.bats
             bats test/bats/action/rpc-preflight.test.bats
             bats test/bats/action/prompt-cap.test.bats
+            bats test/bats/action/frozen-snapshots-append-only.test.bats
             bats test/bats/task/skip-simulation.test.bats
             bats test/bats/task/subgraph-build.test.bats
             bats test/bats/task/subgraph-deploy-version.test.bats

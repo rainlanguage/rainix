@@ -1,6 +1,6 @@
 name: frozen-snapshots-append-only
 description: >-
-  Fails when a branch modifies or deletes an existing per-tag deploy-pin snapshot under src/generated/<tag>/ (tag = three underscore-separated numbers, e.g. 0_1_4). These snapshots are frozen once on the base branch — downstream consumers pin the address/codehash constants they hold, so a release ADDS a new tag (bump the version), never edits an existing snapshot. No-op for repos with no such snapshots.
+  Fails when a branch modifies or deletes an existing per-tag deploy-pin snapshot under src/generated/<tag>/ (tag = three underscore-separated numbers, e.g. 0_1_4). These snapshots are frozen once on the base branch — downstream consumers pin the address/codehash constants they hold, so a release ADDS a new tag (bump the version), never edits an existing snapshot. No-op for a repo that carries no src/generated/ record at all.
 runs:
   using: composite
   steps:
@@ -8,9 +8,25 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        # Nothing to enforce if the repo has no per-tag snapshots.
-        if ! ls src/generated/*/*.pointers.sol >/dev/null 2>&1; then
-          echo "snapshots-append-only: no per-tag snapshots; skip"
+        # Nothing to enforce if the repo carries no generated record at all — a
+        # library repo, which has no per-tag deploy-pin snapshots. A presence test
+        # on ONE directory, deliberately: the `src/generated/*/*.pointers.sol`
+        # glob this replaces asserted a FILENAME inside the record, and no deploy
+        # repo has ever written that name (frozen records are
+        # `src/generated/<tag>/<Name>.sol`), so the gate skipped silently in
+        # exactly the repos it exists for — a no-op org-wide
+        # (rainlanguage/rainix#341). Which entries under the root are releases is
+        # the Rust check's call, via the same `is_tag` the release guard uses; bash
+        # only decides whether there is a record to look at.
+        #
+        # A branch that deletes the ENTIRE src/generated/ tree still skips here.
+        # Distinguishing that from a repo that never had one needs the BASE branch,
+        # which is what the fetch below exists to get — so closing it would mean
+        # fetching in every sol repo in the org, including the ones whose default
+        # branch is not `main`. Left as is, narrowly: deleting one frozen snapshot,
+        # or the tag dir holding it, is caught.
+        if [ ! -d src/generated ]; then
+          echo "snapshots-append-only: no generated record; skip"
           exit 0
         fi
         # The three-dot diff needs the merge-base with the base branch, but the
