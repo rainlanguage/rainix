@@ -57,12 +57,21 @@
 //       fails over instead of reddening every suite in the org. Candidates come
 //       from the RAINIX_RPC_SECRET_<NET> / RAINIX_RPC_VARS_<NET> env vars merged
 //       with hardcoded public archive defaults. Never prints a candidate URL.
+//   release-guard --version <x.y.z> [--root <src/generated>] [--foundry <foundry.toml>]
+//       Fail-closed publish guard for rainix-tag-release's push-free deploy flow:
+//       refuse to publish a tag whose commit did not actually cut this release's
+//       snapshot. Verifies foundry.toml's [package].version equals the tag
+//       version, that <root>/<version>/ (dots→underscores) exists in the tagged
+//       commit, and — after the caller re-runs the snapshot generator on the tree
+//       — that `git status` is empty (the committed snapshot is a deterministic
+//       regeneration, not stale/hand-edited). Runs where git is on PATH.
 
 mod agent_context_cap;
 mod context_bytes;
 mod frozen_snapshots;
 mod no_submodules;
 mod prompt_cap;
+mod release_guard;
 mod rpc_preflight;
 mod soldeer_gate;
 
@@ -175,6 +184,13 @@ fn main() {
                 }
             }
         }
+        "release-guard" => {
+            let version = flag(&args, "--version")
+                .unwrap_or_else(|| fail("release-guard: --version <x.y.z> required"));
+            let root = flag(&args, "--root").unwrap_or_else(|| "src/generated".to_string());
+            let foundry = flag(&args, "--foundry").unwrap_or_else(|| "foundry.toml".to_string());
+            release_guard::run(&version, &root, &foundry);
+        }
         "rpc-preflight" => {
             let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
             // There is no stdout fallback on purpose: the selected URL may be
@@ -202,7 +218,7 @@ fn main() {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
                  (available: no-submodules, agent-context-cap, prompt-cap, \
-                 snapshots-append-only, soldeer-gate, rpc-preflight)"
+                 snapshots-append-only, soldeer-gate, rpc-preflight, release-guard)"
             );
             std::process::exit(2);
         }
