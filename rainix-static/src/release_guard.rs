@@ -52,16 +52,29 @@ pub(crate) fn version_dir(version: &str) -> String {
     version.replace('.', "_")
 }
 
-/// The value of `foundry.toml`'s first `version = "…"` line — the
-/// `[package].version` the old tag-release flow wrote from the tag (deploy
-/// repos put `[package]` first, so the first `version =` is it, the same line
-/// that flow's `sed` targeted and `cut-release.sh`'s `grep -m1` reads). Matches
-/// an optional-whitespace `version =` at the start of a line and returns the
-/// text inside the first double-quoted string on it. `None` when no such line
-/// exists (no version to verify against the tag).
+/// The `version = "…"` value inside `foundry.toml`'s package-metadata table —
+/// `[package]` (legacy) or `[external.package]` (current deploy-repo form), the
+/// table the release version lives in. Tracks the active TOML table header and
+/// returns the version ONLY when inside that table, so a `version =` in some
+/// other table earlier in the file (e.g. a tool section) can never be mistaken
+/// for the release version. `None` when the package table has no `version =`
+/// line (nothing to verify against the tag). A bare-string TOML header check is
+/// enough here: foundry.toml is machine-shaped and these two headers sit at
+/// column 0; the guard fails closed (no version found) on anything exotic.
 pub(crate) fn foundry_version(content: &str) -> Option<String> {
+    let mut in_package = false;
     for line in content.lines() {
-        let t = line.trim_start();
+        let t = line.trim();
+        // A table header switches the active section. Only `[package]` /
+        // `[external.package]` are the release-version table; any other header
+        // (including `[package.metadata.*]` subtables) leaves it.
+        if t.starts_with('[') && t.ends_with(']') {
+            in_package = t == "[package]" || t == "[external.package]";
+            continue;
+        }
+        if !in_package {
+            continue;
+        }
         let Some(rest) = t.strip_prefix("version") else {
             continue;
         };
@@ -216,34 +229,58 @@ mod tests {
     #[test]
     fn foundry_version_tolerates_whitespace_variants() {
         assert_eq!(
-            foundry_version("version=\"1.2.3\"").as_deref(),
+            foundry_version("[package]\nversion=\"1.2.3\"").as_deref(),
             Some("1.2.3")
         );
         assert_eq!(
-            foundry_version("  version   =   \"1.2.3\"  ").as_deref(),
+            foundry_version("[package]\n  version   =   \"1.2.3\"  ").as_deref(),
             Some("1.2.3")
         );
     }
 
     #[test]
-    fn foundry_version_takes_the_first_when_several() {
-        // Only the first `version =` (the [package] line, first in deploy
-        // repos) is the release version; later ones must not shadow it.
+    fn foundry_version_reads_external_package_table() {
+        // Current deploy-repo form: `[external.package]` with a comment block
+        // between the header and the version line.
+        let toml = "[external.package]\nname = \"rain-extrospection-deploy\"\n\
+                    # version of the LAST publish\nversion = \"0.1.0\"\n";
+        assert_eq!(foundry_version(toml).as_deref(), Some("0.1.0"));
+    }
+
+    #[test]
+    fn foundry_version_ignores_version_in_an_earlier_table() {
+        // A `version` in a table BEFORE the package table must NOT shadow the
+        // real release version: otherwise the guard could match a foreign
+        // version to the tag while [package].version differs, and publish a
+        // package whose manifest version does not match the tag.
+        let toml = "[tool.whatever]\nversion = \"9.9.9\"\n\n\
+                    [package]\nname = \"pkg\"\nversion = \"0.1.5\"\n";
+        assert_eq!(foundry_version(toml).as_deref(), Some("0.1.5"));
+    }
+
+    #[test]
+    fn foundry_version_ignores_version_in_a_later_table() {
+        // Symmetric: a `version` in a table AFTER [package] must not be read
+        // either — only the package table's own version counts.
         let toml = "[package]\nversion = \"0.1.5\"\n\n[other]\nversion = \"9.9.9\"\n";
         assert_eq!(foundry_version(toml).as_deref(), Some("0.1.5"));
     }
 
     #[test]
     fn foundry_version_ignores_version_prefixed_keys_and_values() {
-        // `versionx` is a different key; a `version` inside a value is not a
-        // version line at column start.
-        let toml = "versionx = \"9.9.9\"\nname = \"version = 1.0.0\"\nversion = \"0.2.0\"\n";
+        // Inside [package]: `versionx` is a different key; a `version` inside a
+        // value is not a version line at column start.
+        let toml = "[package]\nversionx = \"9.9.9\"\nname = \"version = 1.0.0\"\n\
+                    version = \"0.2.0\"\n";
         assert_eq!(foundry_version(toml).as_deref(), Some("0.2.0"));
     }
 
     #[test]
-    fn foundry_version_none_when_absent() {
+    fn foundry_version_none_when_no_package_table() {
+        // No package table at all, and a version line outside one, are both
+        // "no release version" — the guard fails closed.
         assert_eq!(foundry_version("[profile.default]\nsrc = 'src'\n"), None);
+        assert_eq!(foundry_version("version = \"1.2.3\"\n"), None);
         assert_eq!(foundry_version(""), None);
     }
 

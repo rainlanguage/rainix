@@ -205,47 +205,9 @@ jobs:
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "Release version: $VERSION"
-      - name: Regenerate the release snapshot (read-only determinism check)
-        # Option A lands the frozen src/generated/<version>/ snapshot on main via a
-        # reviewed PR; this workflow does NOT cut it. To prove the tagged commit
-        # carries a snapshot that IS a fresh deterministic regeneration — not stale,
-        # hand-edited, or never cut — regenerate it here and let the publish guard
-        # below require a clean tree. The generator freezes a NEW <version>/ dir and
-        # may refuse to overwrite an existing one (e.g. cut-release.sh), so remove
-        # the committed dir first; git still holds it, and the guard checks presence
-        # against HEAD and diffs the regenerated tree against HEAD. Nothing is
-        # committed or pushed — the runner tree is thrown away. Deterministic from
-        # bytecode (address = f(bytecode) under CREATE2), so no chain access here;
-        # the on-chain attestation is a later step.
-        env:
-          # Via env, not interpolated into the script body: a workflow input
-          # spliced into `run:` text is a template-injection surface. The
-          # expansion is one word, which bash then reads as the script.
-          SNAPSHOT_GENERATE_CMD: ${{ inputs.snapshot-generate-cmd }}
-        # `set -euo pipefail` so a command written as `a; b` cannot hide a's
-        # failure behind b's success.
-        run: |
-          set -euo pipefail
-          # VERSION is validated strict X.Y.Z above, so DIR is [0-9_]+.
-          DIR="${VERSION//./_}"
-          rm -rf "src/generated/${DIR}"
-          nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c bash -c "set -euo pipefail; $SNAPSHOT_GENERATE_CMD"
-      - name: Publish guard (fail-closed)
-        # The point of the push-free change: refuse to publish a tag whose commit
-        # did not actually cut this release's snapshot. All three must hold or the
-        # release fails loud and publishes NOTHING — foundry.toml [package].version
-        # == the tag version; src/generated/<version>/ present in the tagged commit;
-        # and the regeneration above changed nothing (git status clean → the
-        # committed snapshot is a deterministic regeneration, not stale/hand-edited).
-        # Logic is Rust (rainix-static release-guard), unit-tested and
-        # mutation-covered; the append-only gate ran at PR time (rainix-sol-static).
-        # VERSION comes from $GITHUB_ENV, never a ${{ }} splice, so it cannot inject
-        # into the command.
-        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c rainix-static release-guard --version "$VERSION"
-      # The fork suite below rolls back to the freshly regenerated pins, so it
-      # needs archive endpoints. Candidate URLs travel as env, never as `with:`
-      # inputs — GitHub renders a composite's resolved inputs into the log and a
-      # keyed URL embeds its API key.
+      # The fork suite below needs archive endpoints. Candidate URLs travel as env,
+      # never as `with:` inputs — GitHub renders a composite's resolved inputs into
+      # the log and a keyed URL embeds its API key.
       - name: RPC preflight
         uses: rainlanguage/rainix/.github/actions/rpc-preflight@main
         env:
@@ -276,6 +238,49 @@ jobs:
         # candidate that is healthy right now, which a static one-URL mapping
         # cannot do.
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c bash -c '${{ inputs.test-cmd }}'
+      - name: Regenerate the release snapshot (read-only determinism check)
+        # Option A lands the frozen src/generated/<version>/ snapshot on main via a
+        # reviewed PR; this workflow does NOT cut it. To prove the tagged commit
+        # carries a snapshot that IS a fresh deterministic regeneration — not stale,
+        # hand-edited, or never cut — regenerate it here and let the publish guard
+        # below require a clean tree. The generator freezes a NEW <version>/ dir and
+        # may refuse to overwrite an existing one (e.g. cut-release.sh), so remove
+        # the committed dir first; git still holds it, and the guard checks presence
+        # against HEAD and diffs the regenerated tree against HEAD. Nothing is
+        # committed or pushed — the runner tree is thrown away. Deterministic from
+        # bytecode (address = f(bytecode) under CREATE2), so no chain access here;
+        # the on-chain attestation is the fork suite above.
+        #
+        # This runs AFTER the fork suite (test-cmd), immediately before publish, so
+        # the guard's clean-tree check covers any tracked file the suite may have
+        # touched too — nothing runs between the guard and `forge soldeer push`, so
+        # what publishes is exactly what the guard verified.
+        env:
+          # Via env, not interpolated into the script body: a workflow input
+          # spliced into `run:` text is a template-injection surface. The
+          # expansion is one word, which bash then reads as the script.
+          SNAPSHOT_GENERATE_CMD: ${{ inputs.snapshot-generate-cmd }}
+        # `set -euo pipefail` so a command written as `a; b` cannot hide a's
+        # failure behind b's success.
+        run: |
+          set -euo pipefail
+          # VERSION is validated strict X.Y.Z above, so DIR is [0-9_]+.
+          DIR="${VERSION//./_}"
+          rm -rf "src/generated/${DIR}"
+          nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c bash -c "set -euo pipefail; $SNAPSHOT_GENERATE_CMD"
+      - name: Publish guard (fail-closed)
+        # The point of the push-free change: refuse to publish a tag whose commit
+        # did not actually cut this release's snapshot. Runs immediately before
+        # publish so what it verifies is what publishes. All three must hold or the
+        # release fails loud and publishes NOTHING — foundry.toml [package].version
+        # == the tag version; src/generated/<version>/ present in the tagged commit;
+        # and the regeneration above changed nothing (git status clean → the
+        # committed snapshot is a deterministic regeneration, not stale/hand-edited,
+        # and the fork suite left no tracked file dirty). Logic is Rust (rainix-static
+        # release-guard), unit-tested and mutation-covered; the append-only gate ran
+        # at PR time (rainix-sol-static). VERSION comes from $GITHUB_ENV, never a
+        # ${{ }} splice, so it cannot inject into the command.
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c rainix-static release-guard --version "$VERSION"
       - name: Publish to Soldeer
         # Pushes the working tree — the tagged commit's tree, whose snapshot the
         # publish guard just verified is present and deterministic — under the exact
