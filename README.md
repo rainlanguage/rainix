@@ -119,9 +119,16 @@ jobs:
 `secrets: inherit` is required because the reusable wires the standard fork RPC
 env vars (`ARBITRUM_RPC_URL`, `BASE_RPC_URL`, `BASE_SEPOLIA_RPC_URL`,
 `ETHEREUM_RPC_URL`, `FLARE_RPC_URL`, `HYPEREVM_RPC_URL`, `POLYGON_RPC_URL`,
-`CI_DEPLOY_SEPOLIA_RPC_URL`) plus `ETHERSCAN_API_KEY` and `DEPLOYMENT_KEY` from
-the consumer org's secrets/vars. Repos that do no fork tests can ignore — empty
-values are harmless.
+`SEPOLIA_RPC_URL`, `CI_DEPLOY_SEPOLIA_RPC_URL`) plus `ETHERSCAN_API_KEY` and
+`DEPLOYMENT_KEY` from the consumer org's secrets/vars. Repos that do no fork
+tests can ignore — empty values are harmless.
+
+`CI_DEPLOY_SEPOLIA_RPC_URL` and the `ETH_RPC_URL` it is bound to are LEGACY and
+scheduled for removal (rainlanguage/rainix#340). `ETH_RPC_URL` reads as though
+it means Ethereum mainnet but resolves to the Sepolia-era deploy secret, so a
+test trusting the name forks the wrong network. New code wants
+`ETHEREUM_RPC_URL` or `SEPOLIA_RPC_URL` — whichever it actually means — both of
+which the preflight health-checks before binding.
 
 #### rainix-sol (composite)
 
@@ -271,6 +278,27 @@ single sample would qualify a load balancer that round-robins over a mix of
 archive and pruning backends. Ethereum and HyperEVM are latest-only in every
 consumer, so they are not held to the archive bar, and neither are
 deploy/broadcast paths.
+
+**Health also covers load, not just correctness.** Chain id, historical state
+and historical `eth_call` are all correctness questions, and an endpoint that is
+throttled rather than broken answers every one of them perfectly — then returns
+`408 Request timeout on the free plan` the moment `forge` opens real fork
+traffic (rainlanguage/rainix#340). Each candidate is therefore also hit with
+`--burst` simultaneous `eth_call`s (16 by default), repeated for as many rounds
+as there are samples, and is rejected when a majority of any one round comes
+back throttled.
+
+Rounds rather than a single burst, because these endpoints meter a token bucket:
+the first burst after an idle period is served out of a full bucket and passes
+even on an endpoint that then collapses. A majority rather than any single
+failure, because every healthy public endpoint sheds the occasional request
+under load, and rejecting on one would make the preflight flakier than the
+outage it exists to prevent. `--burst 0` disables the check.
+
+Because public rate limits are per-IP, the hardcoded default _order_ is only a
+preference and cannot be right for every runner — the burst is what makes the
+selection safe, by rejecting whichever candidate is throttled for the runner
+running right now.
 
 **No candidate URL is ever printed.** Logs name the _source_ (`secret[0]`,
 `variable[1]`, `default[0]`) and a typed reason, never a URL:

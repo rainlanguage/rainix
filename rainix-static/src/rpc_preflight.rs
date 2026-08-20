@@ -270,10 +270,69 @@ pub(crate) const NETWORKS: &[Network] = &[
         // A pruning node is sufficient, so do not exclude one.
         archive_blocks: &[],
         probe_contract: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
+        // eth-pokt.nodies.app is demoted to LAST per rainlanguage/rainix#340:
+        // from GitHub runners it answers the light probe and then returns
+        // `408 {"message":"Request timeout on the free plan..."}` under real
+        // fork traffic, which took out a rain.factory.deploy dispatch and a
+        // rain.metadata test run.
+        //
+        // THE TWO VANTAGE POINTS DISAGREE, so read the order as a preference
+        // rather than a ranking. Sustained-load measurement from one non-CI
+        // host on 2026-08-20 (60s rest, then four consecutive bursts of 16)
+        // says almost the opposite of the CI evidence above:
+        //
+        //   eth.drpc.org                 16/16 16/16 16/16 16/16
+        //   eth-pokt.nodies.app          16/16 16/16 16/16 16/16
+        //   mainnet.gateway.tenderly.co  15/16  0/16 14/16  1/16
+        //
+        // Public rate limits are per-IP, so a measurement from here does not
+        // predict a GitHub runner and vice versa — neither source is wrong and
+        // no static order can be right for both. drpc leads because it is the
+        // only endpoint with no evidence against it from EITHER vantage;
+        // tenderly is kept ahead of pokt because #340's demotion of pokt rests
+        // on the environment that actually matters (CI), even though it looks
+        // best from here. What makes this safe either way is the burst check in
+        // `probe`: whichever of these is throttled for the runner running right
+        // now is rejected and failed over. Reorder on CI evidence, not on a
+        // local measurement.
         defaults: &[
-            "https://eth-pokt.nodies.app",
-            "https://mainnet.gateway.tenderly.co",
             "https://eth.drpc.org",
+            "https://mainnet.gateway.tenderly.co",
+            "https://eth-pokt.nodies.app",
+        ],
+    },
+    Network {
+        key: "sepolia",
+        env_name: "SEPOLIA_RPC_URL",
+        secret_name: "RPC_URL_SEPOLIA_FORK",
+        chain_id: 11155111,
+        // The `RPC_URL_SEPOLIA_FORK` org secret existed with nothing consuming
+        // it (rainlanguage/rainix#340): no entry here meant it was never
+        // demand-scanned, never probed and never exported. Modelling it is what
+        // makes the secret reachable.
+        //
+        // Latest-only: no repo in the org forks Sepolia at a pinned block,
+        // precisely because the secret has never been consumable, so there is
+        // no live pin to protect and no reason to reject a pruning node. Per
+        // the rule on `archive_blocks`, add the deepest pin here the moment a
+        // consumer appears — probing shallower than a live pin is the failure
+        // this field exists to prevent.
+        archive_blocks: &[],
+        probe_contract: "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14", // WETH9
+        // Measured 2026-08-20, same method as the rest of the table: 5/5 on the
+        // sequential probe, then a 16-way burst. publicnode and thirdweb each
+        // went 5/5 and 16/16; tenderly went 5/5 but shed 3/16 to `-32005 rate
+        // limit exceeded`, so it is ordered last of the three.
+        //
+        // Deliberately absent, all measured the same day and all rejected:
+        // 1rpc.io/sepolia scored 4/5 and then 8/16 (`cu limit exceeded`, served
+        // with HTTP 200); sepolia.drpc.org refuses 100% behind a free-plan gate
+        // (`code 35`); rpc.sepolia.org is gone (404); eth-sepolia.public.
+        // blastapi.io is discontinued (403); endpoints.omniatech.io 521s.
+        defaults: &[
+            "https://ethereum-sepolia-rpc.publicnode.com",
+            "https://11155111.rpc.thirdweb.com",
+            "https://sepolia.gateway.tenderly.co",
         ],
     },
     Network {
@@ -345,9 +404,22 @@ fn classify(code: i64, message: &str, block: Option<u64>) -> Reason {
     let m = message.to_ascii_lowercase();
     let has = |needle: &str| m.contains(needle);
 
+    // Plan/quota FIRST, and specifically before the archive arm below: the
+    // free-plan gate reads "chain is not available on free plan", which the
+    // archive arm's "is not available" needle also matches. Whichever arm runs
+    // first wins, so a billing wall would otherwise be reported as a pruning
+    // node — the wrong actionable fact, and one that sends a reader looking for
+    // a deeper archive endpoint instead of a paid key.
+    //
+    // "free plan" / "paid plan" / "upgrade to" are the wording the throttling
+    // providers in this table actually use; none of them says "quota" or "rate
+    // limit" when the refusal is plan-based rather than burst-based.
     if code == -32001
         || has("usage limit")
         || has("current plan")
+        || has("free plan")
+        || has("paid plan")
+        || has("upgrade to")
         || has("quota")
         || has("rate limit")
         || has("too many requests")
@@ -390,6 +462,67 @@ fn classify(code: i64, message: &str, block: Option<u64>) -> Reason {
     Reason::RpcError { code }
 }
 
+/// Pull an error `(code, message)` out of a response body, whatever shape the
+/// provider chose to send it in.
+///
+/// Three shapes occur among the endpoints in this table, all captured live:
+///
+///   * `{"error":{"code":-32005,"message":"rate limit exceeded"}}` — the
+///     JSON-RPC envelope the spec asks for (tenderly, HTTP 429).
+///   * `{"error":"cu limit exceeded; ..."}` — `error` as a bare STRING rather
+///     than an object, served with **HTTP 200** (1rpc.io). This is the shape
+///     that matters most: with no envelope to read and a success status, an
+///     unhandled body here is indistinguishable from a healthy response, so
+///     the candidate is SELECTED and the suite dies later.
+///   * `{"message":"Request timeout on the free plan...","code":30}` — no
+///     envelope at all, the fields sit at the top level (drpc, HTTP 408).
+///
+/// A top-level `message`/`code` pair is only an error when there is no
+/// `result` beside it, so a healthy response that happens to carry a `message`
+/// field is never misread as a failure.
+fn error_fields(json: &serde_json::Value) -> Option<(i64, &str)> {
+    if let Some(err) = json.get("error") {
+        // `error` as a bare string carries no code of its own; 0 is the
+        // "no code supplied" discriminant, exactly as for a missing field.
+        if let Some(message) = err.as_str() {
+            return Some((0, message));
+        }
+        let code = err
+            .get("code")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(0);
+        let message = err
+            .get("message")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        return Some((code, message));
+    }
+    if json.get("result").is_none() {
+        if let Some(message) = json.get("message").and_then(serde_json::Value::as_str) {
+            let code = json
+                .get("code")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(0);
+            return Some((code, message));
+        }
+    }
+    None
+}
+
+/// Reject on an HTTP status alone, when the body told us nothing.
+///
+/// 429 is a rate limit by definition, so it is a quota rejection even when the
+/// body is an HTML error page we refuse to parse — reporting it as a bare
+/// status would hide the one failure class this whole subcommand exists to
+/// route around.
+fn http_reason(status: u32) -> Reason {
+    match status {
+        429 => Reason::Quota { code: 0 },
+        s if s >= 400 => Reason::Http { status: s },
+        _ => Reason::BadResponse,
+    }
+}
+
 /// POST one JSON-RPC request and return its `result`.
 ///
 /// curl's stdout is captured and parsed; its stderr is captured and DROPPED
@@ -401,6 +534,16 @@ fn rpc(
     body: &str,
     block: Option<u64>,
 ) -> Result<serde_json::Value, Reason> {
+    finish_rpc(spawn_rpc(url, timeout, body)?, block)
+}
+
+/// Spawn one curl child with the request body already written to its stdin.
+///
+/// Split out from `rpc` so a caller can start MANY requests before waiting on
+/// any of them: spawning and collecting in one step serialises the probe, and a
+/// serial probe cannot generate the request RATE that plan throttling responds
+/// to. See `burst`.
+fn spawn_rpc(url: &Url, timeout: u32, body: &str) -> Result<std::process::Child, Reason> {
     let mut child = Command::new("curl")
         .args([
             "-s",
@@ -426,6 +569,11 @@ fn rpc(
         .as_mut()
         .and_then(|s| s.write_all(body.as_bytes()).ok())
         .ok_or(Reason::Unreachable { curl_exit: -1 })?;
+    Ok(child)
+}
+
+/// Wait for a spawned curl child and parse its response.
+fn finish_rpc(child: std::process::Child, block: Option<u64>) -> Result<serde_json::Value, Reason> {
     let out = child
         .wait_with_output()
         .map_err(|_| Reason::Unreachable { curl_exit: -1 })?;
@@ -442,27 +590,13 @@ fn rpc(
         Ok(v) => v,
         // A non-JSON body (an HTML error page, a proxy banner) is never parsed
         // for meaning and never printed; only the status survives.
-        Err(_) => {
-            return Err(if status >= 400 {
-                Reason::Http { status }
-            } else {
-                Reason::BadResponse
-            })
-        }
+        Err(_) => return Err(http_reason(status)),
     };
-    if let Some(err) = json.get("error") {
-        let code = err
-            .get("code")
-            .and_then(serde_json::Value::as_i64)
-            .unwrap_or(0);
-        let message = err
-            .get("message")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("");
+    if let Some((code, message)) = error_fields(&json) {
         return Err(classify(code, message, block));
     }
     if status >= 400 {
-        return Err(Reason::Http { status });
+        return Err(http_reason(status));
     }
     json.get("result").cloned().ok_or(Reason::BadResponse)
 }
@@ -515,6 +649,72 @@ fn check_call_result(v: &serde_json::Value, block: Option<u64>) -> Result<(), Re
     }
 }
 
+/// Fire `n` identical requests SIMULTANEOUSLY and report each outcome
+/// (`None` = the request succeeded).
+///
+/// Every request is spawned before any is collected — that is the entire point.
+/// The sequential checks above issue a handful of calls with a full round trip
+/// of think time between them, which is a request RATE no plan throttle reacts
+/// to; that is why an endpoint can pass the preflight and then die under forge,
+/// which opens many concurrent state reads. This reproduces the rate, not just
+/// the calls.
+///
+/// `latest` and the cheapest available call, deliberately: the question here is
+/// "how many requests per second will you serve", not "how deep is your
+/// history" — that is already settled above — and multiplying archive reads by
+/// `n` would be a heavy and pointless load on every provider in the table.
+fn burst(url: &Url, net: &Network, n: u32, timeout: u32) -> Vec<Option<Reason>> {
+    let body = format!(
+        r#"{{"jsonrpc":"2.0","id":1,"method":"eth_call","params":[{{"to":"{}","data":"0x18160ddd"}},"latest"]}}"#,
+        net.probe_contract
+    );
+    let spawned: Vec<Result<std::process::Child, Reason>> =
+        (0..n).map(|_| spawn_rpc(url, timeout, &body)).collect();
+    spawned
+        .into_iter()
+        .map(|c| match c {
+            Ok(child) => match finish_rpc(child, None) {
+                Ok(v) => check_call_result(&v, None).err(),
+                Err(reason) => Some(reason),
+            },
+            Err(reason) => Some(reason),
+        })
+        .collect()
+}
+
+/// Verdict on a load burst: `Some(reason)` rejects the candidate.
+///
+/// The burst answers exactly ONE question — does this endpoint throttle at the
+/// request rate a fork suite generates — so it rejects for throttling and for
+/// nothing else. Correctness (chain id, archive depth, response shape) is
+/// already settled by the sequential phase, and a lone transient timeout inside
+/// a 16-way burst is not evidence of an unhealthy endpoint. Treating any single
+/// failure as fatal would make this preflight flakier than the outage it exists
+/// to prevent, and would reject endpoints the org depends on.
+///
+/// Hence a MAJORITY threshold rather than "any". Measured against the very
+/// candidates in this table (2026-08-20, from one host — see the ethereum
+/// `defaults` note on why one vantage point is not the whole story): a healthy
+/// public endpoint sheds the occasional request under burst — eth.drpc.org
+/// returned a single 429 in a burst of 8 and then served 32/32 twice — while a
+/// throttled or plan-gated one fails nearly all of them —
+/// mainnet.gateway.tenderly.co returned 9/16 and then 32/32 rate-limited, and
+/// sepolia.drpc.org refuses 100% behind a free-plan gate. Half separates those
+/// two populations with room to spare in both directions.
+fn burst_verdict(outcomes: &[Option<Reason>]) -> Option<Reason> {
+    let throttled: Vec<Reason> = outcomes
+        .iter()
+        .flatten()
+        .copied()
+        .filter(|r| matches!(r, Reason::Quota { .. }))
+        .collect();
+    if throttled.len() * 2 > outcomes.len() {
+        throttled.first().copied()
+    } else {
+        None
+    }
+}
+
 /// Probe one candidate. Returns Ok only if EVERY check passes on EVERY sample.
 ///
 /// The three checks mirror what forge's fork backend does, in the order that
@@ -527,6 +727,13 @@ fn check_call_result(v: &serde_json::Value, block: Option<u64>) -> Result<(), Re
 ///      on top of (2) because some hosts serve historical code and state but
 ///      answer every eth_call with "method not supported"; a code-only probe
 ///      selects them and the suite dies later.
+///   4. a simultaneous `burst_size` burst — LOAD. Checks 1-3 are correctness
+///      questions, and an endpoint that is throttled rather than broken answers
+///      all of them perfectly: all three ethereum defaults passed 1-3 on
+///      2026-08-20 while two of them shed most of a concurrent burst. Without
+///      this step the preflight cannot tell a healthy endpoint from one that
+///      will 408 the moment forge opens real fork traffic, which is precisely
+///      the failure rainlanguage/rainix#340 is about.
 ///
 /// `samples` consecutive full passes are required. A single sample is not
 /// enough: the public load balancers round-robin over a mix of archive and
@@ -538,6 +745,7 @@ fn probe(
     samples: u32,
     timeout: u32,
     archive: bool,
+    burst_size: u32,
 ) -> Result<(), Reason> {
     let chain = rpc(
         url,
@@ -581,7 +789,50 @@ fn probe(
             check_call_result(&call, *b)?;
         }
     }
+
+    // Load last: it is the most expensive check and the only one that can be
+    // skipped (--burst 0), so everything cheap and disqualifying runs first.
+    //
+    // `samples` ROUNDS, back to back, and any one round failing is fatal. One
+    // round is not enough, and the reason is the shape of the limiter: these
+    // endpoints meter a token bucket, so the first burst after an idle period
+    // is served out of a full bucket and tells you nothing about sustained
+    // load. Measured against mainnet.gateway.tenderly.co on 2026-08-20 —
+    // 60s rest, then four consecutive bursts of 16 — the rounds throttled
+    // 1/16, then 16/16, then 2/16, then 15/16: round one PASSES and rounds two
+    // and four collapse completely. A fork suite is sustained load, not one
+    // burst, so the probe has to be too. (eth.drpc.org served 16/16 in all four
+    // rounds of the same run, so this does not simply reject everything.)
+    for _ in 0..samples {
+        if let Some(reason) = burst_verdict(&burst(url, net, burst_size, timeout)) {
+            return Err(reason);
+        }
+    }
     Ok(())
+}
+
+/// True when `text` references the identifier `name` as a WHOLE WORD.
+///
+/// A plain `contains` was sufficient only while no network name nested inside
+/// another. `sepolia` breaks that: `SEPOLIA_RPC_URL` is a substring of
+/// `BASE_SEPOLIA_RPC_URL`, so a substring scan makes every repo that forks Base
+/// Sepolia — most of the org — also look like it demands Ethereum Sepolia. A
+/// falsely demanded network is probed, and a network with no healthy candidate
+/// FAILS THE JOB, so the naive form would red repos that never touch Sepolia.
+///
+/// These names are identifiers, so the boundary rule is the identifier rule: a
+/// match counts only when neither neighbouring byte is `[A-Za-z0-9_]`. That
+/// keeps every real reference (`${SEPOLIA_RPC_URL}`, `vm.envString("…")`,
+/// `SEPOLIA_RPC_URL=…`) and drops every nested one.
+fn mentions(text: &str, name: &str) -> bool {
+    let bytes = text.as_bytes();
+    let ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    text.match_indices(name).any(|(i, _)| {
+        let before = i == 0 || !ident(bytes[i - 1]);
+        let end = i + name.len();
+        let after = end >= bytes.len() || !ident(bytes[end]);
+        before && after
+    })
 }
 
 /// Networks the repo actually uses, by scanning tracked files for the env name
@@ -619,7 +870,7 @@ fn demanded(root: &Path) -> BTreeSet<&'static str> {
             continue;
         };
         for net in NETWORKS {
-            if text.contains(net.env_name) || text.contains(net.secret_name) {
+            if mentions(&text, net.env_name) || mentions(&text, net.secret_name) {
                 found.insert(net.key);
             }
         }
@@ -645,7 +896,14 @@ fn export(path: &Path, name: &str, url: &Url) {
 }
 
 /// Run the preflight for every network the repo uses.
-pub(crate) fn run(root: &Path, github_env: &Path, samples: u32, timeout: u32, archive: bool) {
+pub(crate) fn run(
+    root: &Path,
+    github_env: &Path,
+    samples: u32,
+    timeout: u32,
+    archive: bool,
+    burst_size: u32,
+) {
     let want = demanded(root);
     if want.is_empty() {
         println!("rpc-preflight: repo references no fork RPC env vars; nothing to do");
@@ -682,7 +940,7 @@ pub(crate) fn run(root: &Path, github_env: &Path, samples: u32, timeout: u32, ar
         let mut rejected: Vec<(Source, Reason)> = Vec::new();
         let mut selected: Option<(Source, Url)> = None;
         for (src, url) in candidates {
-            match probe(&url, net, samples, timeout, archive) {
+            match probe(&url, net, samples, timeout, archive, burst_size) {
                 Ok(()) => {
                     selected = Some((src, url));
                     break;
@@ -1048,27 +1306,192 @@ mod tests {
     }
 
     #[test]
-    fn env_names_are_not_substrings_of_each_other() {
-        // The demand scan is a substring match, so BASE_RPC_URL must not match
-        // a repo that only mentions BASE_SEPOLIA_RPC_URL.
+    fn no_network_name_is_a_whole_word_mention_inside_another() {
+        // This assertion used to be "no name is a SUBSTRING of another", which
+        // held only while no network nested inside another. `sepolia` breaks
+        // that literally — SEPOLIA_RPC_URL is a substring of
+        // BASE_SEPOLIA_RPC_URL — and the table needs both names, so the scan
+        // matches on identifier boundaries instead (`mentions`).
+        //
+        // The invariant that actually protects the demand scan is therefore the
+        // boundary one: no network's name may match as a WHOLE WORD inside
+        // another's, or a repo mentioning only the longer name would demand
+        // both networks and be failed by a probe for a chain it never touches.
         for a in NETWORKS {
             for b in NETWORKS {
                 if a.key != b.key {
                     assert!(
-                        !b.env_name.contains(a.env_name),
-                        "{} contains {}",
+                        !mentions(b.env_name, a.env_name),
+                        "{} matches {} as a whole word",
                         b.env_name,
                         a.env_name
                     );
                     assert!(
-                        !b.secret_name.contains(a.secret_name),
-                        "{} contains {}",
+                        !mentions(b.secret_name, a.secret_name),
+                        "{} matches {} as a whole word",
                         b.secret_name,
                         a.secret_name
                     );
                 }
             }
         }
+        // Guard against this test quietly becoming vacuous: the raw substring
+        // nesting it was weakened FROM is real and still in the table, so the
+        // boundary rule is load-bearing rather than decorative.
+        assert!(net("base_sepolia")
+            .env_name
+            .contains(net("sepolia").env_name));
+    }
+
+    #[test]
+    fn mentions_requires_identifier_boundaries() {
+        // The nesting that forced the rule.
+        assert!(!mentions("BASE_SEPOLIA_RPC_URL", "SEPOLIA_RPC_URL"));
+        assert!(mentions("BASE_SEPOLIA_RPC_URL", "BASE_SEPOLIA_RPC_URL"));
+        // Every punctuation a real reference is wrapped in still matches.
+        assert!(mentions("${SEPOLIA_RPC_URL}", "SEPOLIA_RPC_URL"));
+        assert!(mentions(
+            "vm.envString(\"SEPOLIA_RPC_URL\")",
+            "SEPOLIA_RPC_URL"
+        ));
+        assert!(mentions("SEPOLIA_RPC_URL=https://x", "SEPOLIA_RPC_URL"));
+        assert!(mentions("  SEPOLIA_RPC_URL\n", "SEPOLIA_RPC_URL"));
+        // Start and end of input are boundaries.
+        assert!(mentions("SEPOLIA_RPC_URL", "SEPOLIA_RPC_URL"));
+        // Adjacent identifier bytes on either side are not.
+        assert!(!mentions("MY_SEPOLIA_RPC_URL", "SEPOLIA_RPC_URL"));
+        assert!(!mentions("SEPOLIA_RPC_URL2", "SEPOLIA_RPC_URL"));
+        assert!(!mentions("XSEPOLIA_RPC_URLX", "SEPOLIA_RPC_URL"));
+        // A later valid occurrence still counts when an earlier one is nested.
+        assert!(mentions(
+            "BASE_SEPOLIA_RPC_URL and ${SEPOLIA_RPC_URL}",
+            "SEPOLIA_RPC_URL"
+        ));
+        assert!(!mentions("", "SEPOLIA_RPC_URL"));
+    }
+
+    #[test]
+    fn sepolia_is_modelled_so_its_secret_is_consumed() {
+        // rainlanguage/rainix#340: the RPC_URL_SEPOLIA_FORK org secret existed
+        // with no table entry, so it was never scanned, probed or exported.
+        let n = net("sepolia");
+        assert_eq!(n.chain_id, 11155111);
+        assert_eq!(n.env_name, "SEPOLIA_RPC_URL");
+        assert_eq!(n.secret_name, "RPC_URL_SEPOLIA_FORK");
+        // Distinct from Base Sepolia in every field that identifies a network.
+        let b = net("base_sepolia");
+        assert_ne!(n.chain_id, b.chain_id);
+        assert_ne!(n.probe_contract, b.probe_contract);
+        assert!(!n.defaults.is_empty());
+    }
+
+    #[test]
+    fn ethereum_prefers_the_endpoints_that_survived_ci() {
+        // rainlanguage/rainix#340 demoted eth-pokt.nodies.app: it passes a
+        // light probe from CI and then 408s under fork load. The burst check is
+        // what actually protects the selection, but the declared preference
+        // still must not LEAD with an endpoint that is known to fail under
+        // sustained load from some vantage point — which, on 2026-08-20
+        // measurement, is true of both pokt (from CI) and tenderly (from here).
+        // eth.drpc.org is the only one with no evidence against it either way.
+        let d = net("ethereum").defaults;
+        assert_eq!(d.last(), Some(&"https://eth-pokt.nodies.app"));
+        assert_eq!(d[0], "https://eth.drpc.org");
+        assert_eq!(d.len(), 3);
+    }
+
+    #[test]
+    fn error_fields_reads_every_wire_shape_seen_in_the_wild() {
+        // The spec envelope (tenderly, HTTP 429).
+        assert_eq!(
+            error_fields(&json!({"error": {"code": -32005, "message": "rate limit exceeded"}})),
+            Some((-32005, "rate limit exceeded"))
+        );
+        // `error` as a bare STRING, served with HTTP 200 (1rpc.io). Unhandled,
+        // this is a throttle that looks exactly like a healthy response.
+        assert_eq!(
+            error_fields(&json!({"error": "cu limit exceeded", "path": "/eth-sepolia"})),
+            Some((0, "cu limit exceeded"))
+        );
+        // No envelope; the fields sit at the top level (drpc, HTTP 408).
+        assert_eq!(
+            error_fields(&json!({"message": "Request timeout on the free plan", "code": 30})),
+            Some((30, "Request timeout on the free plan"))
+        );
+        // Missing pieces degrade to the "no code / no message" discriminants
+        // rather than losing the error.
+        assert_eq!(
+            error_fields(&json!({"error": {"message": "boom"}})),
+            Some((0, "boom"))
+        );
+        assert_eq!(
+            error_fields(&json!({"error": {"code": -1}})),
+            Some((-1, ""))
+        );
+    }
+
+    #[test]
+    fn error_fields_never_fires_on_a_healthy_response() {
+        assert_eq!(error_fields(&json!({"result": "0x1"})), None);
+        // A `message` beside a real `result` is not an error — only a top-level
+        // message with NO result is.
+        assert_eq!(
+            error_fields(&json!({"result": "0x1", "message": "ok", "code": 0})),
+            None
+        );
+        assert_eq!(error_fields(&json!({})), None);
+        assert_eq!(error_fields(&json!({"code": 30})), None);
+    }
+
+    #[test]
+    fn http_429_is_a_quota_rejection_even_with_an_unparseable_body() {
+        // An HTML rate-limit page carries no JSON to classify, but 429 means
+        // rate limited by definition and that is the class this whole
+        // subcommand routes around.
+        assert_eq!(http_reason(429), Reason::Quota { code: 0 });
+        assert_eq!(http_reason(500), Reason::Http { status: 500 });
+        assert_eq!(http_reason(404), Reason::Http { status: 404 });
+        assert_eq!(http_reason(521), Reason::Http { status: 521 });
+        // Below 400 with a body we could not parse is malformed, not an HTTP
+        // failure — the 200-with-an-error-body case.
+        assert_eq!(http_reason(200), Reason::BadResponse);
+    }
+
+    #[test]
+    fn burst_rejects_only_a_throttled_majority() {
+        let q = Some(Reason::Quota { code: 30 });
+        // Clean burst.
+        assert_eq!(burst_verdict(&[None, None, None, None]), None);
+        // A minority of throttled requests is tolerated: every healthy public
+        // endpoint sheds the occasional one, and rejecting on that would make
+        // the preflight flakier than the outage it prevents.
+        assert_eq!(burst_verdict(&[q, None, None, None]), None);
+        // Exactly half is still not a majority.
+        assert_eq!(burst_verdict(&[q, q, None, None]), None);
+        // A majority is a rejection, and it reports the throttle reason.
+        assert_eq!(
+            burst_verdict(&[q, q, q, None]),
+            Some(Reason::Quota { code: 30 })
+        );
+        assert_eq!(burst_verdict(&[q, q]), Some(Reason::Quota { code: 30 }));
+    }
+
+    #[test]
+    fn burst_ignores_failures_that_are_not_throttling() {
+        // Correctness is settled by the sequential phase; the burst judges load
+        // and nothing else. A transient timeout inside a wide burst must not
+        // reject an endpoint that just passed every correctness check.
+        let boom = Some(Reason::Unreachable { curl_exit: 28 });
+        assert_eq!(burst_verdict(&[boom, boom, boom, boom]), None);
+        assert_eq!(burst_verdict(&[Some(Reason::BadResponse); 4]), None);
+        // Mixed: throttling is a minority of the burst even though most
+        // requests failed for other reasons.
+        assert_eq!(
+            burst_verdict(&[Some(Reason::Quota { code: 1 }), boom, boom, boom]),
+            None
+        );
+        // An empty burst (--burst 0) disables the check.
+        assert_eq!(burst_verdict(&[]), None);
     }
 
     #[test]
@@ -1126,7 +1549,71 @@ mod tests {
         // arbitrum must not count.
         assert!(!got.contains("base"));
         assert!(!got.contains("arbitrum"));
+        // Nor may it drag SEPOLIA in. BASE_SEPOLIA_RPC_URL literally contains
+        // SEPOLIA_RPC_URL, so under the old substring scan this repo — and most
+        // of the org — would have demanded a network it never touches, and been
+        // failed by a probe for it.
+        assert!(!got.contains("sepolia"));
         assert_eq!(got.len(), 2);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn plan_gating_is_a_quota_rejection_not_a_pruning_node() {
+        // Live from https://sepolia.drpc.org today: a free-plan gate, HTTP 400.
+        // The message contains "is not available", which the archive arm also
+        // matches — so the plan arm has to win, or a billing wall is reported
+        // as a pruning node and the actionable fact is lost.
+        assert_eq!(
+            classify(
+                35,
+                "chain is not available on free plan, please upgrade to paid plan",
+                Some(38_000_000)
+            ),
+            Reason::Quota { code: 35 }
+        );
+    }
+
+    #[test]
+    fn free_plan_throttle_wording_is_quota() {
+        // The body rainix#340 captured off eth-pokt.nodies.app under fork load.
+        assert_eq!(
+            classify(
+                30,
+                "Request timeout on the free plan, please upgrade to paid plan",
+                None
+            ),
+            Reason::Quota { code: 30 }
+        );
+        // Live from https://1rpc.io/sepolia under a 16-way burst.
+        assert_eq!(
+            classify(0, "cu limit exceeded; Method \"eth_call\" is not available for unregistered accounts. Please register", None),
+            Reason::Quota { code: 0 }
+        );
+        // Live from https://eth.drpc.org under an 8-way burst.
+        assert_eq!(
+            classify(
+                15,
+                "You reached Public endpoint rate limit, please upgrade to paid plan",
+                None
+            ),
+            Reason::Quota { code: 15 }
+        );
+        // The same drpc body cut to the half that names the plan — the shape it
+        // arrives in when the provider omits the remedy clause, and the exact
+        // string `error_fields` is tested against above.
+        //
+        // Every other case here says "upgrade to paid plan" as well, so all of
+        // them stay quota on the strength of those two needles alone and NONE
+        // of them pins "free plan". This one carries no "upgrade to", no "paid
+        // plan", no "quota", no "rate limit" and no "exceeded": strike the
+        // "free plan" needle and it falls all the way through to a bare
+        // RpcError, which reports a billing wall as an unexplained failure and
+        // fails the network over for no stated reason. That makes this the case
+        // that keeps the needle load-bearing rather than redundant.
+        assert_eq!(
+            classify(30, "Request timeout on the free plan", None),
+            Reason::Quota { code: 30 }
+        );
     }
 }

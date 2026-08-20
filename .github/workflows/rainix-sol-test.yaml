@@ -22,6 +22,8 @@ on:
         required: false
       RPC_URL_POLYGON_FORK:
         required: false
+      RPC_URL_SEPOLIA_FORK:
+        required: false
 env:
   RAINIX_SHA: 864816f68b114f7596f8e1f6f00315ef48783072
 jobs:
@@ -81,4 +83,6 @@ jobs:
           RAINIX_RPC_VARS_HYPEREVM: ${{ vars.RPC_URL_HYPEREVM_FORK }}
           RAINIX_RPC_SECRET_POLYGON: ${{ secrets.RPC_URL_POLYGON_FORK }}
           RAINIX_RPC_VARS_POLYGON: ${{ vars.RPC_URL_POLYGON_FORK }}
+          RAINIX_RPC_SECRET_SEPOLIA: ${{ secrets.RPC_URL_SEPOLIA_FORK }}
+          RAINIX_RPC_VARS_SEPOLIA: ${{ vars.RPC_URL_SEPOLIA_FORK }}
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge test -vvv
