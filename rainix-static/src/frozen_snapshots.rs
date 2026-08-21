@@ -111,20 +111,11 @@ mod tests {
     #[test]
     fn snapshot_paths() {
         let root = "src/generated";
-        assert!(is_snapshot(
-            "src/generated/0_1_4/CloneFactory.sol",
-            root
-        ));
-        assert!(is_snapshot(
-            "src/generated/0_1_10/StoxReceipt.sol",
-            root
-        ));
+        assert!(is_snapshot("src/generated/0_1_4/CloneFactory.sol", root));
+        assert!(is_snapshot("src/generated/0_1_10/StoxReceipt.sol", root));
         // the mutable current-pin libs live directly under root, not in a tag dir
         assert!(!is_snapshot("src/generated/LibProdDeployCurrent.sol", root));
-        assert!(!is_snapshot(
-            "src/generated/CloneFactory.sol",
-            root
-        ));
+        assert!(!is_snapshot("src/generated/CloneFactory.sol", root));
         // a bare tag dir (no file) is not a snapshot file
         assert!(!is_snapshot("src/generated/0_1_4", root));
         // outside root
@@ -142,10 +133,8 @@ mod tests {
                     M\tsrc/lib/LibCloneFactoryDeploy.sol\n";
         let off = parse_offenders(diff, root);
         assert_eq!(off.len(), 2);
-        assert!(off[0]
-            .contains("modified frozen snapshot src/generated/0_1_4/CloneFactory.sol"));
-        assert!(off[1]
-            .contains("deleted frozen snapshot src/generated/0_1_3/CloneFactory.sol"));
+        assert!(off[0].contains("modified frozen snapshot src/generated/0_1_4/CloneFactory.sol"));
+        assert!(off[1].contains("deleted frozen snapshot src/generated/0_1_3/CloneFactory.sol"));
     }
 
     #[test]

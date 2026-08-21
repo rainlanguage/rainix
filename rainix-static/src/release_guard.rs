@@ -27,16 +27,17 @@
 //!      writes `<tag>/` from the bytes it just regenerated into `candidate/` and
 //!      reads back off disk, so "the record matches the candidate" is what being
 //!      freshly cut MEANS. So:
-//!        a. the caller re-runs the repo's generator on the tagged tree (the
-//!           NON-freezing entry point — `forge script ./script/Build.sol`, the same
-//!           regeneration `rainix-copy-artifacts` currency-checks with) and this
-//!           guard requires `git status --porcelain` to be empty. That proves the
-//!           rolling `candidate/` snapshot and every file generated from it — the
-//!           alias libs, the released-suites libs — are what the tagged source
-//!           regenerates to.
-//!        b. `<root>/<version>/` is byte-identical to `<root>/candidate/`. That
-//!           proves the frozen record is exactly what a freeze run right now would
-//!           write. Stale, hand-edited or never-cut all fail here.
+//!      a. the caller re-runs the repo's generator on the tagged tree (the
+//!      NON-freezing entry point — `forge script ./script/Build.sol`, the same
+//!      regeneration `rainix-copy-artifacts` currency-checks with) and this
+//!      guard requires `git status --porcelain` to be empty. That proves the
+//!      rolling `candidate/` snapshot and every file generated from it — the
+//!      alias libs, the released-suites libs — are what the tagged source
+//!      regenerates to.
+//!
+//!      b. `<root>/<version>/` is byte-identical to `<root>/candidate/`. That
+//!      proves the frozen record is exactly what a freeze run right now would
+//!      write. Stale, hand-edited or never-cut all fail here.
 //!
 //! (4) deliberately does NOT remove `<root>/<version>/` and re-freeze it
 //! (rainlanguage/rainix#341). A deploy repo's generated released-suites lib
@@ -251,11 +252,20 @@ fn read_record(dir: &Path) -> Option<BTreeMap<String, Vec<u8>>> {
     let mut out = BTreeMap::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(current) = stack.pop() {
-        let entries = std::fs::read_dir(&current)
-            .unwrap_or_else(|e| fail(&format!("release-guard: cannot read {}: {e}", current.display())));
+        let entries = std::fs::read_dir(&current).unwrap_or_else(|e| {
+            fail(&format!(
+                "release-guard: cannot read {}: {e}",
+                current.display()
+            ))
+        });
         for entry in entries {
             let path = entry
-                .unwrap_or_else(|e| fail(&format!("release-guard: cannot read {}: {e}", current.display())))
+                .unwrap_or_else(|e| {
+                    fail(&format!(
+                        "release-guard: cannot read {}: {e}",
+                        current.display()
+                    ))
+                })
                 .path();
             if path.is_dir() {
                 stack.push(path);
@@ -266,8 +276,12 @@ fn read_record(dir: &Path) -> Option<BTreeMap<String, Vec<u8>>> {
                 .unwrap_or(&path)
                 .to_string_lossy()
                 .into_owned();
-            let bytes = std::fs::read(&path)
-                .unwrap_or_else(|e| fail(&format!("release-guard: cannot read {}: {e}", path.display())));
+            let bytes = std::fs::read(&path).unwrap_or_else(|e| {
+                fail(&format!(
+                    "release-guard: cannot read {}: {e}",
+                    path.display()
+                ))
+            });
             out.insert(rel, bytes);
         }
     }
@@ -334,8 +348,11 @@ pub(crate) fn run(version: &str, root: &str, foundry: &str) {
     //      commit that never carried it.
     let dir = version_dir(version);
     let path = format!("{root}/{dir}");
-    let frozen_tags = tag_dirs(&git_stdout(&["ls-tree", "--name-only", "HEAD", "--", &format!("{root}/")]), root);
-    if !frozen_tags.iter().any(|t| *t == dir) {
+    let frozen_tags = tag_dirs(
+        &git_stdout(&["ls-tree", "--name-only", "HEAD", "--", &format!("{root}/")]),
+        root,
+    );
+    if !frozen_tags.contains(&dir) {
         fail(&format!(
             "release-guard: {path}/ is not present in the tagged commit — this version was \
              never cut/frozen; land the snapshot in a PR before tagging"
@@ -513,7 +530,10 @@ mod tests {
     fn tag_dirs_decides_whether_the_release_being_published_is_present() {
         // Invariant 2 reads the same listing invariant 3 does: the release is
         // present in the tagged commit iff its tag dir is one of the entries.
-        let tags = tag_dirs("src/generated/0_1_5\nsrc/generated/candidate\n", "src/generated");
+        let tags = tag_dirs(
+            "src/generated/0_1_5\nsrc/generated/candidate\n",
+            "src/generated",
+        );
         assert!(tags.iter().any(|t| t == "0_1_5"));
         assert!(!tags.iter().any(|t| t == "0_1_9"));
         assert!(tag_dirs("", "src/generated").iter().all(|t| t != "0_1_5"));
@@ -629,18 +649,25 @@ mod tests {
     fn record_mismatches_clean_when_the_frozen_record_is_the_fresh_regeneration() {
         let frozen = record(&[("CloneFactory.sol", "pins"), ("Other.sol", "more")]);
         let candidate = record(&[("CloneFactory.sol", "pins"), ("Other.sol", "more")]);
-        assert!(
-            record_mismatches(&frozen, &candidate, "src/generated/0_1_9", "src/generated/candidate")
-                .is_empty()
-        );
+        assert!(record_mismatches(
+            &frozen,
+            &candidate,
+            "src/generated/0_1_9",
+            "src/generated/candidate"
+        )
+        .is_empty());
     }
 
     #[test]
     fn record_mismatches_flags_a_frozen_file_whose_content_drifted() {
         let frozen = record(&[("CloneFactory.sol", "old pins")]);
         let candidate = record(&[("CloneFactory.sol", "new pins")]);
-        let off =
-            record_mismatches(&frozen, &candidate, "src/generated/0_1_9", "src/generated/candidate");
+        let off = record_mismatches(
+            &frozen,
+            &candidate,
+            "src/generated/0_1_9",
+            "src/generated/candidate",
+        );
         assert_eq!(off.len(), 1);
         assert!(off[0].contains("src/generated/0_1_9/CloneFactory.sol"));
         assert!(off[0].contains("differs"));
@@ -650,8 +677,12 @@ mod tests {
     fn record_mismatches_flags_a_file_only_the_frozen_record_holds() {
         let frozen = record(&[("A.sol", "x"), ("Ghost.sol", "y")]);
         let candidate = record(&[("A.sol", "x")]);
-        let off =
-            record_mismatches(&frozen, &candidate, "src/generated/0_1_9", "src/generated/candidate");
+        let off = record_mismatches(
+            &frozen,
+            &candidate,
+            "src/generated/0_1_9",
+            "src/generated/candidate",
+        );
         assert_eq!(off.len(), 1);
         assert!(off[0].contains("Ghost.sol"));
     }
@@ -660,8 +691,12 @@ mod tests {
     fn record_mismatches_flags_a_file_only_a_fresh_regeneration_produces() {
         let frozen = record(&[("A.sol", "x")]);
         let candidate = record(&[("A.sol", "x"), ("New.sol", "y")]);
-        let off =
-            record_mismatches(&frozen, &candidate, "src/generated/0_1_9", "src/generated/candidate");
+        let off = record_mismatches(
+            &frozen,
+            &candidate,
+            "src/generated/0_1_9",
+            "src/generated/candidate",
+        );
         assert_eq!(off.len(), 1);
         assert!(off[0].contains("New.sol"));
     }
@@ -670,7 +705,12 @@ mod tests {
     fn record_mismatches_flags_an_empty_candidate_rather_than_matching_an_empty_record() {
         // Two empty dirs are "equal"; a release with no record is not a release.
         let empty = record(&[]);
-        let off = record_mismatches(&empty, &empty, "src/generated/0_1_9", "src/generated/candidate");
+        let off = record_mismatches(
+            &empty,
+            &empty,
+            "src/generated/0_1_9",
+            "src/generated/candidate",
+        );
         assert_eq!(off.len(), 2);
         assert!(off
             .iter()
