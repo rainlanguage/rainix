@@ -109,6 +109,11 @@
           # forge build artifacts via `vm.ffi` in CopyArtifacts.sol-style
           # scripts.
           pkgs.jq
+          # yq-go is the same for YAML. A subgraph manifest is a structured
+          # record a Solidity test reads over `vm.ffi`; a text search over it
+          # cannot tell a live key from one inside a `#` comment, nor see a key
+          # spelled `address :`, `"address"`, or inside a flow mapping.
+          pkgs.yq-go
         ];
 
         node-build-inputs = [
@@ -476,6 +481,7 @@
             bats test/bats/devshell/sol-shell/reuse.test.bats
             bats test/bats/devshell/sol-shell/gh.test.bats
             bats test/bats/devshell/sol-shell/jq.test.bats
+            bats test/bats/devshell/sol-shell/yq.test.bats
             bats test/bats/devshell/sol-shell/sol-tasks.test.bats
             bats test/bats/devshell/sol-shell/slim.test.bats
             bats test/bats/devshell/sol-shell/closure.test.bats
