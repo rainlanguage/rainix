@@ -68,6 +68,48 @@ jobs:
       # or key secrets.
       - name: Run ${{ matrix.task }}
         run: nix develop ../.. --command ${{ matrix.task }}
+  # Coverage of rainix's OWN Rust crate, `rainix-static/` — the binary that
+  # implements every org-wide gate (`release-guard`, `soldeer-gate`,
+  # `snapshots-append-only`, `rpc-preflight`).
+  #
+  # The matrix above cannot see this crate and never could: every job there runs
+  # with `working-directory: test/fixture`, and `test/fixture/Cargo.toml` is a
+  # workspace whose only member is `crates/test-rs`. So its `cargo test` and its
+  # `rainix-rs-static` (`cargo fmt --all -- --check` + `cargo clippy
+  # --all-targets --all-features -- -D warnings -D clippy::all`) resolve against
+  # the fixture workspace, not against `rainix-static/`. That fixture run stays
+  # exactly as it is — it proves the tasks work for a downstream consumer, which
+  # is a different claim from covering rainix's own crate. This job adds the
+  # second claim (rainlanguage/rainix#345).
+  #
+  # These commands run in the dev shell rather than as `nix build .#rainix-static`
+  # ON PURPOSE. `buildRustPackage` does run the unit tests in `checkPhase`, but
+  # only when the derivation is actually built: a Cachix hit substitutes the
+  # output and no phase runs at all, so "were the tests executed?" depends on the
+  # binary cache rather than on the code. `cargo test` here always executes, and
+  # neither `cargo fmt` nor `cargo clippy` runs in that derivation under any
+  # cache state.
+  rainix-static:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        task: ["cargo test"]
+        include:
+          # We don't need to do rust static analysis on multiple platforms.
+          - os: ubuntu-latest
+            task: rainix-rs-static
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: rainix-static
+    steps:
+      # Same shared preamble, and the same BOOTSTRAP CAVEAT, as the job above.
+      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Run ${{ matrix.task }}
+        run: nix develop .. --command ${{ matrix.task }}
   # End-to-end self-test of the rpc-preflight composite, which the reusables run
   # but nothing here otherwise exercises — every fork-RPC wiring bug so far has
   # been discovered downstream, in a consumer's red CI.
