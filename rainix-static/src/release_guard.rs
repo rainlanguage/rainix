@@ -528,12 +528,12 @@ mod tests {
     #[test]
     fn dirty_offenders_lists_every_change() {
         // A modified frozen snapshot and an untracked new file both count.
-        let porcelain = " M src/generated/0_1_5/CloneFactory.pointers.sol\n\
-                          ?? src/generated/0_1_5/Extra.pointers.sol\n";
+        let porcelain = " M src/generated/0_1_5/CloneFactory.sol\n\
+                          ?? src/generated/0_1_5/Extra.sol\n";
         let off = dirty_offenders(porcelain);
         assert_eq!(off.len(), 2);
-        assert!(off[0].contains("0_1_5/CloneFactory.pointers.sol"));
-        assert!(off[1].contains("0_1_5/Extra.pointers.sol"));
+        assert!(off[0].contains("0_1_5/CloneFactory.sol"));
+        assert!(off[1].contains("0_1_5/Extra.sol"));
     }
 
     // ---- tag_dirs -----------------------------------------------------
