@@ -198,8 +198,17 @@
         # General rainix tooling as one Rust binary (`rainix-static <subcommand>`,
         # rainlanguage/rainix#255): org-wide static checks AND the CI release
         # tooling that would otherwise be inline bash/Python in a workflow. On PATH
-        # in every shell (via common-shell-inputs) and cachix-cached; unit tests
-        # run inside the nix build via doCheck instead of sourcing bash.
+        # in every shell (via common-shell-inputs) and cachix-cached.
+        #
+        # The unit tests DO run here — buildRustPackage defaults to doCheck, and
+        # the `nativeCheckInputs` git below is that phase's — but only when this
+        # derivation is actually built. A Cachix hit substitutes the output and no
+        # phase runs at all, so this cannot BE the crate's test coverage: whether
+        # the tests executed would depend on the binary cache rather than on the
+        # code, and `cargo fmt`/`cargo clippy` never run here under any cache
+        # state. The named `rainix-static` job in .github/workflows/test.yml is
+        # the coverage (rainlanguage/rainix#345); this doCheck is a build-time
+        # sanity net underneath it.
         rainix-static = pkgs.rustPlatform.buildRustPackage {
           pname = "rainix-static";
           version = "0.1.0";
