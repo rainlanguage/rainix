@@ -9,28 +9,23 @@ runs:
       run: |
         set -euo pipefail
         # Nothing to enforce if the repo carries no generated record at all — a
-        # library repo, which has no per-tag deploy-pin snapshots. A presence test
-        # on ONE directory, deliberately: the `src/generated/*/*.pointers.sol`
-        # glob this replaces asserted a FILENAME inside the record, and no repo in
-        # the org writes that name today (frozen records are
-        # `src/generated/<tag>/<Name>.sol`), so the gate skips silently in exactly
-        # the repos it exists for — a no-op org-wide (rainlanguage/rainix#341).
-        # It was not always unmatched, and the history is the sharper argument:
-        # rain.factory.deploy carried src/generated/0_1_{3,4,5}/CloneFactory.pointers.sol
-        # from its genesis commit until 39d1cfd (2026-08-20) renamed the scheme,
-        # and that PR deleted all three while this gate reported success — the
-        # skip test reads the HEAD tree, so a branch removing every snapshot
-        # switches off the check that would have caught the removal.
-        # Which entries under the root are releases is the Rust check's call, via
-        # the same `is_tag` the release guard uses; bash only decides whether
-        # there is a record to look at.
+        # library repo, which has no per-tag deploy-pin snapshots.
         #
-        # A branch that deletes the ENTIRE src/generated/ tree still skips here.
-        # Distinguishing that from a repo that never had one needs the BASE branch,
-        # which is what the fetch below exists to get — so closing it would mean
-        # fetching in every sol repo in the org, including the ones whose default
-        # branch is not `main`. Left as is, narrowly: deleting one frozen snapshot,
-        # or the tag dir holding it, is caught.
+        # A presence test on ONE directory, deliberately. Asserting a filename
+        # inside the record instead would make the gate skip wherever the
+        # generator's naming differs from the assertion, which is silent: a skip
+        # and a pass are the same green. Which entries under the root are
+        # releases is the Rust check's call, via the same `is_tag` the release
+        # guard uses; bash only decides whether there is a record to look at.
+        #
+        # A branch that deletes the ENTIRE src/generated/ tree still skips here,
+        # because the test reads the HEAD tree — so removing every snapshot
+        # switches off the check that would catch the removal. Distinguishing
+        # that from a repo that never had a record needs the BASE branch, which
+        # is what the fetch below exists to get, so closing it would mean
+        # fetching in every sol repo in the org, including the ones whose
+        # default branch is not `main`. Left as is, narrowly: deleting one
+        # frozen snapshot, or the tag dir holding it, is caught.
         if [ ! -d src/generated ]; then
           echo "snapshots-append-only: no generated record; skip"
           exit 0
