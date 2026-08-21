@@ -38,8 +38,10 @@ name: rainix-tag-release
 #   3. A human merges the PR (normal protected-merge) and pushes a
 #      `sol-v<version>` tag on the merged commit.
 #   4. This workflow runs on that tag: it re-derives the version from the tag,
-#      re-runs the snapshot generator to prove the tagged commit's snapshot is a
-#      fresh deterministic regeneration (the fail-closed publish guard below),
+#      re-runs the repo's NON-freezing generator and requires both a clean tree
+#      and a frozen snapshot byte-identical to the regenerated rolling one, to
+#      prove the tagged commit's snapshot is a fresh deterministic regeneration
+#      (the fail-closed publish guard below),
 #      re-attests the live chain matches the pins, then publishes to Soldeer and
 #      creates the GitHub release. main already carries the snapshot (from the
 #      merged PR), so the daily drift sweep and the repo's own snapshot tests keep
@@ -76,12 +78,6 @@ on:
         required: false
         type: string
         default: sol-v
-      snapshot-generate-cmd:
-        description: >-
-          Command that cuts the release: it regenerates the rolling `src/generated/candidate/` pins from the current source and freezes a copy of them as `src/generated/<tag>/`, in that order and in one call, then formats. `BuildScript.cutRelease()` is that call, so the default is the whole of it for a deploy repo whose `script/Build.sol` extends `BuildScript` and such a repo passes nothing. Run after `[package].version` is set to the release version, so the tag the freeze derives from it is the one being released.
-        required: false
-        type: string
-        default: 'forge script ./script/Build.sol --sig "cutRelease()" && forge fmt'
       test-cmd:
         description: >-
           Pre-publish verification gate. Run against the regenerated snapshot; for a deploy repo this is the fork suite that reads the live chain and asserts it matches the fresh pins, so a release that snapshots addresses the chain does not actually carry fails loud BEFORE publishing. Default `forge test`.
@@ -242,48 +238,70 @@ jobs:
         # candidate that is healthy right now, which a static one-URL mapping
         # cannot do.
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c bash -c '${{ inputs.test-cmd }}'
-      - name: Regenerate the release snapshot (read-only determinism check)
+      - name: Regenerate the generated sources (read-only determinism check)
         # Option A lands the frozen src/generated/<version>/ snapshot on main via a
         # reviewed PR; this workflow does NOT cut it. To prove the tagged commit
-        # carries a snapshot that IS a fresh deterministic regeneration — not stale,
-        # hand-edited, or never cut — regenerate it here and let the publish guard
-        # below require a clean tree. The generator freezes a NEW <version>/ dir and
-        # may refuse to overwrite an existing one (e.g. cut-release.sh), so remove
-        # the committed dir first; git still holds it, and the guard checks presence
-        # against HEAD and diffs the regenerated tree against HEAD. Nothing is
-        # committed or pushed — the runner tree is thrown away. Deterministic from
-        # bytecode (address = f(bytecode) under CREATE2), so no chain access here;
-        # the on-chain attestation is the fork suite above.
+        # carries a snapshot that IS a fresh deterministic regeneration — not
+        # stale, hand-edited, or never cut — regenerate everything the repo
+        # generates here and let the publish guard below require BOTH a clean tree
+        # and a frozen release byte-identical to the regenerated rolling snapshot.
+        #
+        # This regenerates WITHOUT freezing and removes NOTHING
+        # (rainlanguage/rainix#341). The old check `rm -rf`'d
+        # src/generated/<version>/ first, because a generator may refuse to
+        # overwrite a frozen dir (rain.deploy's freeze reverts
+        # SnapshotAlreadyFrozen). But a deploy repo's generated released-suites lib
+        # IMPORTS every frozen record — LibCloneFactoryReleased.sol imports
+        # ../generated/0_1_9/CloneFactory.sol — so removing the directory makes the
+        # tree uncompilable and the generator that was meant to re-create it cannot
+        # run at all. No such repo could ever release.
+        #
+        # `forge script ./script/Build.sol` runs the NON-freezing `run()` entry
+        # point: the exact regeneration rainix-copy-artifacts currency-checks every
+        # PR with, so the release-time and PR-time checks prove the same thing
+        # about the same command. It is not a caller input for that reason — a
+        # per-repo override there is how the freezing form got wired in.
+        #
+        # The guarantee is unchanged, and checked more directly: a freeze COPIES
+        # the rolling snapshot verbatim, so "the frozen record equals the freshly
+        # regenerated candidate" IS "a freeze run right now writes these bytes".
+        #
+        # Nothing is committed or pushed — the runner tree is thrown away.
+        # Deterministic from bytecode (address = f(bytecode) under CREATE2), so no
+        # chain access here; the on-chain attestation is the fork suite above.
         #
         # This runs AFTER the fork suite (test-cmd), immediately before publish, so
         # the guard's clean-tree check covers any tracked file the suite may have
         # touched too — nothing runs between the guard and `forge soldeer push`, so
         # what publishes is exactly what the guard verified.
-        env:
-          # Via env, not interpolated into the script body: a workflow input
-          # spliced into `run:` text is a template-injection surface. The
-          # expansion is one word, which bash then reads as the script.
-          SNAPSHOT_GENERATE_CMD: ${{ inputs.snapshot-generate-cmd }}
-        # `set -euo pipefail` so a command written as `a; b` cannot hide a's
-        # failure behind b's success.
         run: |
           set -euo pipefail
-          # VERSION is validated strict X.Y.Z above, so DIR is [0-9_]+.
-          DIR="${VERSION//./_}"
-          rm -rf "src/generated/${DIR}"
-          nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c bash -c "set -euo pipefail; $SNAPSHOT_GENERATE_CMD"
+          # The codegen script is script/Build.sol, matched exactly — the same
+          # contract rainix-copy-artifacts holds every repo to. A repo that renamed
+          # or dropped it goes red rather than skipping the regeneration and
+          # leaving the guard to verify a tree nothing regenerated.
+          if [ ! -f script/Build.sol ]; then
+            echo "::error::script/Build.sol not found, so the release snapshot cannot be determinism checked. The codegen script must be script/Build.sol." >&2
+            exit 1
+          fi
+          nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c bash -c 'set -euo pipefail; forge script ./script/Build.sol && forge fmt'
       - name: Publish guard (fail-closed)
         # The point of the push-free change: refuse to publish a tag whose commit
         # did not actually cut this release's snapshot. Runs immediately before
-        # publish so what it verifies is what publishes. All three must hold or the
-        # release fails loud and publishes NOTHING — foundry.toml [package].version
-        # == the tag version; src/generated/<version>/ present in the tagged commit;
-        # and the regeneration above changed nothing (git status clean → the
-        # committed snapshot is a deterministic regeneration, not stale/hand-edited,
-        # and the fork suite left no tracked file dirty). Logic is Rust (rainix-static
-        # release-guard), unit-tested and mutation-covered; the append-only gate ran
-        # at PR time (rainix-sol-static). VERSION comes from $GITHUB_ENV, never a
-        # ${{ }} splice, so it cannot inject into the command.
+        # publish so what it verifies is what publishes. Every invariant must hold
+        # or the release fails loud and publishes NOTHING — foundry.toml
+        # [package].version == the tag version; src/generated/<version>/ present in
+        # the tagged commit; no LATER release already frozen (the append-only
+        # record's monotonicity, which cutRelease() used to enforce at tag time);
+        # the regeneration above changed nothing (git status clean → every
+        # generated file is what this source regenerates to, and the fork suite
+        # left no tracked file dirty); and src/generated/<version>/ is
+        # byte-identical to the freshly regenerated src/generated/candidate/ →
+        # the frozen release is exactly what freezing it now would write, so
+        # stale, hand-edited and never-cut all fail here. Logic is Rust
+        # (rainix-static release-guard), unit-tested and mutation-covered; the
+        # append-only gate ran at PR time (rainix-sol-static). VERSION comes from
+        # $GITHUB_ENV, never a ${{ }} splice, so it cannot inject into the command.
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c rainix-static release-guard --version "$VERSION"
       - name: Publish to Soldeer
         # Pushes the working tree — the tagged commit's tree, whose snapshot the

@@ -612,7 +612,7 @@ mod tests {
         let mut with_gen = vec![
             base,
             (
-                "src/generated/0.1.0/A.pointers.sol".to_string(),
+                "src/generated/0_1_0/A.sol".to_string(),
                 b"address constant X = 1;".to_vec(),
             ),
         ];

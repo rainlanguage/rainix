@@ -154,7 +154,10 @@ Solidity artifacts from source and asserts `git diff --exit-code` — failing th
 PR if a maintainer changed source without committing the regenerated files. In a
 single job it runs whichever of these the repo has:
 
-- `./script/BuildPointers.sol` → `src/generated/*.pointers.sol`
+- `./script/Build.sol` → `src/generated/` (the rolling `candidate/` deploy pins,
+  plus the alias and released-suites libs generated from the record). The same
+  regeneration `rainix-tag-release` re-runs at publish time to prove the tagged
+  commit's frozen snapshot is a fresh one.
 - `forge build` + `./script/CopyArtifacts.sol --ffi` → committed ABI JSON
 
 then `forge fmt` and the `git diff` assert.

@@ -61,10 +61,16 @@
 //       Fail-closed publish guard for rainix-tag-release's push-free deploy flow:
 //       refuse to publish a tag whose commit did not actually cut this release's
 //       snapshot. Verifies foundry.toml's [package].version equals the tag
-//       version, that <root>/<version>/ (dots→underscores) exists in the tagged
-//       commit, and — after the caller re-runs the snapshot generator on the tree
-//       — that `git status` is empty (the committed snapshot is a deterministic
-//       regeneration, not stale/hand-edited). Runs where git is on PATH.
+//       version; that <root>/<version>/ (dots→underscores) exists in the tagged
+//       commit and no LATER release is already frozen beside it; and — after the
+//       caller re-runs the repo's NON-freezing generator on the tree — that
+//       `git status` is empty AND <root>/<version>/ is byte-identical to the
+//       freshly regenerated <root>/candidate/. A freeze copies the rolling
+//       snapshot verbatim, so an equal record is exactly what freezing now would
+//       write: stale, hand-edited and never-cut all fail. The frozen dir is never
+//       removed — a deploy repo's generated released-suites lib imports it, so
+//       removing it makes the tree uncompilable (rainlanguage/rainix#341). Runs
+//       where git is on PATH.
 
 mod agent_context_cap;
 mod context_bytes;
