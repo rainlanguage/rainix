@@ -481,7 +481,10 @@ fn classify(code: i64, message: &str, block: Option<u64>) -> Reason {
 /// `result` beside it, so a healthy response that happens to carry a `message`
 /// field is never misread as a failure.
 fn error_fields(json: &serde_json::Value) -> Option<(i64, &str)> {
-    if let Some(err) = json.get("error") {
+    // An explicit `"error": null` is NOT an error: serde_json returns
+    // `Some(Value::Null)` for it, and providers echo it beside a healthy
+    // `result`. Filtering it out here keeps such a response a success.
+    if let Some(err) = json.get("error").filter(|err| !err.is_null()) {
         // `error` as a bare string carries no code of its own; 0 is the
         // "no code supplied" discriminant, exactly as for a missing field.
         if let Some(message) = err.as_str() {
@@ -1441,6 +1444,12 @@ mod tests {
         );
         assert_eq!(error_fields(&json!({})), None);
         assert_eq!(error_fields(&json!({"code": 30})), None);
+        // An explicit `"error": null` beside a real result. serde_json's `get`
+        // returns `Some(Value::Null)` here, so an unfiltered read would default
+        // code/message to 0/"" and reject a healthy endpoint as RpcError{0}.
+        assert_eq!(error_fields(&json!({"result": "0x1", "error": null})), None);
+        // The same null with no result at all is still not an error envelope.
+        assert_eq!(error_fields(&json!({"error": null})), None);
     }
 
     #[test]
