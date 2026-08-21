@@ -109,6 +109,13 @@
           # forge build artifacts via `vm.ffi` in CopyArtifacts.sol-style
           # scripts.
           pkgs.jq
+          # yq-go is the same tool for YAML, and the sol lane now has YAML to
+          # assert over: a subgraph manifest is a deploy-shaped record a Solidity
+          # test needs to read (rain.metadata#148). Without it the alternative is
+          # substring matching on raw text, which a comment or a reformatted key
+          # defeats, or a hand-rolled YAML parser in Solidity — a maintenance
+          # liability in a test. Cheaper than either: one small Go binary.
+          pkgs.yq-go
         ];
 
         node-build-inputs = [
@@ -476,6 +483,7 @@
             bats test/bats/devshell/sol-shell/reuse.test.bats
             bats test/bats/devshell/sol-shell/gh.test.bats
             bats test/bats/devshell/sol-shell/jq.test.bats
+            bats test/bats/devshell/sol-shell/yq.test.bats
             bats test/bats/devshell/sol-shell/sol-tasks.test.bats
             bats test/bats/devshell/sol-shell/slim.test.bats
             bats test/bats/devshell/sol-shell/closure.test.bats
