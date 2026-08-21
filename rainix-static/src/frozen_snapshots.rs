@@ -112,17 +112,17 @@ mod tests {
     fn snapshot_paths() {
         let root = "src/generated";
         assert!(is_snapshot(
-            "src/generated/0_1_4/CloneFactory.pointers.sol",
+            "src/generated/0_1_4/CloneFactory.sol",
             root
         ));
         assert!(is_snapshot(
-            "src/generated/0_1_10/StoxReceipt.pointers.sol",
+            "src/generated/0_1_10/StoxReceipt.sol",
             root
         ));
         // the mutable current-pin libs live directly under root, not in a tag dir
         assert!(!is_snapshot("src/generated/LibProdDeployCurrent.sol", root));
         assert!(!is_snapshot(
-            "src/generated/CloneFactory.pointers.sol",
+            "src/generated/CloneFactory.sol",
             root
         ));
         // a bare tag dir (no file) is not a snapshot file
@@ -135,23 +135,23 @@ mod tests {
     #[test]
     fn flags_only_modified_or_deleted_snapshots() {
         let root = "src/generated";
-        let diff = "A\tsrc/generated/0_1_5/CloneFactory.pointers.sol\n\
-                    M\tsrc/generated/0_1_4/CloneFactory.pointers.sol\n\
-                    D\tsrc/generated/0_1_3/CloneFactory.pointers.sol\n\
+        let diff = "A\tsrc/generated/0_1_5/CloneFactory.sol\n\
+                    M\tsrc/generated/0_1_4/CloneFactory.sol\n\
+                    D\tsrc/generated/0_1_3/CloneFactory.sol\n\
                     M\tsrc/generated/LibProdDeployCurrent.sol\n\
                     M\tsrc/lib/LibCloneFactoryDeploy.sol\n";
         let off = parse_offenders(diff, root);
         assert_eq!(off.len(), 2);
         assert!(off[0]
-            .contains("modified frozen snapshot src/generated/0_1_4/CloneFactory.pointers.sol"));
+            .contains("modified frozen snapshot src/generated/0_1_4/CloneFactory.sol"));
         assert!(off[1]
-            .contains("deleted frozen snapshot src/generated/0_1_3/CloneFactory.pointers.sol"));
+            .contains("deleted frozen snapshot src/generated/0_1_3/CloneFactory.sol"));
     }
 
     #[test]
     fn clean_when_only_adding_a_new_tag() {
         let root = "src/generated";
-        let diff = "A\tsrc/generated/0_1_5/CloneFactory.pointers.sol\n\
+        let diff = "A\tsrc/generated/0_1_5/CloneFactory.sol\n\
                     M\tsrc/generated/LibProdDeployCurrent.sol\n";
         assert!(parse_offenders(diff, root).is_empty());
     }
