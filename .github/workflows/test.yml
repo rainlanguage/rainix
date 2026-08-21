@@ -101,12 +101,14 @@ jobs:
           RAINIX_RPC_VARS_FLARE: ${{ vars.RPC_URL_FLARE_FORK }}
           RAINIX_RPC_SECRET_POLYGON: ${{ secrets.RPC_URL_POLYGON_FORK }}
           RAINIX_RPC_VARS_POLYGON: ${{ vars.RPC_URL_POLYGON_FORK }}
+          RAINIX_RPC_SECRET_SEPOLIA: ${{ secrets.RPC_URL_SEPOLIA_FORK }}
+          RAINIX_RPC_VARS_SEPOLIA: ${{ vars.RPC_URL_SEPOLIA_FORK }}
       - name: Assert the preflight bound every archive network
         # Presence only — never echo the values, they may be secret-derived.
         run: |
           set -euo pipefail
           fail=0
-          for name in ARBITRUM_RPC_URL BASE_RPC_URL BASE_SEPOLIA_RPC_URL ETHEREUM_RPC_URL FLARE_RPC_URL POLYGON_RPC_URL; do
+          for name in ARBITRUM_RPC_URL BASE_RPC_URL BASE_SEPOLIA_RPC_URL ETHEREUM_RPC_URL FLARE_RPC_URL POLYGON_RPC_URL SEPOLIA_RPC_URL; do
             if [ -z "${!name:-}" ]; then
               echo "::error::rpc-preflight did not export $name"
               fail=1

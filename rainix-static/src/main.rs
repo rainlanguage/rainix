@@ -51,7 +51,7 @@
 //       checkout with tags; runs inside sol-shell, so `forge`, `curl` and `git`
 //       are on PATH.
 //   rpc-preflight [--root <dir>] [--github-env <file>] [--samples N]
-//                 [--timeout N] [--no-archive]
+//                 [--timeout N] [--burst N] [--no-archive]
 //       Pick a working fork RPC endpoint per network and export it as
 //       <NETWORK>_RPC_URL, so a dead upstream (quota, pruning node, gone host)
 //       fails over instead of reddening every suite in the org. Candidates come
@@ -203,6 +203,17 @@ fn main() {
                 });
             let samples = num(&args, "--samples", 3);
             let timeout = num(&args, "--timeout", 15);
+            // Simultaneous requests per load round, used to test for plan
+            // throttling. The sequential checks are paced by their own round
+            // trips, which is a request rate no throttle reacts to, so without
+            // a burst an endpoint that is merely rate-limited looks perfectly
+            // healthy. `--samples` rounds of this size are run back to back,
+            // because the first burst after an idle period comes out of a full
+            // token bucket and passes even on an endpoint that then collapses.
+            // 16 is the smallest size that separated the throttled endpoints
+            // from the healthy ones when the table was measured; 0 disables the
+            // load check entirely.
+            let burst = num(&args, "--burst", 16);
             // Deploy/broadcast paths only ever read head state; requiring
             // archive there would reject a healthy pruning endpoint.
             let archive = !args.iter().any(|a| a == "--no-archive");
@@ -212,6 +223,7 @@ fn main() {
                 samples,
                 timeout,
                 archive,
+                burst,
             );
         }
         other => {

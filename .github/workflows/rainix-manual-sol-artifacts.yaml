@@ -68,6 +68,8 @@ on:
         required: false
       RPC_URL_POLYGON_FORK:
         required: false
+      RPC_URL_SEPOLIA_FORK:
+        required: false
       CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY:
         required: false
       CI_DEPLOY_BASE_ETHERSCAN_API_KEY:
@@ -133,6 +135,8 @@ jobs:
           RAINIX_RPC_VARS_HYPEREVM: ${{ vars.RPC_URL_HYPEREVM_FORK }}
           RAINIX_RPC_SECRET_POLYGON: ${{ secrets.RPC_URL_POLYGON_FORK }}
           RAINIX_RPC_VARS_POLYGON: ${{ vars.RPC_URL_POLYGON_FORK }}
+          RAINIX_RPC_SECRET_SEPOLIA: ${{ secrets.RPC_URL_SEPOLIA_FORK }}
+          RAINIX_RPC_VARS_SEPOLIA: ${{ vars.RPC_URL_SEPOLIA_FORK }}
       # 41 submission attempts over 10 minutes, against foundry's default 6 over
       # 25s, which a cold explorer does not fit inside. Only a failed attempt
       # sleeps, and only the no-code and no-answer cases retry at all.
