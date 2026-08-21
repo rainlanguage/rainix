@@ -109,12 +109,10 @@
           # forge build artifacts via `vm.ffi` in CopyArtifacts.sol-style
           # scripts.
           pkgs.jq
-          # yq-go is the same tool for YAML, and the sol lane now has YAML to
-          # assert over: a subgraph manifest is a deploy-shaped record a Solidity
-          # test needs to read (rain.metadata#148). Without it the alternative is
-          # substring matching on raw text, which a comment or a reformatted key
-          # defeats, or a hand-rolled YAML parser in Solidity — a maintenance
-          # liability in a test. Cheaper than either: one small Go binary.
+          # yq-go is the same for YAML. A subgraph manifest is a structured
+          # record a Solidity test reads over `vm.ffi`; a text search over it
+          # cannot tell a live key from one inside a `#` comment, nor see a key
+          # spelled `address :`, `"address"`, or inside a flow mapping.
           pkgs.yq-go
         ];
 
