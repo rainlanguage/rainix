@@ -1339,8 +1339,8 @@ mod tests {
             }
         }
         // Guard against this test quietly becoming vacuous: the raw substring
-        // nesting it was weakened FROM is real and still in the table, so the
-        // boundary rule is load-bearing rather than decorative.
+        // nesting it was weakened FROM is real and still in the table, so
+        // dropping the boundary rule would make `base_sepolia` match `sepolia`.
         assert!(net("base_sepolia")
             .env_name
             .contains(net("sepolia").env_name));
@@ -1618,8 +1618,8 @@ mod tests {
         // plan", no "quota", no "rate limit" and no "exceeded": strike the
         // "free plan" needle and it falls all the way through to a bare
         // RpcError, which reports a billing wall as an unexplained failure and
-        // fails the network over for no stated reason. That makes this the case
-        // that keeps the needle load-bearing rather than redundant.
+        // fails the network over for no stated reason. That makes this the one
+        // case that fails when the needle is removed.
         assert_eq!(
             classify(30, "Request timeout on the free plan", None),
             Reason::Quota { code: 30 }
