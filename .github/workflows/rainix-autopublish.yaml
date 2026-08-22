@@ -19,7 +19,8 @@ on:
         type: string
         default: patch
       npm-package:
-        description: optional npm package name (e.g. @rainlanguage/float). When set, the workflow also detects/bumps/publishes an npm package alongside the crate(s).
+        description: >-
+          optional npm package name (e.g. @rainlanguage/float). When set, the workflow also detects/bumps/publishes an npm package alongside the crate(s). Publishing authenticates via npm OIDC trusted publishing (the mechanism raindex already uses), NOT a long-lived token, which requires per caller: (1) the caller's job that `uses:` this workflow must grant `permissions: {id-token: write, contents: write}` — a called workflow can only downgrade the caller's token, never elevate it, so this workflow's own permission block is not enough on its own; (2) the package's settings on npmjs.com must carry a GitHub Actions Trusted Publisher entry naming the CALLER's org/repo and the CALLER's workflow FILENAME (npm validates the top-level workflow of the run, not this reusable file); (3) the package.json `repository.url` must match the caller repo — provenance is generated automatically and mismatches 422. Only the FIRST-EVER publish of a package still uses NPM_PUBLISH_PRIVATE_TOKEN, because npmjs.com only lets a Trusted Publisher be configured on a package that already exists.
         required: false
         type: string
         default: ''
@@ -342,13 +343,54 @@ jobs:
           done
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - name: Publish to NPM
-        if: ${{ inputs.npm-package != '' && steps.npm.outputs.changed == 'true' }}
+      # npm publishes authenticate via OIDC trusted publishing — the mechanism
+      # raindex's npm-package-release.yml already publishes
+      # @rainlanguage/orderbook with — replacing the NPM_PUBLISH_PRIVATE_TOKEN
+      # path, which E404s when the token cannot write the package
+      # (rain.math.float.deploy#4). setup-node's registry-url writes the
+      # .npmrc npm's OIDC flow expects; publishing an already-packed tarball
+      # needs no project toolchain, so these steps run outside the nix shells
+      # on purpose (raindex does the same).
+      - name: Setup node for OIDC npm publish
+        if: ${{ inputs.npm-package != '' && steps.npm.outputs.changed == 'true' && steps.npm.outputs.old != 'none' }}
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.x
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm >= 11.5.1 (OIDC token exchange +
+      # automatic provenance); setup-node's bundled npm can lag behind that.
+      - name: Upgrade npm for OIDC
+        if: ${{ inputs.npm-package != '' && steps.npm.outputs.changed == 'true' && steps.npm.outputs.old != 'none' }}
+        run: |
+          npm install -g npm@latest
+          npm --version
+      # Fail fast with an actionable message when the Actions OIDC endpoint is
+      # not reachable. For a reusable workflow the CALLER's job must also grant
+      # `id-token: write` — this job's own permission block can only downgrade
+      # what the caller passed, never elevate it — so a missing caller grant
+      # would otherwise surface as an opaque ENEEDAUTH from npm.
+      - name: Verify OIDC availability
+        if: ${{ inputs.npm-package != '' && steps.npm.outputs.changed == 'true' && steps.npm.outputs.old != 'none' }}
+        run: |
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+            echo "GitHub OIDC token unavailable: the calling workflow's job must grant permissions: {id-token: write, contents: write}" >&2
+            exit 1
+          fi
+      # A package's FIRST-EVER publish cannot use OIDC: npmjs.com only lets a
+      # Trusted Publisher be configured on a package that already exists, so
+      # the seed version publishes with the legacy token (raindex keeps the
+      # same fallback for the same reason). The npm gate's `old` output is the
+      # registry's answer: 'none' means never published.
+      - name: Publish to NPM (first publish)
+        if: ${{ inputs.npm-package != '' && steps.npm.outputs.changed == 'true' && steps.npm.outputs.old == 'none' }}
         uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3
         with:
           token: ${{ secrets.NPM_PUBLISH_PRIVATE_TOKEN }}
           access: public
           package: npm_package_${{ env.NPM_VERSION }}.tgz
+      - name: Publish to NPM
+        if: ${{ inputs.npm-package != '' && steps.npm.outputs.changed == 'true' && steps.npm.outputs.old != 'none' }}
+        run: npm publish "npm_package_$NPM_VERSION.tgz" --access public --tag latest --verbose
       # GitHub Releases. One per crate (loop), plus npm; the soldeer release
       # is created earlier, right after its tag push.
       - name: GitHub Release (cargo)
