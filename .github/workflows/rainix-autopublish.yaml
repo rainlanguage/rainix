@@ -72,6 +72,13 @@ jobs:
     permissions:
       id-token: write
       contents: write
+      # The commit-CI gate below reads this repository's workflow runs. A
+      # caller job with no `permissions:` block of its own needs nothing —
+      # this block narrows the token the caller hands over. A caller job that
+      # DOES set an explicit block on the job that `uses:` this workflow must
+      # include `actions: read` in it, because a called workflow can only
+      # narrow the caller's grant, never widen it.
+      actions: read
     steps:
       # This job needs a deploy-key (ssh-key) checkout, so it runs the shared
       # `checkout` composite itself with the key, then calls the nix+cachix
@@ -221,6 +228,27 @@ jobs:
             rainix-static soldeer-gate \
             --package "$SOLDEER_PACKAGE" \
             --github-output "$GITHUB_OUTPUT"
+      # Publish gate on this commit's own CI (rainlanguage/rainix#326). The
+      # caller's test workflows trigger on the same push as this one and race
+      # it — nothing else orders publish after green — so before anything
+      # bumps, tags, or publishes, wait for every OTHER workflow run on
+      # github.sha (all trigger events, excluding every run of the caller's
+      # own release workflow, which would deadlock against itself) and require
+      # them all to have completed green. This inherits whatever the repo runs
+      # on push — the full rainix-sol/rs matrix, not a re-run subset — at zero
+      # extra compute. A failed/cancelled run, a timeout, or a commit with NO
+      # other CI at all (fail-closed: nothing tested it) each fail the gate
+      # loudly, nothing publishes, and the next push — or a re-run of this job
+      # once the commit's CI is green — retries for free. Gated on the change
+      # outputs so a no-op push short-circuits without waiting. Runs via `nix
+      # run` (no dev shell): the wrapped binary carries its own curl + CA
+      # bundle, so soldeer/npm/cargo callers all pay only the small
+      # rainix-static closure.
+      - name: Gate on commit CI
+        if: ${{ steps.cargo.outputs.changed == 'true' || steps.npm.outputs.changed == 'true' || steps.soldeer.outputs.changed == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nix run github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#rainix-static -- ci-gate
       # Run the test suite only when something is actually going to publish. The
       # change gates above are cheap (cargo package --no-verify + a hash compare,
       # an npm/soldeer version lookup); the full workspace test is the expensive
