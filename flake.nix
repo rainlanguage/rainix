@@ -524,7 +524,10 @@
             # Each manifest (repo root or one level down, e.g. this repo's
             # rainix-static/Cargo.toml) is formatted via --manifest-path, so
             # a crate nested below the repo root is formatted rather than
-            # cargo erroring on the manifest-less root.
+            # cargo erroring on the manifest-less root. `--all` covers the
+            # workspace members: without it a virtual manifest (`[workspace]`
+            # with no `[package]`, e.g. rain.metadata) has no targets of its
+            # own and cargo-fmt exits 1.
             rustfmt-conditional = {
               enable = true;
               name = "rustfmt";
@@ -533,7 +536,7 @@
                 status=0
                 for manifest in Cargo.toml */Cargo.toml; do
                   if [ -f "$manifest" ]; then
-                    cargo-fmt fmt --manifest-path "$manifest" || status=1
+                    cargo-fmt fmt --all --manifest-path "$manifest" || status=1
                   fi
                 done
                 exit "$status"
