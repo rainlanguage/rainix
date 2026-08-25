@@ -2,7 +2,7 @@ name: rainix-copy-artifacts
 on:
   workflow_call:
 env:
-  RAINIX_SHA: 2455992d1a8300447daae66979a50a47cb2b9756
+  RAINIX_SHA: 022c32c614baa2925c1a715aee8b94ae74abbb97
 jobs:
   copy-artifacts:
     runs-on: ubuntu-latest
