@@ -50,7 +50,7 @@ on:
       SOLDEER_API_TOKEN:
         required: false
 env:
-  RAINIX_SHA: c4cf22d9b76600a4ad33b5552f4083f80d9b83de
+  RAINIX_SHA: 64c884b9215f1391549926125de18c3a1b6330b6
 jobs:
   release:
     if: ${{ !startsWith(github.event.head_commit.message, 'Package Release') }}
@@ -72,6 +72,10 @@ jobs:
     permissions:
       id-token: write
       contents: write
+      # The commit-CI gate reads this repository's workflow runs. A caller
+      # job with an explicit `permissions:` block on its `uses:` job must
+      # include `actions: read` there; a caller with no block needs nothing.
+      actions: read
     steps:
       # This job needs a deploy-key (ssh-key) checkout, so it runs the shared
       # `checkout` composite itself with the key, then calls the nix+cachix
@@ -221,6 +225,18 @@ jobs:
             rainix-static soldeer-gate \
             --package "$SOLDEER_PACKAGE" \
             --github-output "$GITHUB_OUTPUT"
+      # Publish gate on this commit's own CI (rainlanguage/rainix#326): the
+      # caller's test workflows race this run on the same push, so nothing
+      # bumps, tags, or publishes until every other workflow run on
+      # github.sha is green (semantics: rainix-static/src/ci_gate.rs). Gated
+      # on the change outputs so a no-op push skips the wait. `nix run`, no
+      # dev shell: the wrapped binary carries its own curl + CA bundle, so
+      # all callers pay only the small rainix-static closure.
+      - name: Gate on commit CI
+        if: ${{ steps.cargo.outputs.changed == 'true' || steps.npm.outputs.changed == 'true' || steps.soldeer.outputs.changed == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nix run github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#rainix-static -- ci-gate
       # Run the test suite only when something is actually going to publish. The
       # change gates above are cheap (cargo package --no-verify + a hash compare,
       # an npm/soldeer version lookup); the full workspace test is the expensive

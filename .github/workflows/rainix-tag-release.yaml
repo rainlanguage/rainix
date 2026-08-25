@@ -124,7 +124,7 @@ on:
       RPC_URL_SEPOLIA_FORK:
         required: false
 env:
-  RAINIX_SHA: c4cf22d9b76600a4ad33b5552f4083f80d9b83de
+  RAINIX_SHA: 64c884b9215f1391549926125de18c3a1b6330b6
 jobs:
   # The release tag must point at a commit already merged to the release branch.
   # `on: push: tags` fires for ANY tag, including one cut from an unmerged branch;

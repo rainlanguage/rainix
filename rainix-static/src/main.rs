@@ -40,6 +40,14 @@
 //       origin/main). Snapshots are frozen once on the base branch; a release
 //       ADDS a new <tag>, never edits an existing one. Needs the base ref
 //       fetched with history (fetch-depth: 0 + `git fetch origin <base>`).
+//   ci-gate [--timeout-secs N] [--poll-secs N] [--grace-secs N]
+//       Publish gate on the gated commit's own CI: exit 0 only when every
+//       other workflow run on GITHUB_SHA is green and the discovery grace
+//       has elapsed; red, no-other-CI past the grace, and the deadline all
+//       fail loudly (semantics: ci_gate.rs module doc). Defaults: timeout
+//       7200, poll 30 (minimum 1), grace 120. Needs GITHUB_REPOSITORY /
+//       GITHUB_SHA / GITHUB_RUN_ID / GITHUB_TOKEN (`actions: read`) and
+//       curl on PATH.
 //   soldeer-gate --package <name> [--github-output <file>]
 //       Soldeer content gate: compare the normalized content of what
 //       `forge soldeer push --dry-run` would upload against the newest published
@@ -73,6 +81,7 @@
 //       where git is on PATH.
 
 mod agent_context_cap;
+mod ci_gate;
 mod context_bytes;
 mod frozen_snapshots;
 mod no_submodules;
@@ -171,6 +180,12 @@ fn main() {
                 }
             }
         }
+        "ci-gate" => {
+            let timeout = num(&args, "--timeout-secs", 7200);
+            let poll = num(&args, "--poll-secs", 30);
+            let grace = num(&args, "--grace-secs", 120);
+            ci_gate::run(u64::from(timeout), u64::from(poll), u64::from(grace));
+        }
         "soldeer-gate" => {
             let pkg = flag(&args, "--package")
                 .unwrap_or_else(|| fail("soldeer-gate: --package <name> required"));
@@ -236,7 +251,8 @@ fn main() {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
                  (available: no-submodules, agent-context-cap, prompt-cap, \
-                 snapshots-append-only, soldeer-gate, rpc-preflight, release-guard)"
+                 snapshots-append-only, ci-gate, soldeer-gate, rpc-preflight, \
+                 release-guard)"
             );
             std::process::exit(2);
         }
