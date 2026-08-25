@@ -234,7 +234,10 @@ jobs:
       # bumps, tags, or publishes, wait for every OTHER workflow run on
       # github.sha (all trigger events, excluding every run of the caller's
       # own release workflow, which would deadlock against itself) and require
-      # them all to have completed green. This inherits whatever the repo runs
+      # them all to have completed green, re-checking any all-green set seen
+      # before the discovery grace elapses (run registration lags the push, so
+      # an early snapshot could miss a late-registering run). This inherits
+      # whatever the repo runs
       # on push — the full rainix-sol/rs matrix, not a re-run subset — at zero
       # extra compute. A failed/cancelled run, a timeout, or a commit with NO
       # other CI at all (fail-closed: nothing tested it) each fail the gate

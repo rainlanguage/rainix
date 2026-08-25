@@ -45,11 +45,14 @@
 //       workflow runs for GITHUB_SHA — every trigger event, excluding every
 //       run of the release workflow this gate runs inside (resolved from
 //       GITHUB_RUN_ID) — and exit 0 only when all of them completed green
-//       (success / skipped / neutral). A failed, cancelled, or timed-out run
-//       fails the gate immediately, naming it; a commit with NO other workflow
-//       runs after --grace-secs (default 120) fails closed — nothing tested
-//       the commit; hitting --timeout-secs (default 7200, polling every
-//       --poll-secs, default 30) fails naming what was still pending. Needs
+//       (success / skipped / neutral) and --grace-secs (default 120) has
+//       elapsed: run registration lags the trigger, so an earlier all-green
+//       snapshot is re-checked until the grace passes. A failed, cancelled,
+//       or timed-out run fails the gate immediately, naming it; a commit with
+//       NO other workflow runs past the same grace fails closed — nothing
+//       tested the commit; hitting --timeout-secs (default 7200, polling
+//       every --poll-secs, default 30, minimum 1) fails naming what was still
+//       pending. Needs
 //       GITHUB_REPOSITORY / GITHUB_SHA / GITHUB_RUN_ID / GITHUB_TOKEN (the
 //       token needs `actions: read`); runs where curl is on PATH.
 //   soldeer-gate --package <name> [--github-output <file>]

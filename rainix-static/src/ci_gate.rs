@@ -7,9 +7,12 @@
 //! every run of the release workflow itself (resolved from `GITHUB_RUN_ID`, so
 //! the gate never waits on itself, its re-run attempts, or a concurrent
 //! dispatch of the same release workflow), and exits 0 only when every other
-//! run on the commit has completed green. A failed, cancelled or timed-out run
-//! is a loud immediate error naming it; a commit with NO other workflow runs
-//! after a grace period is a loud error too (fail-closed: every rainix
+//! run on the commit has completed green and the discovery grace period has
+//! elapsed — run registration lags the triggering event, so an all-green set
+//! observed earlier is re-checked until the grace passes. A failed, cancelled
+//! or timed-out run is a loud immediate error naming it; a commit with NO
+//! other workflow runs after the same grace is a loud error too (fail-closed:
+//! every rainix
 //! consumer runs push-triggered CI, so "nothing else ran" means nothing tested
 //! the commit, not that there was nothing to wait for). Transient API failures
 //! (5xx, rate limits, transport) retry until the deadline; a token that cannot
@@ -215,11 +218,14 @@ fn api_status(status: u16, body: &str, what: &str) -> Result<(), ApiFailure> {
     }
 }
 
-/// curl config lines carrying the auth + protocol headers. The token travels
-/// on curl's stdin via this config, never argv. A token that cannot be quoted
-/// into the config safely (curl's double-quoted values take backslash
-/// escapes) is refused rather than escaped — real GITHUB_TOKENs are plain
-/// ASCII, so anything else is not a token.
+/// curl config lines carrying the auth + protocol headers and per-transfer
+/// bounds (curl has no default `max-time`, so without one a stalled response
+/// would hang the gate past its own deadline; a bounded transfer fails as
+/// transient and retries instead). The token travels on curl's stdin via this
+/// config, never argv. A token that cannot be quoted into the config safely
+/// (curl's double-quoted values take backslash escapes) is refused rather
+/// than escaped — real GITHUB_TOKENs are plain ASCII, so anything else is not
+/// a token.
 fn curl_config(token: &str) -> Result<String, String> {
     if token.is_empty() {
         return Err("GITHUB_TOKEN is empty".to_string());
@@ -238,8 +244,29 @@ fn curl_config(token: &str) -> Result<String, String> {
         "header = \"Authorization: Bearer {token}\"\n\
          header = \"Accept: application/vnd.github+json\"\n\
          header = \"X-GitHub-Api-Version: 2022-11-28\"\n\
-         header = \"User-Agent: rainix-autopublish (+https://github.com/rainlanguage/rainix)\"\n"
+         header = \"User-Agent: rainix-autopublish (+https://github.com/rainlanguage/rainix)\"\n\
+         connect-timeout = 30\n\
+         max-time = 120\n"
     ))
+}
+
+/// Whether the discovery grace period is still running. Run registration lags
+/// the triggering event, so early snapshots are untrustworthy in both
+/// directions: "no other runs" may mean runs have not registered yet, and an
+/// all-green set may still be missing late-registering runs. At exactly the
+/// grace boundary the period is over.
+fn within_grace(elapsed: Duration, grace: Duration) -> bool {
+    elapsed < grace
+}
+
+/// A zero poll interval turns every retry/wait into a busy loop against the
+/// API; refuse it.
+fn validate_poll_secs(secs: u64) -> Result<(), String> {
+    if secs == 0 {
+        Err("--poll-secs must be at least 1".to_string())
+    } else {
+        Ok(())
+    }
 }
 
 /// `owner/repo`, both segments limited to GitHub's name alphabet — anything
@@ -358,9 +385,10 @@ fn list_runs(api: &str, repo: &str, sha: &str, token: &str) -> Result<Vec<Run>, 
     }
 }
 
-/// Run the gate: poll until every other run on GITHUB_SHA is green (exit 0),
-/// any is red (loud failure), no other CI exists past the grace period (loud,
-/// fail-closed), or the deadline passes (loud, naming what was still pending).
+/// Run the gate: poll until every other run on GITHUB_SHA is green with the
+/// discovery grace elapsed (exit 0), any is red (loud failure), no other CI
+/// exists past the grace period (loud, fail-closed), or the deadline passes
+/// (loud, naming what was still pending).
 pub(crate) fn run(timeout_secs: u64, poll_secs: u64, grace_secs: u64) {
     let env = |k: &str| {
         std::env::var(k)
@@ -379,6 +407,7 @@ pub(crate) fn run(timeout_secs: u64, poll_secs: u64, grace_secs: u64) {
     validate_repo(&repo).unwrap_or_else(|e| fail(&format!("ci-gate: {e}")));
     validate_sha(&sha).unwrap_or_else(|e| fail(&format!("ci-gate: {e}")));
     validate_run_id(&run_id).unwrap_or_else(|e| fail(&format!("ci-gate: {e}")));
+    validate_poll_secs(poll_secs).unwrap_or_else(|e| fail(&format!("ci-gate: {e}")));
 
     let start = Instant::now();
     let deadline = Duration::from_secs(timeout_secs);
@@ -414,8 +443,17 @@ pub(crate) fn run(timeout_secs: u64, poll_secs: u64, grace_secs: u64) {
             Ok(runs) => match verdict(&runs, own_workflow_id) {
                 Err(m) => fail(&format!("ci-gate: {m}")),
                 Ok(Verdict::Pass { green }) => {
-                    println!("ci-gate: all {green} other workflow run(s) on {sha} completed green");
-                    return;
+                    if !within_grace(start.elapsed(), grace) {
+                        println!(
+                            "ci-gate: all {green} other workflow run(s) on {sha} completed green"
+                        );
+                        return;
+                    }
+                    eprintln!(
+                        "ci-gate: all {green} observed run(s) on {sha} are green, but still \
+                         within the {grace_secs}s grace period for late-registering runs; \
+                         re-checking"
+                    );
                 }
                 Ok(Verdict::Red(msgs)) => fail(&format!(
                     "ci-gate: refusing to publish {sha} — {} workflow run(s) on this \
@@ -432,7 +470,7 @@ pub(crate) fn run(timeout_secs: u64, poll_secs: u64, grace_secs: u64) {
                     last_wait = pending;
                 }
                 Ok(Verdict::NoOtherCi) => {
-                    if start.elapsed() >= grace {
+                    if !within_grace(start.elapsed(), grace) {
                         fail(&format!(
                             "ci-gate: no workflow run besides this release workflow exists \
                              for {sha} after {grace_secs}s — refusing to publish a commit \
@@ -753,6 +791,29 @@ mod tests {
         assert!(curl_config("has\\slash").is_err());
         assert!(curl_config("has\nnewline").is_err());
         assert!(curl_config("hàs-utf8").is_err());
+    }
+
+    #[test]
+    fn curl_config_bounds_each_transfer() {
+        let cfg = curl_config("ghs_abc123").unwrap();
+        assert!(cfg.contains("connect-timeout = 30\n"), "{cfg}");
+        assert!(cfg.contains("max-time = 120\n"), "{cfg}");
+    }
+
+    #[test]
+    fn grace_defers_early_snapshots_and_ends_exactly_on_time() {
+        assert!(within_grace(Duration::from_secs(0), Duration::from_secs(120)));
+        assert!(within_grace(Duration::from_secs(119), Duration::from_secs(120)));
+        assert!(!within_grace(Duration::from_secs(120), Duration::from_secs(120)));
+        assert!(!within_grace(Duration::from_secs(121), Duration::from_secs(120)));
+        assert!(!within_grace(Duration::from_secs(0), Duration::from_secs(0)));
+    }
+
+    #[test]
+    fn zero_poll_interval_is_refused() {
+        assert!(validate_poll_secs(0).is_err());
+        assert!(validate_poll_secs(1).is_ok());
+        assert!(validate_poll_secs(30).is_ok());
     }
 
     #[test]
