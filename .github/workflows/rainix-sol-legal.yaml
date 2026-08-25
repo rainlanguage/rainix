@@ -2,7 +2,7 @@ name: rainix-sol-legal
 on:
   workflow_call:
 env:
-  RAINIX_SHA: c4cf22d9b76600a4ad33b5552f4083f80d9b83de
+  RAINIX_SHA: 2455992d1a8300447daae66979a50a47cb2b9756
 jobs:
   legal:
     runs-on: ubuntu-latest
