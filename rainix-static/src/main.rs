@@ -41,20 +41,13 @@
 //       ADDS a new <tag>, never edits an existing one. Needs the base ref
 //       fetched with history (fetch-depth: 0 + `git fetch origin <base>`).
 //   ci-gate [--timeout-secs N] [--poll-secs N] [--grace-secs N]
-//       Publish gate on the gated commit's own CI: poll the repository's
-//       workflow runs for GITHUB_SHA — every trigger event, excluding every
-//       run of the release workflow this gate runs inside (resolved from
-//       GITHUB_RUN_ID) — and exit 0 only when all of them completed green
-//       (success / skipped / neutral) and --grace-secs (default 120) has
-//       elapsed: run registration lags the trigger, so an earlier all-green
-//       snapshot is re-checked until the grace passes. A failed, cancelled,
-//       or timed-out run fails the gate immediately, naming it; a commit with
-//       NO other workflow runs past the same grace fails closed — nothing
-//       tested the commit; hitting --timeout-secs (default 7200, polling
-//       every --poll-secs, default 30, minimum 1) fails naming what was still
-//       pending. Needs
-//       GITHUB_REPOSITORY / GITHUB_SHA / GITHUB_RUN_ID / GITHUB_TOKEN (the
-//       token needs `actions: read`); runs where curl is on PATH.
+//       Publish gate on the gated commit's own CI: exit 0 only when every
+//       other workflow run on GITHUB_SHA is green and the discovery grace
+//       has elapsed; red, no-other-CI past the grace, and the deadline all
+//       fail loudly (semantics: ci_gate.rs module doc). Defaults: timeout
+//       7200, poll 30 (minimum 1), grace 120. Needs GITHUB_REPOSITORY /
+//       GITHUB_SHA / GITHUB_RUN_ID / GITHUB_TOKEN (`actions: read`) and
+//       curl on PATH.
 //   soldeer-gate --package <name> [--github-output <file>]
 //       Soldeer content gate: compare the normalized content of what
 //       `forge soldeer push --dry-run` would upload against the newest published

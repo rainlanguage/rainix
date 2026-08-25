@@ -12,9 +12,9 @@
 //! observed earlier is re-checked until the grace passes. A failed, cancelled
 //! or timed-out run is a loud immediate error naming it; a commit with NO
 //! other workflow runs after the same grace is a loud error too (fail-closed:
-//! every rainix
-//! consumer runs push-triggered CI, so "nothing else ran" means nothing tested
-//! the commit, not that there was nothing to wait for). Transient API failures
+//! every rainix consumer runs push-triggered CI, so "nothing else ran" means
+//! nothing tested the commit, not that there was nothing to wait for).
+//! Transient API failures
 //! (5xx, rate limits, transport) retry until the deadline; a token that cannot
 //! read Actions runs is a fatal error naming the `actions: read` grant the
 //! caller must carry.
@@ -73,18 +73,14 @@ fn classify(status: &str, conclusion: Option<&str>) -> Result<RunState, String> 
     }
 }
 
-/// The gate's decision over one snapshot of the commit's runs.
+/// The gate's reading of one snapshot of the commit's runs. Red wins over
+/// pending: one failed run already forbids the publish, so the gate does not
+/// wait for the rest.
 #[derive(Debug, PartialEq)]
 enum Verdict {
-    /// Every other-workflow run on the commit completed green.
     Pass { green: usize },
-    /// At least one completed red — the strings name them. Red wins over
-    /// pending: one failed run already forbids the publish, so the gate does
-    /// not wait for the rest.
     Red(Vec<String>),
-    /// Still waiting on these runs.
     Wait(Vec<String>),
-    /// No runs besides the release workflow's own exist (yet).
     NoOtherCi,
 }
 
@@ -250,40 +246,27 @@ fn curl_config(token: &str) -> Result<String, String> {
     ))
 }
 
-/// Whether the discovery grace period is still running. Run registration lags
-/// the triggering event, so early snapshots are untrustworthy in both
-/// directions: "no other runs" may mean runs have not registered yet, and an
-/// all-green set may still be missing late-registering runs. At exactly the
-/// grace boundary the period is over.
+/// Whether the discovery grace period is still running. At exactly the grace
+/// boundary the period is over.
 fn within_grace(elapsed: Duration, grace: Duration) -> bool {
     elapsed < grace
 }
 
-/// What the poll loop does with one snapshot's verdict. The discovery grace
-/// applies to the two verdicts an early snapshot can misreport — an all-green
-/// set may be missing late-registering runs, and an empty set may only mean
-/// registration lag — so both defer until the grace has elapsed. Red and
-/// pending need no grace: a failed run forbids the publish whenever it is
-/// seen, and a pending run is waited on regardless of elapsed time.
+/// What the poll loop does with one snapshot's verdict. Pass and NoOtherCi
+/// are the two verdicts registration lag can misreport, so both defer within
+/// the discovery grace; red fails and pending waits regardless of elapsed
+/// time.
 #[derive(Debug, PartialEq)]
 enum Decision {
-    /// Exit 0: every other run on the commit is green and the grace elapsed.
     Publish { green: usize },
-    /// Every observed run is green but the grace is still running; a
-    /// late-registering run could change the verdict, so re-check.
     DeferGreen { green: usize },
-    /// Fail now, naming the red runs.
     FailRed(Vec<String>),
-    /// Keep polling; these runs are still pending.
     KeepWaiting(Vec<String>),
-    /// No other CI observed yet, but runs may not have registered; re-check.
     DeferNoOtherCi,
-    /// Fail closed: nothing else ran on the commit and the grace elapsed.
     FailNoOtherCi,
 }
 
-/// Resolve one snapshot's verdict against the discovery grace: the poll
-/// loop's per-snapshot decision, minus its side effects.
+/// Resolve one snapshot's verdict against the discovery grace.
 fn decide(verdict: Verdict, elapsed: Duration, grace: Duration) -> Decision {
     match verdict {
         Verdict::Pass { green } => {
@@ -431,10 +414,8 @@ fn list_runs(api: &str, repo: &str, sha: &str, token: &str) -> Result<Vec<Run>, 
     }
 }
 
-/// Run the gate: poll until every other run on GITHUB_SHA is green with the
-/// discovery grace elapsed (exit 0), any is red (loud failure), no other CI
-/// exists past the grace period (loud, fail-closed), or the deadline passes
-/// (loud, naming what was still pending).
+/// Poll GITHUB_SHA's runs to a `Decision`, or fail loudly at the deadline
+/// naming what was still pending.
 pub(crate) fn run(timeout_secs: u64, poll_secs: u64, grace_secs: u64) {
     let env = |k: &str| {
         std::env::var(k)
@@ -646,8 +627,6 @@ mod tests {
 
     #[test]
     fn verdict_red_wins_over_pending() {
-        // One red already forbids the publish; the gate must not keep waiting
-        // on the rest first.
         let runs = vec![
             run_with(1, "completed", Some("cancelled")),
             run_with(2, "in_progress", None),
@@ -866,8 +845,6 @@ mod tests {
         ));
     }
 
-    /// One poll-loop snapshot, as the loop resolves it: verdict over the
-    /// observed runs, then the grace-aware decision.
     fn snapshot(runs: &[Run], own: u64, elapsed_secs: u64, grace_secs: u64) -> Decision {
         decide(
             verdict(runs, own).unwrap(),
@@ -878,15 +855,13 @@ mod tests {
 
     #[test]
     fn sequence_late_registering_failure_within_grace_fails() {
-        // t=10s: only the fast workflow has registered, already green. The
-        // grace defers the pass — this snapshot must NOT publish.
+        // t=10s: only one run has registered yet, green.
         let first = vec![run_with(1, "completed", Some("success"))];
         assert_eq!(
             snapshot(&first, 9, 10, 120),
             Decision::DeferGreen { green: 1 }
         );
-        // t=40s: a late-registering run appears, already failed. The deferral
-        // is exactly what lets the gate see it; the failure names the run.
+        // t=40s: a late-registering run arrives already failed.
         let second = vec![
             run_with(1, "completed", Some("success")),
             run_with(2, "completed", Some("failure")),
@@ -902,13 +877,13 @@ mod tests {
 
     #[test]
     fn sequence_late_pending_run_defers_pass_until_it_resolves() {
-        // t=10s: all observed runs green, within grace — defer.
+        // t=10s: only one run has registered yet, green.
         let first = vec![run_with(1, "completed", Some("success"))];
         assert_eq!(
             snapshot(&first, 9, 10, 120),
             Decision::DeferGreen { green: 1 }
         );
-        // t=40s: a late-registering run is still in progress — wait on it.
+        // t=40s: a late-registering run arrives, still in progress.
         let second = vec![
             run_with(1, "completed", Some("success")),
             run_with(2, "in_progress", None),
@@ -917,13 +892,12 @@ mod tests {
             snapshot(&second, 9, 40, 120),
             Decision::KeepWaiting(_)
         ));
-        // t=200s: grace long over, but the run is STILL pending — expiry of
-        // the grace never converts a pending run into a pass.
+        // t=200s: grace over; the pending run still blocks.
         assert!(matches!(
             snapshot(&second, 9, 200, 120),
             Decision::KeepWaiting(_)
         ));
-        // t=230s: the pending run resolves green — only now does it publish.
+        // t=230s: it resolves green.
         let resolved = vec![
             run_with(1, "completed", Some("success")),
             run_with(2, "completed", Some("success")),
@@ -940,7 +914,6 @@ mod tests {
             run_with(1, "completed", Some("success")),
             run_with(2, "completed", Some("skipped")),
         ];
-        // Green snapshots inside the grace defer, including just before it.
         assert_eq!(
             snapshot(&runs, 9, 0, 120),
             Decision::DeferGreen { green: 2 }
@@ -949,14 +922,12 @@ mod tests {
             snapshot(&runs, 9, 119, 120),
             Decision::DeferGreen { green: 2 }
         );
-        // At the boundary the grace is over: no late arrivals came, publish.
         assert_eq!(snapshot(&runs, 9, 120, 120), Decision::Publish { green: 2 });
     }
 
     #[test]
     fn sequence_no_other_ci_defers_within_grace_then_fails_closed() {
-        // Only the release workflow's own run exists. Within grace this may
-        // be registration lag — re-check; past it, fail closed.
+        // The release workflow's own run (workflow id 9) is the only one.
         let only_own = vec![run_with(9, "in_progress", None)];
         assert_eq!(snapshot(&only_own, 9, 10, 120), Decision::DeferNoOtherCi);
         assert_eq!(snapshot(&only_own, 9, 120, 120), Decision::FailNoOtherCi);

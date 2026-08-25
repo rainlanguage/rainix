@@ -72,12 +72,9 @@ jobs:
     permissions:
       id-token: write
       contents: write
-      # The commit-CI gate below reads this repository's workflow runs. A
-      # caller job with no `permissions:` block of its own needs nothing —
-      # this block narrows the token the caller hands over. A caller job that
-      # DOES set an explicit block on the job that `uses:` this workflow must
-      # include `actions: read` in it, because a called workflow can only
-      # narrow the caller's grant, never widen it.
+      # The commit-CI gate reads this repository's workflow runs. A caller
+      # job with an explicit `permissions:` block on its `uses:` job must
+      # include `actions: read` there; a caller with no block needs nothing.
       actions: read
     steps:
       # This job needs a deploy-key (ssh-key) checkout, so it runs the shared
@@ -228,25 +225,13 @@ jobs:
             rainix-static soldeer-gate \
             --package "$SOLDEER_PACKAGE" \
             --github-output "$GITHUB_OUTPUT"
-      # Publish gate on this commit's own CI (rainlanguage/rainix#326). The
-      # caller's test workflows trigger on the same push as this one and race
-      # it — nothing else orders publish after green — so before anything
-      # bumps, tags, or publishes, wait for every OTHER workflow run on
-      # github.sha (all trigger events, excluding every run of the caller's
-      # own release workflow, which would deadlock against itself) and require
-      # them all to have completed green, re-checking any all-green set seen
-      # before the discovery grace elapses (run registration lags the push, so
-      # an early snapshot could miss a late-registering run). This inherits
-      # whatever the repo runs
-      # on push — the full rainix-sol/rs matrix, not a re-run subset — at zero
-      # extra compute. A failed/cancelled run, a timeout, or a commit with NO
-      # other CI at all (fail-closed: nothing tested it) each fail the gate
-      # loudly, nothing publishes, and the next push — or a re-run of this job
-      # once the commit's CI is green — retries for free. Gated on the change
-      # outputs so a no-op push short-circuits without waiting. Runs via `nix
-      # run` (no dev shell): the wrapped binary carries its own curl + CA
-      # bundle, so soldeer/npm/cargo callers all pay only the small
-      # rainix-static closure.
+      # Publish gate on this commit's own CI (rainlanguage/rainix#326): the
+      # caller's test workflows race this run on the same push, so nothing
+      # bumps, tags, or publishes until every other workflow run on
+      # github.sha is green (semantics: rainix-static/src/ci_gate.rs). Gated
+      # on the change outputs so a no-op push skips the wait. `nix run`, no
+      # dev shell: the wrapped binary carries its own curl + CA bundle, so
+      # all callers pay only the small rainix-static closure.
       - name: Gate on commit CI
         if: ${{ steps.cargo.outputs.changed == 'true' || steps.npm.outputs.changed == 'true' || steps.soldeer.outputs.changed == 'true' }}
         env:
