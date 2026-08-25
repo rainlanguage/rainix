@@ -521,14 +521,22 @@
             # (instead of nix-store interpolation) keeps rust-toolchain out
             # of the hook's nix closure, so consumers of sol-shell — which
             # have no rust to format — do not pull the rust toolchain in.
+            # Each manifest (repo root or one level down, e.g. this repo's
+            # rainix-static/Cargo.toml) is formatted via --manifest-path, so
+            # a crate nested below the repo root is formatted rather than
+            # cargo erroring on the manifest-less root.
             rustfmt-conditional = {
               enable = true;
               name = "rustfmt";
               entry = "${pkgs.writeShellScript "rustfmt-conditional" ''
                 command -v cargo-fmt >/dev/null 2>&1 || exit 0
-                if [ -f Cargo.toml ] || [ -f */Cargo.toml ]; then
-                  exec cargo-fmt fmt
-                fi
+                status=0
+                for manifest in Cargo.toml */Cargo.toml; do
+                  if [ -f "$manifest" ]; then
+                    cargo-fmt fmt --manifest-path "$manifest" || status=1
+                  fi
+                done
+                exit "$status"
               ''}";
               files = "\\.rs$";
               pass_filenames = false;
