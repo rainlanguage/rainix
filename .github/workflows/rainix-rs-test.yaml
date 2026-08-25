@@ -2,7 +2,7 @@ name: rainix-rs-test
 on:
   workflow_call:
 env:
-  RAINIX_SHA: 64c884b9215f1391549926125de18c3a1b6330b6
+  RAINIX_SHA: dbcd9d3cf55da4c40e42519b320cea8bdcd9a193
 jobs:
   rs-test:
     strategy:
