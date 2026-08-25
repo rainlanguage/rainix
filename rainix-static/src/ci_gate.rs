@@ -802,11 +802,26 @@ mod tests {
 
     #[test]
     fn grace_defers_early_snapshots_and_ends_exactly_on_time() {
-        assert!(within_grace(Duration::from_secs(0), Duration::from_secs(120)));
-        assert!(within_grace(Duration::from_secs(119), Duration::from_secs(120)));
-        assert!(!within_grace(Duration::from_secs(120), Duration::from_secs(120)));
-        assert!(!within_grace(Duration::from_secs(121), Duration::from_secs(120)));
-        assert!(!within_grace(Duration::from_secs(0), Duration::from_secs(0)));
+        assert!(within_grace(
+            Duration::from_secs(0),
+            Duration::from_secs(120)
+        ));
+        assert!(within_grace(
+            Duration::from_secs(119),
+            Duration::from_secs(120)
+        ));
+        assert!(!within_grace(
+            Duration::from_secs(120),
+            Duration::from_secs(120)
+        ));
+        assert!(!within_grace(
+            Duration::from_secs(121),
+            Duration::from_secs(120)
+        ));
+        assert!(!within_grace(
+            Duration::from_secs(0),
+            Duration::from_secs(0)
+        ));
     }
 
     #[test]
