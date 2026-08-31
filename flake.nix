@@ -446,9 +446,10 @@
           additionalBuildInputs = node-build-inputs;
         };
 
-        # Check-only Goldsky version budget across networks.json (for cron / manual).
-        # Does not deploy or delete — fails if any network has >2 versions or a
-        # 2-version migration older than GOLDSKY_MIGRATION_HOURS (default 24).
+        # Enforce Goldsky version budget across networks.json (for cron / manual).
+        # Deletes excess / expired migration versions (same reclaim path as deploy),
+        # then fails on remaining cap violations and on account-level orphan names
+        # outside the networks.json allowlist.
         subgraph-goldsky-version-cap = mkTask {
           name = "subgraph-goldsky-version-cap";
           body = ''
@@ -456,15 +457,27 @@
             source ${./lib/subgraph.sh}
 
             failed=0
+            allowlist="$(mktemp)"
+            trap 'rm -f "$allowlist"' EXIT
+
             for network in $(subgraph_networks ./subgraph/networks.json); do
               subgraph_name="''${GOLDSKY_SUBGRAPH_NAME}-$network"
+              printf '%s\n' "$subgraph_name" >>"$allowlist"
               echo "::group::''${subgraph_name}"
               if ! GOLDSKY_BIN=${goldsky}/bin/goldsky \
-                subgraph_goldsky_enforce_version_cap "$subgraph_name" --check-only; then
+                subgraph_goldsky_enforce_version_cap "$subgraph_name"; then
                 failed=1
               fi
               echo "::endgroup::"
             done
+
+            echo "::group::orphan-audit"
+            if ! GOLDSKY_BIN=${goldsky}/bin/goldsky \
+              subgraph_goldsky_audit_orphans "$allowlist"; then
+              failed=1
+            fi
+            echo "::endgroup::"
+
             exit "$failed"
           '';
           additionalBuildInputs = node-build-inputs;

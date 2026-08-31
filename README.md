@@ -68,10 +68,11 @@ Available on `subgraph-shell` / default shell (requires `GOLDSKY_TOKEN` and
 
 - `subgraph-deploy` — build + deploy each `networks.json` entry, then enforce a
   hard cap of **2** always-on Goldsky versions per chain (deletes older
-  versions; fails if a 2-version migration is older than
-  `GOLDSKY_MIGRATION_HOURS`, default 24)
-- `subgraph-goldsky-version-cap` — check-only version-cap / 24h migration audit
-  across `networks.json` (for cron or manual runs; does not delete)
+  versions; reclaims a 2-version migration older than `GOLDSKY_MIGRATION_HOURS`,
+  default 24)
+- `subgraph-goldsky-version-cap` — same reclaim enforcement across
+  `networks.json` (for cron/manual), plus an account-level orphan audit against
+  the networks allowlist
 
 ### Reusable Outputs
 
