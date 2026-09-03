@@ -218,7 +218,17 @@
           pname = "rainix-static";
           version = "0.1.0";
           src = ./rainix-static;
-          cargoLock.lockFile = ./rainix-static/Cargo.lock;
+          # Vendored through fetchCargoVendor rather than cargoLock: cargoLock
+          # fetches each crate from crates.io/api, which now answers 403 to the
+          # curl User-Agent nix sends, so any store miss fails the build (the
+          # same gate the `cargo-release` override above already works around).
+          # fetchCargoVendor pulls from the static.crates.io CDN.
+          cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
+            src = ./rainix-static;
+            pname = "rainix-static";
+            version = "0.1.0";
+            hash = "sha256-2ZCPiTO11UhhWUAhn3C433VrLfOB+Dlld/B4wh14DXY=";
+          };
           nativeCheckInputs = [ pkgs.git ];
           nativeBuildInputs = [ pkgs.makeWrapper ];
           # The subcommands shell out to git (`ls-files`, `diff`) and curl
