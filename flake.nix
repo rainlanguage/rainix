@@ -434,7 +434,8 @@
             for network in $(subgraph_networks ./subgraph/networks.json); do
               address=$(subgraph_network_address ./subgraph/networks.json "$network")
               version=$(subgraph_deploy_version "$address" "$commit")
-              name_and_version="''${GOLDSKY_SUBGRAPH_NAME}-$network/$version"
+              subgraph_name="''${GOLDSKY_SUBGRAPH_NAME}-$network"
+              name_and_version="$subgraph_name/$version"
 
               if ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph list "$name_and_version" 2>/dev/null | grep -q "$name_and_version"; then
                 echo "Subgraph $name_and_version already deployed, skipping."
@@ -444,7 +445,50 @@
                 echo "Deploying subgraph $name_and_version..."
                 (cd ./subgraph && ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph deploy "$name_and_version")
               fi
+
+              # RAI-1962: keep at most 2 always-on versions per chain subgraph.
+              # Deletes older versions, then fails if the cap is still exceeded or
+              # a 2-version migration has been live for >24h.
+              GOLDSKY_BIN=${goldsky}/bin/goldsky \
+                subgraph_goldsky_enforce_version_cap "$subgraph_name" --keep "$version"
             done
+          '';
+          additionalBuildInputs = node-build-inputs;
+        };
+
+        # Enforce Goldsky version budget across networks.json (for cron / manual).
+        # Deletes excess / expired migration versions (same reclaim path as deploy),
+        # then fails on remaining cap violations and on account-level orphan names
+        # outside the networks.json allowlist.
+        subgraph-goldsky-version-cap = mkTask {
+          name = "subgraph-goldsky-version-cap";
+          body = ''
+            set -euo pipefail
+            source ${./lib/subgraph.sh}
+
+            failed=0
+            allowlist="$(mktemp)"
+            trap 'rm -f "$allowlist"' EXIT
+
+            for network in $(subgraph_networks ./subgraph/networks.json); do
+              subgraph_name="''${GOLDSKY_SUBGRAPH_NAME}-$network"
+              printf '%s\n' "$subgraph_name" >>"$allowlist"
+              echo "::group::''${subgraph_name}"
+              if ! GOLDSKY_BIN=${goldsky}/bin/goldsky \
+                subgraph_goldsky_enforce_version_cap "$subgraph_name"; then
+                failed=1
+              fi
+              echo "::endgroup::"
+            done
+
+            echo "::group::orphan-audit"
+            if ! GOLDSKY_BIN=${goldsky}/bin/goldsky \
+              subgraph_goldsky_audit_orphans "$allowlist"; then
+              failed=1
+            fi
+            echo "::endgroup::"
+
+            exit "$failed"
           '';
           additionalBuildInputs = node-build-inputs;
         };
@@ -453,6 +497,7 @@
           subgraph-build
           subgraph-test
           subgraph-deploy
+          subgraph-goldsky-version-cap
         ];
 
         source-dotenv = ''
@@ -476,6 +521,7 @@
             bats test/bats/task/skip-simulation.test.bats
             bats test/bats/task/subgraph-build.test.bats
             bats test/bats/task/subgraph-deploy-version.test.bats
+            bats test/bats/task/subgraph-goldsky-version-cap.test.bats
             bats test/bats/task/sol-single-contract.test.bats
             bats test/bats/task/no-custom-natspec.test.bats
           '';
