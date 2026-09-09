@@ -84,6 +84,8 @@ on:
         required: false
       CI_DEPLOY_HYPEREVM_ETHERSCAN_API_KEY:
         required: false
+      CI_DEPLOY_ROBINHOOD_ETHERSCAN_API_KEY:
+        required: false
       CI_DEPLOY_FLARE_ETHERSCAN_API_KEY:
         required: false
 env:
@@ -162,4 +164,8 @@ jobs:
           CI_DEPLOY_ETHEREUM_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_ETHEREUM_ETHERSCAN_API_KEY || vars.CI_DEPLOY_ETHEREUM_ETHERSCAN_API_KEY || '' }}
           CI_DEPLOY_POLYGON_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_POLYGON_ETHERSCAN_API_KEY || vars.CI_DEPLOY_POLYGON_ETHERSCAN_API_KEY || '' }}
           CI_DEPLOY_HYPEREVM_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_HYPEREVM_ETHERSCAN_API_KEY || vars.CI_DEPLOY_HYPEREVM_ETHERSCAN_API_KEY || '' }}
+          # Robinhood Chain (4663) verifies against its Blockscout, which speaks the
+          # Etherscan API but ignores the key; exported so a consumer's `[etherscan]`
+          # entry for it never resolves to an unset variable.
+          CI_DEPLOY_ROBINHOOD_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_ROBINHOOD_ETHERSCAN_API_KEY || vars.CI_DEPLOY_ROBINHOOD_ETHERSCAN_API_KEY || '' }}
           CI_DEPLOY_FLARE_ETHERSCAN_API_KEY: ${{ secrets.CI_DEPLOY_FLARE_ETHERSCAN_API_KEY || vars.CI_DEPLOY_FLARE_ETHERSCAN_API_KEY || '' }}
