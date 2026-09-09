@@ -119,7 +119,7 @@ jobs:
 `secrets: inherit` is required because the reusable wires the standard fork RPC
 env vars (`ARBITRUM_RPC_URL`, `BASE_RPC_URL`, `BASE_SEPOLIA_RPC_URL`,
 `ETHEREUM_RPC_URL`, `FLARE_RPC_URL`, `HYPEREVM_RPC_URL`, `POLYGON_RPC_URL`,
-`SEPOLIA_RPC_URL`, `CI_DEPLOY_SEPOLIA_RPC_URL`) plus `ETHERSCAN_API_KEY` and
+`ROBINHOOD_RPC_URL`, `SEPOLIA_RPC_URL`, `CI_DEPLOY_SEPOLIA_RPC_URL`) plus `ETHERSCAN_API_KEY` and
 `DEPLOYMENT_KEY` from the consumer org's secrets/vars. Repos that do no fork
 tests can ignore — empty values are harmless.
 
@@ -278,9 +278,9 @@ any repo in the org pins for that network, three times consecutively. An
 suite with `trying to fork from an older block with a non-archive node`; a
 code-only check would select a host that answers no `eth_call` at all; and a
 single sample would qualify a load balancer that round-robins over a mix of
-archive and pruning backends. Ethereum and HyperEVM are latest-only in every
-consumer, so they are not held to the archive bar, and neither are
-deploy/broadcast paths.
+archive and pruning backends. Ethereum, HyperEVM and Robinhood Chain are
+latest-only in every consumer, so they are not held to the archive bar, and
+neither are deploy/broadcast paths.
 
 **Health also covers load, not just correctness.** Chain id, historical state
 and historical `eth_call` are all correctness questions, and an endpoint that is
