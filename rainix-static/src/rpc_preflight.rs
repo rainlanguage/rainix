@@ -373,6 +373,26 @@ pub(crate) const NETWORKS: &[Network] = &[
             "https://robinhood-rpc.publicnode.com",
         ],
     },
+    Network {
+        key: "bsc",
+        env_name: "BSC_RPC_URL",
+        secret_name: "RPC_URL_BSC_FORK",
+        chain_id: 56,
+        // Latest-only in every consumer today (st0x.deploy forks it at head
+        // for its prod-state and cross-chain parity pins).
+        archive_blocks: &[],
+        probe_contract: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c", // WBNB
+        // Measured 2026-09-10, same method as the rest of the table: 5/5 on
+        // the sequential probe, then a 16-way burst, from one non-CI host.
+        // publicnode and the Binance dataseed each went 5/5 and 16/16.
+        // Rejected the same day: bsc.drpc.org 4/5 then 6/16; 56.rpc.thirdweb.com
+        // 5/5 then 0/16 (burst-throttled); binance.llamarpc.com and
+        // bsc.gateway.tenderly.co refused the light probe outright.
+        defaults: &[
+            "https://bsc-rpc.publicnode.com",
+            "https://bsc-dataseed.binance.org",
+        ],
+    },
 ];
 
 /// Split a secret/variable value into candidate URLs.
