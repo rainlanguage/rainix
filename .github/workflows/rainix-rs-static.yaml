@@ -2,7 +2,7 @@ name: rainix-rs-static
 on:
   workflow_call:
 env:
-  RAINIX_SHA: b4e4607ae8889581fd15ebe9d407480e4144c37a
+  RAINIX_SHA: 8657b83b68f41957ab85da91132c3f652c1f32c0
 jobs:
   rs-static:
     runs-on: ubuntu-latest
