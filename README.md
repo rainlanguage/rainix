@@ -279,9 +279,9 @@ any repo in the org pins for that network, three times consecutively. An
 suite with `trying to fork from an older block with a non-archive node`; a
 code-only check would select a host that answers no `eth_call` at all; and a
 single sample would qualify a load balancer that round-robins over a mix of
-archive and pruning backends. Ethereum, HyperEVM, Robinhood Chain and BNB
-Smart Chain are latest-only in every consumer, so they are not held to the
-archive bar, and neither are deploy/broadcast paths.
+archive and pruning backends. Ethereum, HyperEVM, Robinhood Chain and BNB Smart
+Chain are latest-only in every consumer, so they are not held to the archive
+bar, and neither are deploy/broadcast paths.
 
 **Health also covers load, not just correctness.** Chain id, historical state
 and historical `eth_call` are all correctness questions, and an endpoint that is
