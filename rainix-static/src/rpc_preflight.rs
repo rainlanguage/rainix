@@ -349,6 +349,30 @@ pub(crate) const NETWORKS: &[Network] = &[
             "https://hyperliquid.drpc.org",
         ],
     },
+    Network {
+        key: "robinhood",
+        env_name: "ROBINHOOD_RPC_URL",
+        secret_name: "RPC_URL_ROBINHOOD_FORK",
+        chain_id: 4663,
+        // Robinhood Chain is an Arbitrum Orbit L2 settling to Ethereum.
+        // Latest-only in every consumer today (st0x.deploy forks it at head
+        // for its prod-state and cross-chain parity pins); add the deepest
+        // pin here the moment a consumer forks it at a block.
+        archive_blocks: &[],
+        probe_contract: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73", // L2 WETH
+        // Measured 2026-09-09, same method as the rest of the table: 5/5 on
+        // the sequential probe, then a 16-way burst, from one non-CI host.
+        // The official public endpoint (rate-limited per the chain docs),
+        // tenderly and publicnode each went 5/5 and 16/16. Rejected the same
+        // day: robinhood.drpc.org answers `eth_chainId` and then refuses
+        // every `eth_call` (0/5) behind its plan gate; 4663.rpc.thirdweb.com
+        // reports `-32001 Invalid chain`.
+        defaults: &[
+            "https://rpc.mainnet.chain.robinhood.com",
+            "https://robinhood-chain.gateway.tenderly.co",
+            "https://robinhood-rpc.publicnode.com",
+        ],
+    },
 ];
 
 /// Split a secret/variable value into candidate URLs.
