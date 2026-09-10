@@ -123,6 +123,8 @@ on:
         required: false
       RPC_URL_ROBINHOOD_FORK:
         required: false
+      RPC_URL_BSC_FORK:
+        required: false
       RPC_URL_SEPOLIA_FORK:
         required: false
 env:
@@ -227,6 +229,8 @@ jobs:
           RAINIX_RPC_VARS_POLYGON: ${{ vars.RPC_URL_POLYGON_FORK }}
           RAINIX_RPC_SECRET_ROBINHOOD: ${{ secrets.RPC_URL_ROBINHOOD_FORK }}
           RAINIX_RPC_VARS_ROBINHOOD: ${{ vars.RPC_URL_ROBINHOOD_FORK }}
+          RAINIX_RPC_SECRET_BSC: ${{ secrets.RPC_URL_BSC_FORK }}
+          RAINIX_RPC_VARS_BSC: ${{ vars.RPC_URL_BSC_FORK }}
           RAINIX_RPC_SECRET_SEPOLIA: ${{ secrets.RPC_URL_SEPOLIA_FORK }}
           RAINIX_RPC_VARS_SEPOLIA: ${{ vars.RPC_URL_SEPOLIA_FORK }}
       - name: Verify live chain matches the fresh pins
