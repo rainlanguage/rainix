@@ -27,7 +27,7 @@ on:
       RPC_URL_SEPOLIA_FORK:
         required: false
 env:
-  RAINIX_SHA: a3ce07667219a5d86ddb2175fdae871402b39a2b
+  RAINIX_SHA: b2b38ff336bbe2cc72c6208285b5482d25224366
 jobs:
   test:
     runs-on: ubuntu-latest
