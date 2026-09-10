@@ -388,9 +388,15 @@ pub(crate) const NETWORKS: &[Network] = &[
         // Rejected the same day: bsc.drpc.org 4/5 then 6/16; 56.rpc.thirdweb.com
         // 5/5 then 0/16 (burst-throttled); binance.llamarpc.com and
         // bsc.gateway.tenderly.co refused the light probe outright.
+        // The Binance dataseed leads: publicnode's BSC pool answered the
+        // preflight 3/3 and then served `block not found` for a head it had
+        // itself just reported (rain.deploy#161, a load balancer whose
+        // backends disagree on the tip), which is exactly the failure the
+        // burst check cannot see. Both stay candidates; the order is the
+        // preference.
         defaults: &[
-            "https://bsc-rpc.publicnode.com",
             "https://bsc-dataseed.binance.org",
+            "https://bsc-rpc.publicnode.com",
         ],
     },
 ];
