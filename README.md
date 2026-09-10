@@ -119,9 +119,9 @@ jobs:
 `secrets: inherit` is required because the reusable wires the standard fork RPC
 env vars (`ARBITRUM_RPC_URL`, `BASE_RPC_URL`, `BASE_SEPOLIA_RPC_URL`,
 `ETHEREUM_RPC_URL`, `FLARE_RPC_URL`, `HYPEREVM_RPC_URL`, `POLYGON_RPC_URL`,
-`ROBINHOOD_RPC_URL`, `SEPOLIA_RPC_URL`, `CI_DEPLOY_SEPOLIA_RPC_URL`) plus `ETHERSCAN_API_KEY` and
-`DEPLOYMENT_KEY` from the consumer org's secrets/vars. Repos that do no fork
-tests can ignore — empty values are harmless.
+`ROBINHOOD_RPC_URL`, `SEPOLIA_RPC_URL`, `CI_DEPLOY_SEPOLIA_RPC_URL`) plus
+`ETHERSCAN_API_KEY` and `DEPLOYMENT_KEY` from the consumer org's secrets/vars.
+Repos that do no fork tests can ignore — empty values are harmless.
 
 `CI_DEPLOY_SEPOLIA_RPC_URL` and the `ETH_RPC_URL` it is bound to are LEGACY and
 scheduled for removal (rainlanguage/rainix#340). `ETH_RPC_URL` reads as though
