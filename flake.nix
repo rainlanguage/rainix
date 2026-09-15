@@ -479,6 +479,7 @@
             bats test/bats/task/sol-single-contract.test.bats
             bats test/bats/task/no-custom-natspec.test.bats
             bats test/bats/workflow/rainix-sol-static.test.bats
+            bats test/bats/workflow/test-yml.test.bats
           '';
           additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs ++ node-build-inputs;
         };
