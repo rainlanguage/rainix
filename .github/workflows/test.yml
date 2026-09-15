@@ -14,10 +14,6 @@ jobs:
             task: slither .
           - os: ubuntu-latest
             task: forge fmt --check
-          # The gate rainix-sol-static hands every consumer, run here against
-          # the fixture consumer so rainix eats it too. Cold `cache`/`out` on a
-          # miss, warm on a hit, and green either way only while the fixture
-          # carries no forge-lint finding and no solc warning.
           - os: ubuntu-latest
             task: forge lint -D warnings
           - os: ubuntu-latest

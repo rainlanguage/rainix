@@ -1,14 +1,3 @@
-# The step list of the reusable workflow every sol consumer calls. Nothing in
-# this repo executes rainix-sol-static.yaml — it is `workflow_call` only, so its
-# only runners are the consumer repos — which means a step silently dropped from
-# it goes unnoticed here and ungated everywhere. These read the file the way the
-# action bats read theirs, so the gates cannot leave without this going red.
-#
-# The behaviour of each gate is covered in test/bats/devshell/sol-shell; what is
-# asserted here is that the job still invokes them, and invokes them through the
-# pinned shell rather than an unpinned `github:rainlanguage/rainix#…` HEAD ref,
-# which rate-limits under CI load (CLAUDE.md).
-
 setup() {
   workflow="$BATS_TEST_DIRNAME/../../../.github/workflows/rainix-sol-static.yaml"
   runs="$(yq -r '.jobs.static.steps[] | select(.run) | .run' "$workflow")"

@@ -50,30 +50,8 @@ jobs:
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c slither .
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge fmt --check
-      # forge's own linter. `forge lint` alone ALWAYS exits 0 — it prints its
-      # findings and succeeds — so `-D warnings` is the gate, not the
-      # subcommand. A finding that is deliberate (the flagged construct IS what
-      # a test asserts) takes a scoped `// forge-lint: disable-next-line(<id>)`
-      # plus the line saying why; it is never silenced wholesale.
-      #
-      # `-D` is a compiler flag, so it denies solc's own diagnostics too, but
-      # only when solc actually runs: a warm `cache`/`out` (restored above, and
-      # filled by `slither .` regardless) skips compilation and takes the solc
-      # half with it. Forge-lint findings are re-derived from source every run,
-      # so the half this step exists for holds either way. `--force` would make
-      # the solc half deterministic at the price of a second full rebuild in
-      # this job; denying solc diagnostics org-wide is a bigger policy than
-      # this step and belongs to whatever owns `forge build`.
+      # `forge lint` alone always exits 0; `-D warnings` is the gate.
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge lint -D warnings
-      # Run the rainix pre-commit hook bundle over all files — the same hooks a
-      # local commit runs. The devShell generates .pre-commit-config.yaml and
-      # installs it, and until now no sol job ran it, so a repo drifts from what
-      # its own hooks write and the drift then ships inside the next unrelated
-      # commit made from the shell, burying that commit's real change in review
-      # noise. rainix-rs-static has carried exactly this step for the rust side.
-      # Reuses sol-shell, so prettier-rainix (which needs the default shell's
-      # RAINIX_PRETTIER_BUNDLE_DIR) no-ops here: markdown, nix, toml, yaml and
-      # shell are gated, JSON is not.
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c pre-commit run --all-files --show-diff-on-failure --color always
       # Enforce Rain's one-contract-per-.sol-file convention (rainix#214).
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c rainix-sol-single-contract
