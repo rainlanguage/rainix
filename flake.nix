@@ -478,6 +478,7 @@
             bats test/bats/task/subgraph-deploy-version.test.bats
             bats test/bats/task/sol-single-contract.test.bats
             bats test/bats/task/no-custom-natspec.test.bats
+            bats test/bats/workflow/rainix-sol-static.test.bats
           '';
           additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs ++ node-build-inputs;
         };
@@ -495,6 +496,8 @@
             bats test/bats/devshell/sol-shell/sol-tasks.test.bats
             bats test/bats/devshell/sol-shell/slim.test.bats
             bats test/bats/devshell/sol-shell/closure.test.bats
+            bats test/bats/devshell/sol-shell/forge-lint.test.bats
+            bats test/bats/devshell/sol-shell/pre-commit.test.bats
           '';
           additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs;
         };
