@@ -167,3 +167,37 @@ EOF
   [ "$status" -ne 0 ]
   echo "$output" | grep -q 'Function state mutability can be restricted to pure'
 }
+
+# The third load-bearing property, and the one rainix-sol-static's caching
+# decision rests on: `forge lint` compiles for ASTs only. It writes an artifact
+# per contract holding `abi` and `id` and NO `bytecode`, while recording that
+# artifact in `cache/solidity-files-cache.json` as compiled — foundry's dirty
+# check asks whether the artifact file exists, not whether it has bytecode. A
+# later `forge build` handed that pair reports "No files changed, compilation
+# skipped" and every `vm.getCode` against those contracts reverts.
+@test "forge lint writes bytecode-less artifacts and calls them compiled" {
+  subject <<'EOF'
+// SPDX-License-Identifier: LicenseRef-DCL-1.0
+pragma solidity ^0.8.25;
+
+contract Subject {
+    uint256 internal counter;
+
+    function increment() external {
+        counter += 1;
+    }
+}
+EOF
+  cd "$TESTDIR"
+  run forge lint -D warnings
+  [ "$status" -eq 0 ]
+
+  [ -f out/Subject.sol/Subject.json ]
+  run jq -r '.bytecode.object // "NO-BYTECODE"' out/Subject.sol/Subject.json
+  [ "$status" -eq 0 ]
+  [ "$output" = "NO-BYTECODE" ]
+
+  run jq -r '.files["src/Subject.sol"].artifacts.Subject | length' cache/solidity-files-cache.json
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 1 ]
+}

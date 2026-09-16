@@ -32,3 +32,19 @@ setup() {
     return 1
   fi
 }
+
+# The job runs `slither .`, which shells out to `forge clean` and then builds
+# `--skip ./test/** ./script/**`, and `forge lint`, which writes AST-only
+# artifacts with no bytecode. Neither leaves an `out/` a `forge test` can use,
+# and `foundry-full-` is one namespace every sol workflow prefix-matches, so a
+# save from here is restored by rainix-sol-test — which then skips compilation
+# and reverts every `vm.getCode` against a test/ or script/ contract.
+@test "rainix-sol-static writes no shared foundry build cache" {
+  local cache_steps
+  cache_steps="$(yq -r '.jobs.static.steps[] | select(.uses) | .uses' "$workflow" | grep 'actions/cache' || true)"
+  if [ -n "$cache_steps" ]; then
+    echo "FAIL: rainix-sol-static caches a build it only ever leaves partial:" >&2
+    echo "$cache_steps" >&2
+    return 1
+  fi
+}

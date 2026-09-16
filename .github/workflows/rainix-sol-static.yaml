@@ -34,17 +34,19 @@ jobs:
       # in standard NatSpec. Sole exception: ERC-7201's normative
       # `@custom:storage-location erc7201:` annotation, which tooling reads.
       - uses: rainlanguage/rainix/.github/actions/no-custom-natspec@main
-      # Cache Foundry's incremental compilation cache + artifacts so unchanged
-      # contracts aren't recompiled (forge build is the dominant CI cost).
-      - name: Cache Foundry build
-        uses: rainlanguage/rainix/.github/actions/cache@main
-        with:
-          path: |
-            cache
-            out
-          key: foundry-full-${{ runner.os }}-${{ hashFiles('src/**/*.sol', 'test/**/*.sol', 'script/**/*.sol', 'foundry.toml', 'soldeer.lock', 'remappings.txt') }}
-          restore-keys: |
-            foundry-full-${{ runner.os }}-
+      # This job caches no `cache`/`out`, unlike every other sol workflow.
+      # Restoring would be pointless: `slither .` shells out to `forge clean`
+      # before its own build, so whatever was restored is deleted unused.
+      # Saving is worse. Slither builds `--skip ./test/** ./script/**`, then
+      # `forge lint` compiles the skipped files for their ASTs and writes
+      # artifacts holding only `abi` and `id` — no bytecode — while recording
+      # them in `cache/solidity-files-cache.json` as compiled; the dirty check
+      # asks whether the artifact file exists, not whether it has bytecode.
+      # `foundry-full-` is ONE namespace shared by every sol workflow through
+      # its restore-keys prefix, so a save from here lands in rainix-sol-test,
+      # which is then told "No files changed, compilation skipped" and reverts
+      # every `vm.getCode` against a test/ or script/ contract with `no
+      # bytecode for contract`. Only a full `forge build` may write that key.
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
@@ -57,13 +59,13 @@ jobs:
       # plus the line saying why; it is never silenced wholesale.
       #
       # `-D` is a compiler flag, so it denies solc's own diagnostics too, but
-      # only when solc actually runs: a warm `cache`/`out` (restored above, and
-      # filled by `slither .` regardless) skips compilation and takes the solc
-      # half with it. Forge-lint findings are re-derived from source every run,
-      # so the half this step exists for holds either way. `--force` would make
-      # the solc half deterministic at the price of a second full rebuild in
-      # this job; denying solc diagnostics org-wide is a bigger policy than
-      # this step and belongs to whatever owns `forge build`.
+      # only when solc actually runs: `slither .` has already compiled `src/`
+      # in this job, so only the files it skipped (test/, script/) reach solc
+      # here. Forge-lint findings are re-derived from source every run, so the
+      # half this step exists for holds either way. `--force` would make the
+      # solc half deterministic at the price of a second full rebuild in this
+      # job; denying solc diagnostics org-wide is a bigger policy than this
+      # step and belongs to whatever owns `forge build`.
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge lint -D warnings
       # The devShell generates `.pre-commit-config.yaml` and installs it, so a
       # repo whose CI never runs it drifts from what its own hooks write, and
