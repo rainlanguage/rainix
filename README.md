@@ -302,14 +302,14 @@ step needs. See [Release lifecycle](#release-lifecycle).
 A repo that publishes is strictly one of two kinds, and the kind fixes the
 workflow, the trigger, and where the version comes from:
 
-|                     | library repo                     | deploy repo               |
-| ------------------- | -------------------------------- | ------------------------- |
-| workflow            | `rainix-autopublish`             | `rainix-tag-release`      |
-| trigger             | push to the release branch       | `sol-v<x.y.z>` tag push   |
-| publishes           | only if packaged content changed | always — the tag is it    |
-| version from        | the registry, raised by `next-v` | the tag                   |
-| `[package].version` | absent by design                 | the last released version |
-| deploy pins         | none — it pins no address        | frozen `src/generated/`   |
+|                        | library repo                             | deploy repo               |
+| ---------------------- | ---------------------------------------- | ------------------------- |
+| workflow               | `rainix-autopublish`                     | `rainix-tag-release`      |
+| trigger                | push to the release branch               | `sol-v<x.y.z>` tag push   |
+| publishes              | only if packaged content changed         | always — the tag is it    |
+| version from           | the Soldeer registry, raised by `next-v` | the tag                   |
+| foundry.toml `version` | absent by design                         | the last released version |
+| deploy pins            | none — it pins no address                | frozen `src/generated/`   |
 
 A library publishes an abstract surface (interfaces, libs) and pins no deployed
 address, so it carries no per-version snapshot. A deploy repo records addresses:
@@ -317,15 +317,22 @@ its `src/generated/<version>/` snapshot pins the address and codehash of what it
 deployed, frozen so consumers can rely on them, which makes its release a human
 decision about a deployment that already happened.
 
+Everything below about Soldeer is the Solidity lane. `rainix-autopublish` also
+carries a cargo lane and an npm lane, which a library repo may use instead of or
+alongside it; those gate on their own registry comparison (a normalized crate
+content hash against crates.io, the `npm pack` shasum against the published one)
+and take their version from the repo's own manifest via `cargo release` /
+`npm version`, not from the rules below.
+
 #### Library repos: what publishes, and when
 
-Nothing publishes unless the packaged content changed. The gate hashes what
-`forge soldeer push --dry-run` would upload, minus two exclusions: everything
-under `src/generated/` (derived from source, and a fresh directory appears there
-every release, which would otherwise mark every merge as changed), and
-`foundry.toml`'s `[external.package]` — or legacy `[package]` — section together
-with the comment block attached above it. An unchanged push short-circuits
-before the test suite ever runs.
+Nothing publishes unless the packaged content changed. The Soldeer gate hashes
+what `forge soldeer push --dry-run` would upload, minus two exclusions:
+everything under `src/generated/` (derived from source, and a fresh directory
+appears there every release, which would otherwise mark every merge as changed),
+and `foundry.toml`'s `[external.package]` — or legacy `[package]` — section
+together with the comment block attached above it. A push that changed nothing
+short-circuits before the pre-publish test suite and the CI gate below.
 
 Nothing bumps, tags or publishes until every other workflow run on that same
 commit has finished green. A commit with no other runs at all is an error, not a
@@ -388,7 +395,8 @@ order, and only the last is `rainix-tag-release`:
    RPC-dependent operation must not gate a one-shot tag publish where one
    transient failure blocks the release.
 2. **PR the snapshot.** That PR regenerates and commits the frozen
-   `src/generated/<version>/` deploy pins and bumps `[package].version`. Its
+   `src/generated/<version>/` deploy pins and bumps foundry.toml's
+   `[external.package].version` (the legacy `[package]` form is still read). Its
    normal CI runs the append-only gate and the fork suite, so the pins consumers
    will trust are reviewed and verified before they can publish.
 3. **Merge it, then push `sol-v<version>`** on the merged commit. The tag is the
