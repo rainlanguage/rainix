@@ -245,6 +245,223 @@ jobs:
 Consumers needing only one of the three should call the individual reusable
 directly rather than this composite.
 
+#### rainix-autopublish
+
+`.github/workflows/rainix-autopublish.yaml` is the LIBRARY repo release
+workflow: it publishes on content change at merge, to Soldeer, crates.io, npm,
+or any combination. Wrapper:
+
+```yaml
+name: Package Release
+on:
+  push:
+    branches:
+      - main
+jobs:
+  release:
+    uses: rainlanguage/rainix/.github/workflows/rainix-autopublish.yaml@main
+    with:
+      soldeer-package: rain-lib-hash
+    secrets: inherit
+```
+
+The caller owns the trigger; a push to the release branch is the convention.
+
+A called workflow can only downgrade the caller's token, never elevate it, so
+the grants this one needs have to reach it from the caller: `contents: write` to
+push the `sol-v` tag and create the release, `actions: read` for the CI gate
+that reads the commit's other workflow runs, and `id-token: write` for the npm
+lane's OIDC publish. A caller that declares a `permissions:` block must list
+every one it needs there. A caller that declares none — the example above —
+inherits the repository's default `GITHUB_TOKEN` permissions, which covers it
+only while those defaults are read-write; under read-only defaults the omission
+fails at the tag push, the release, the gate, or npm auth, so such a repo has to
+spell the block out.
+
+What each input means is documented on the input itself; what the workflow does
+with it is [Release lifecycle](#release-lifecycle) below.
+
+#### rainix-tag-release
+
+`.github/workflows/rainix-tag-release.yaml` is the DEPLOY repo release workflow:
+it verifies and publishes the commit a `sol-v<x.y.z>` tag names. Wrapper:
+
+```yaml
+name: Package Release
+on:
+  push:
+    tags:
+      - sol-v*
+jobs:
+  release:
+    uses: rainlanguage/rainix/.github/workflows/rainix-tag-release.yaml@main
+    with:
+      soldeer-package: rain-math-float-deploy
+    secrets: inherit
+```
+
+The caller's `tags:` filter decides which tags release; the workflow only parses
+the version out of the ref. `secrets: inherit` carries `SOLDEER_API_TOKEN`,
+which this workflow declares required, and the fork RPC secrets the verification
+step needs. See [Release lifecycle](#release-lifecycle).
+
+### Release lifecycle
+
+A repo that publishes is strictly one of two kinds, and the kind fixes the
+workflow, the trigger, and where the version comes from:
+
+|                        | library repo                             | deploy repo               |
+| ---------------------- | ---------------------------------------- | ------------------------- |
+| workflow               | `rainix-autopublish`                     | `rainix-tag-release`      |
+| trigger                | push to the release branch               | `sol-v<x.y.z>` tag push   |
+| publishes              | only if packaged content changed         | always — the tag is it    |
+| version from           | the Soldeer registry, raised by `next-v` | the tag                   |
+| foundry.toml `version` | absent by design                         | the last released version |
+| deploy pins            | none — it pins no address                | frozen `src/generated/`   |
+
+A library publishes an abstract surface (interfaces, libs) and pins no deployed
+address, so it carries no per-version snapshot. A deploy repo records addresses:
+its `src/generated/<version>/` snapshot pins the address and codehash of what it
+deployed, frozen so consumers can rely on them, which makes its release a human
+decision about a deployment that already happened.
+
+Everything below about Soldeer is the Solidity lane. `rainix-autopublish` also
+carries a cargo lane and an npm lane, which a library repo may use instead of or
+alongside it; those gate on their own registry comparison (a normalized crate
+content hash against crates.io, the `npm pack` shasum against the published one)
+and take their version from the repo's own manifest via `cargo release` /
+`npm version`, not from the rules below.
+
+#### Library repos: what publishes, and when
+
+Nothing publishes unless the packaged content changed. The Soldeer gate hashes
+what `forge soldeer push --dry-run` would upload, minus two exclusions:
+everything under `src/generated/` (derived from source, and a fresh directory
+appears there every release, which would otherwise mark every merge as changed),
+and `foundry.toml`'s `[external.package]` — or legacy `[package]` — section
+together with the comment block attached above it. A push that changed nothing
+short-circuits before the pre-publish test suite and the CI gate below.
+
+Nothing bumps, tags or publishes until every other workflow run on that same
+commit has finished green. A commit with no other runs at all is an error, not a
+pass.
+
+#### Library repos: where the version comes from
+
+The **Soldeer registry is the version ledger** — no file in the repo is. The
+published version is
+
+```
+max(patch_bump(newest published revision), highest next-v tag merged into HEAD)
+```
+
+under semver ordering. Three consequences a maintainer has to hold:
+
+- **The default for every merge is a patch bump.** The pipeline never infers
+  semver from a diff. Delete an entire public library and it publishes as a
+  patch unless someone says otherwise.
+- **`next-v<x.y.z>` git tags are how someone says otherwise.** To cut a minor or
+  major, push `next-v<x.y.z>` on the commit that defines that version's content,
+  before or as it lands on the release branch. The tag counts only while it is
+  reachable from the head being published, which `git tag --merged HEAD`
+  decides. That is why the release checkout is full-depth and why the gate
+  refuses to run on a shallow one rather than silently missing an intent tag.
+  Once the registry has passed it the tag falls inert under the `max`, so
+  consumed and stale intent tags need no cleanup. A `next-v` tag whose remainder
+  is not `<major>.<minor>.<patch>` fails the run loudly; a typo'd intent is
+  never skipped.
+- **A package's first publish requires a `next-v` tag** as the explicit version
+  seed. With no revision on the registry there is nothing to patch-bump, and the
+  gate will not guess `0.1.0`.
+
+The tag is read once, from the checkout of the run that publishes, so both the
+timing and the merge method matter — and neither way of getting them wrong goes
+red:
+
+- A tag pushed **after** the merge is invisible to the run that just published.
+  That release ships as a patch, and the tag then raises whatever merges next,
+  mislabelling two versions rather than one.
+- A tag on a PR head survives a **merge commit** and does not survive a squash
+  or rebase merge: the tagged commit never becomes an ancestor of the release
+  branch, so no run ever sees it.
+
+So push the tag on the PR head before the merge, and merge that PR with a merge
+commit. There is no retroactive fix — once a version is published the registry
+has it, and a repo that allows squash or rebase merges should turn them off if
+it intends to use intent tags at all.
+
+So "this is a breaking change" is a claim only a human can make, by tagging
+`next-v<major>.0.0`. Nothing today fails a PR that changes the public surface
+and ships it as a patch — see #327, which tracks that gate.
+
+#### Library repos: foundry.toml carries no version
+
+Deliberately. It is never read for a version and never rewritten, and its
+release-metadata section is excluded from the content hash, so carrying,
+editing, or deleting that section is content-neutral. A version added there
+publishes nothing and means nothing. Do not add one back.
+
+#### Library repos: what gets written
+
+The Soldeer lane **never commits and never pushes to the branch**. The
+`sol-v<x.y.z>` tag and its GitHub release are pushed as a tag ref, independent
+of any branch push, so publishing works unchanged on a branch-protected main.
+The cargo and npm lanes do commit their version bump and push it, so a repo on
+those lanes needs a branch its deploy key can write.
+
+#### Deploy repos: the release order
+
+The deploy, the snapshot and the publish are three separate steps, in this
+order, and only the last is `rainix-tag-release`:
+
+1. **Deploy on-chain**, via the repo's own human-driven manual dispatch. It is
+   deliberately not part of the release workflow: a per-network, funds- and
+   RPC-dependent operation must not gate a one-shot tag publish where one
+   transient failure blocks the release.
+2. **PR the snapshot.** That PR regenerates and commits the frozen
+   `src/generated/<version>/` deploy pins and bumps foundry.toml's
+   `[external.package].version` (the legacy `[package]` form is still read). Its
+   normal CI runs the append-only gate and the fork suite, so the pins consumers
+   will trust are reviewed and verified before they can publish.
+3. **Merge it, then push `sol-v<version>`** on the merged commit. The tag is the
+   release authorization, and it must be an ancestor of the release branch — a
+   tag cut from an unmerged branch is refused.
+4. **The workflow verifies and publishes.** It re-attests the live chain matches
+   the freshly regenerated pins, requires the tagged commit's frozen snapshot to
+   be byte-identical to that regeneration, and only then publishes. Stale,
+   hand-edited and never-cut snapshots all fail there, before anything is
+   published. It writes to no branch either — main already carries the snapshot
+   from step 2.
+
+A deploy repo's `[package].version` **is** the last released version and moves
+only at release time, in lockstep with the snapshot it describes — the opposite
+of the library rule above.
+
+#### Tag namespaces
+
+The pipeline reads and writes exactly these:
+
+| tag                | who                               | meaning                   |
+| ------------------ | --------------------------------- | ------------------------- |
+| `sol-v<x.y.z>`     | written by both release workflows | the published release     |
+| `next-v<x.y.z>`    | read only, never created by CI    | library version intent    |
+| `<crate>-v<x.y.z>` | written by the cargo lane         | the published crate       |
+| `npm-<version>`    | written by the npm lane           | the published npm package |
+
+On a deploy repo a `sol-v` push is also the release trigger, so creating one is
+authorizing a release.
+
+Every other tag is invisible to the pipeline. In particular a bare `v<x.y.z>` is
+**not** an intent tag: the gate ignores every tag without the `next-v` prefix,
+so pre-pipeline manual `v*` tags neither seed a version nor block one. A repo
+whose first releases predate the pipeline therefore carries one version series
+across two namespaces — `v*` for the manual publishes, `sol-v*` from the first
+automated one — and a tool enumerating either prefix alone sees a truncated
+history.
+
+Never move or delete a `sol-v*` or `next-v*` tag: one rewrites what a release
+was, the other rewrites what the next one is numbered.
+
 ### Fork RPC endpoints
 
 Each `<NETWORK>_RPC_URL` is chosen at job start by the `rpc-preflight` composite

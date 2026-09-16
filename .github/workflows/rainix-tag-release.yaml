@@ -4,22 +4,10 @@ name: rainix-tag-release
 # to rainix-autopublish's merge-driven publish for LIBRARY repos.
 #
 # The two lifecycles are mutually exclusive and a repo is strictly one or the
-# other:
-#
-#   * A LIBRARY repo (rainix-autopublish) publishes on content change at
-#     merge: the publish version is derived from the registry (newest
-#     published revision, patch-bumped) with `next-v<x.y.z>` git tags carrying
-#     any larger version intent, foundry.toml holds no release metadata, and
-#     nothing is ever committed or pushed back to the branch.
-#     Consumers import its abstract surface (interfaces/libs); it never pins a
-#     deployed address, so it carries no per-tag deploy-pin snapshot.
-#
-#   * A DEPLOY repo (this workflow) records deployed addresses. Its
-#     src/generated/<tag>/ snapshot pins the address + codehash of what it
-#     deployed, frozen so consumers can rely on them (enforced by the
-#     frozen-snapshots-append-only gate at PR time). [package].version is the
-#     LAST released version, and moves ONLY at release time, in lockstep with the
-#     snapshot it describes.
+# other. Which repo is which, what each publishes, and the release procedure a
+# maintainer follows are the rainix README's "Release lifecycle" section — the
+# one statement of that contract, so it is not restated here. The comments in
+# this file are why each step is written the way it is.
 #
 # The release is PUSH-FREE (rainlanguage/rainix#338). Deploy repo mains are
 # branch-protected, and rainix-autopublish was already made push-free in
@@ -27,25 +15,16 @@ name: rainix-tag-release
 # commits and never pushes to any branch — a push to a protected main is rejected
 # (GH006) and would fail the release after publishing.
 #
-# The release flow, in order:
-#   1. Deploy on-chain (the repo's own human-driven rainix-manual-sol-artifacts
-#      dispatch — NOT this workflow; see below).
-#   2. Open a PR that regenerates + commits the frozen src/generated/<version>/
-#      snapshot and bumps [package].version. That PR's normal CI runs the
-#      frozen-snapshots-append-only gate (rainix-sol-static) and the fork suite
-#      that asserts the live chain matches the pins (rainix-sol-test), so the
-#      deploy pins consumers trust are reviewed and verified BEFORE they publish.
-#   3. A human merges the PR (normal protected-merge) and pushes a
-#      `sol-v<version>` tag on the merged commit.
-#   4. This workflow runs on that tag: it re-derives the version from the tag,
-#      re-runs the repo's NON-freezing generator and requires both a clean tree
-#      and a frozen snapshot byte-identical to the regenerated rolling one, to
-#      prove the tagged commit's snapshot is a fresh deterministic regeneration
-#      (the fail-closed publish guard below),
-#      re-attests the live chain matches the pins, then publishes to Soldeer and
-#      creates the GitHub release. main already carries the snapshot (from the
-#      merged PR), so the daily drift sweep and the repo's own snapshot tests keep
-#      reading src/generated/<version>/ from main unchanged.
+# This workflow is the LAST step of the release procedure the README describes:
+# the deploy and the snapshot cut both happen before the tag exists. It
+# re-derives the version from the tag, re-runs the repo's NON-freezing generator
+# and requires both a clean tree and a frozen snapshot byte-identical to the
+# regenerated rolling one — proving the tagged commit's snapshot is a fresh
+# deterministic regeneration (the fail-closed publish guard below) — re-attests
+# the live chain matches the pins, then publishes to Soldeer and creates the
+# GitHub release. main already carries the snapshot from the reviewed PR that cut
+# it, so the daily drift sweep and the repo's own snapshot tests keep reading
+# src/generated/<version>/ from main unchanged.
 #
 # Because the snapshot reaches main via the reviewed PR and never via this
 # workflow, the workflow has nothing to commit — it is read-only publish + tag +

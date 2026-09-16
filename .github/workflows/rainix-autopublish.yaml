@@ -1,4 +1,14 @@
 name: rainix-autopublish
+# Merge-driven publish for LIBRARY repos — Soldeer, crates.io, npm, or any
+# combination. The counterpart to rainix-tag-release's tag-driven publish for
+# DEPLOY repos.
+#
+# What a consumer maintainer is bound by — which repo kind uses which workflow,
+# how the publish version is derived, what a `next-v` intent tag does and when
+# one is required, why foundry.toml carries no version, and the tag namespaces —
+# is the rainix README's "Release lifecycle" section. That is the one statement
+# of the contract, so this file does not restate it; the comments here are why
+# each step is written the way it is.
 on:
   workflow_call:
     inputs:
@@ -26,7 +36,7 @@ on:
         default: ''
       soldeer-package:
         description: >-
-          optional Soldeer registry package name (e.g. rain-erc). When set, the workflow publishes on a content change vs the newest published revision. The registry is the version ledger and git tags carry version intent: the publish version is `max(patch_bump(newest published), newest next-v<x.y.z> tag merged into the pushed head)` under semver ordering — push a `next-v<x.y.z>` tag for a deliberate minor/major jump; consumed or stale intent tags are inert under the max. First publish (no revisions on the registry yet) REQUIRES a next-v tag as the explicit version seed. foundry.toml carries NO release metadata: it is never read for a version and never rewritten, and an `[external.package]` / legacy `[package]` section still present in a consumer is simply ignored (excluded from the content hash), so deleting it is content-neutral. The workflow NEVER commits or pushes to the consumer branch: the `sol-v<version>` tag + GitHub release are pushed as a tag ref, independent of any branch push — publishing works unchanged on branch-protected mains. A version's deploy-pin snapshot is built and committed by the PR that defines that version's content (main snapshots are frozen constants consumers pin against).
+          optional Soldeer registry package name (e.g. rain-erc). When set, the workflow publishes to the Soldeer registry on a content change vs the newest published revision, tags `sol-v<version>` and creates a GitHub release. How the version is derived, what a `next-v<x.y.z>` intent tag does, why foundry.toml carries no release metadata, and why nothing is committed or pushed to the consumer branch: rainix README, "Release lifecycle".
         required: false
         type: string
         default: ''
