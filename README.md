@@ -366,6 +366,22 @@ under semver ordering. Three consequences a maintainer has to hold:
   seed. With no revision on the registry there is nothing to patch-bump, and the
   gate will not guess `0.1.0`.
 
+The tag is read once, from the checkout of the run that publishes, so both the
+timing and the merge method matter — and neither way of getting them wrong goes
+red:
+
+- A tag pushed **after** the merge is invisible to the run that just published.
+  That release ships as a patch, and the tag then raises whatever merges next,
+  mislabelling two versions rather than one.
+- A tag on a PR head survives a **merge commit** and does not survive a squash
+  or rebase merge: the tagged commit never becomes an ancestor of the release
+  branch, so no run ever sees it.
+
+So push the tag on the PR head before the merge, and merge that PR with a merge
+commit. There is no retroactive fix — once a version is published the registry
+has it, and a repo that allows squash or rebase merges should turn them off if
+it intends to use intent tags at all.
+
 So "this is a breaking change" is a claim only a human can make, by tagging
 `next-v<major>.0.0`. Nothing today fails a PR that changes the public surface
 and ships it as a patch — see #327, which tracks that gate.
