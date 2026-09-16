@@ -10,7 +10,14 @@
 setup() {
   workflow="$BATS_TEST_DIRNAME/../../../.github/workflows/rainix-sol-static.yaml"
   runs="$(yq -r '.jobs.static.steps[] | select(.run) | .run' "$workflow")"
+  uses="$(yq -r '.jobs.static.steps[] | select(.uses) | .uses' "$workflow")"
   sha="$(yq -r '.env.RAINIX_SHA' "$workflow")"
+}
+
+# audit/mutation-test-scans.json is hand-appended and read as evidence by the
+# audit skill and by rain-org-health's scanner, neither of which validates it.
+@test "rainix-sol-static gates the mutation-test ledger" {
+  echo "$uses" | grep -q '^rainlanguage/rainix/.github/actions/mutation-ledger@main$'
 }
 
 @test "rainix-sol-static runs forge lint denying warnings" {

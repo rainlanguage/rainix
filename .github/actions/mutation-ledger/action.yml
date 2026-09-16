@@ -1,0 +1,37 @@
+name: mutation-ledger
+description: >-
+  Validates `audit/mutation-test-scans.json`, the adversarial-mutation-test skill's committed run record. The skill appends that record BY HAND, and two automated consumers then read it as evidence — the audit skill's Pass-2 gate, for whether a repo has been mutation-tested since the code it is auditing, and rain-org-health's `roh-scan`, for the dashboard's "last mutation run" per repo. Both trust the `commit` it names and neither validates it: the scanner degrades a malformed ledger to `unknown` and the skill's gate checks little more than that the file is an array. So a record with a trailing comma, a short SHA or a commit that was rebased away merges green through every check in the org and surfaces months later as a refused or wrong-based audit. Two halves. SHAPE — a non-empty JSON array of run objects, each carrying a `YYYY-MM-DDTHH:MM:SSZ` timestamp (one width and one zone, because `roh-scan` ranks runs by comparing these as strings), a 40-character lowercase-hex `commit`, the tool literal, a `scope` and a `summary` object; `testsAfterCommit` and `skillVersion` are shape-checked when written and never required, because records predating those fields cannot supply them without someone inventing a value. ANCESTRY — every recorded SHA must be an ancestor of HEAD, since a commit this history does not contain mis-bases every later "what changed since the last run" comparison, and one that resolves to nothing at all makes the run it records unfalsifiable. On a squash-merging repo this means the record is appended in a follow-up rather than naming the PR head that the merge rewrites. Ancestry is unanswerable on a grafted history, so this fetches full history (commits only, via a `tree:0` filter — 4s and ~5MB even on raindex) before asking, and the check refuses a shallow checkout rather than reporting every older commit as unreachable. No-op for a repo that carries no ledger: this validates a record, it never requires one.
+runs:
+  using: composite
+  steps:
+    - name: Check the mutation-test ledger
+      shell: bash
+      run: |
+        set -euo pipefail
+        # A presence test on the one path the consumers hardcode. Bash decides
+        # only whether there is a record to look at — a repo that has never been
+        # mutation-tested is not a defect, and it must not pay for the fetch
+        # below to be told so. What a record must CONTAIN is the Rust check's
+        # call, which treats an absent file as a pass too, so running the
+        # binary directly gives the same verdict this step does.
+        if [ ! -f audit/mutation-test-scans.json ]; then
+          echo "mutation-ledger: no ledger; skip"
+          exit 0
+        fi
+        # The shared checkout is shallow, and `git merge-base --is-ancestor`
+        # reports every commit past the graft boundary as unreachable — a silent
+        # wrong answer, which is the failure mode this gate exists to remove.
+        # `--filter=tree:0` fetches the commit graph WITHOUT trees or blobs,
+        # which is all ancestry needs: measured on rainlanguage/raindex (186MB,
+        # the largest consumer) that is 4.3s and takes .git from 4.4MB to 9.0MB,
+        # against a full unshallow of the whole history. It leaves a partial
+        # clone behind, which no later step in either static job notices: the
+        # working tree is already materialized and nothing there walks history.
+        if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+          git fetch --no-tags --filter=tree:0 --unshallow origin
+        fi
+        # path: ref runs the check from THIS composite's own checkout, so the
+        # check version always matches the action version (same pattern as
+        # no-submodules) regardless of any RAINIX_SHA the caller pins.
+        nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- \
+          mutation-ledger
