@@ -265,13 +265,21 @@ jobs:
     secrets: inherit
 ```
 
-The caller owns the trigger; a push to the release branch is the convention. A
-caller that declares no `permissions:` block, as above, needs none — but one
-that declares any must declare every grant the workflow uses (`contents: write`,
-`actions: read`, and `id-token: write` for the npm lane), because a called
-workflow can only downgrade the caller's token, never elevate it. What each
-input means is documented on the input itself; what the workflow does with it is
-[Release lifecycle](#release-lifecycle) below.
+The caller owns the trigger; a push to the release branch is the convention.
+
+A called workflow can only downgrade the caller's token, never elevate it, so
+the grants this one needs have to reach it from the caller: `contents: write` to
+push the `sol-v` tag and create the release, `actions: read` for the CI gate
+that reads the commit's other workflow runs, and `id-token: write` for the npm
+lane's OIDC publish. A caller that declares a `permissions:` block must list
+every one it needs there. A caller that declares none — the example above —
+inherits the repository's default `GITHUB_TOKEN` permissions, which covers it
+only while those defaults are read-write; under read-only defaults the omission
+fails at the tag push, the release, the gate, or npm auth, so such a repo has to
+spell the block out.
+
+What each input means is documented on the input itself; what the workflow does
+with it is [Release lifecycle](#release-lifecycle) below.
 
 #### rainix-tag-release
 
