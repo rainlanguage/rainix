@@ -28,6 +28,17 @@ jobs:
       # the total. Floor-only ratchet — an over-cap repo cuts its context (or
       # scopes a rule with `paths:`), it never raises the number.
       - uses: rainlanguage/rainix/.github/actions/agent-context-cap@main
+      # audit/mutation-test-scans.json is appended by hand and read as evidence
+      # by the audit skill's gate and by rain-org-health's scanner, neither of
+      # which validates it — so a short, mistyped or rebased-away SHA merges
+      # green and mis-bases the next audit. Shape plus ancestry against HEAD.
+      # The ledger is not a Solidity artifact, so gating it only in
+      # rainix-sol-static would leave a rust-only repo that starts
+      # mutation-testing ungated. raindex and rain.metadata run both static
+      # jobs and do carry a ledger, so they check it twice: one extra
+      # commits-only fetch and one binary run, which is the price of the
+      # sol-shaped hole not existing.
+      - uses: rainlanguage/rainix/.github/actions/mutation-ledger@main
       - uses: rainlanguage/rainix/.github/actions/rust-cache@main
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#rust-shell -c rainix-rs-static
       # Run the rainix pre-commit hook bundle (taplo, the nix hooks, yamlfmt,

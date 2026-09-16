@@ -30,6 +30,12 @@ jobs:
       # a release ADDS a new tag, never edits/deletes a frozen snapshot whose
       # address/codehash constants downstream consumers pin. No-op when absent.
       - uses: rainlanguage/rainix/.github/actions/frozen-snapshots-append-only@main
+      # audit/mutation-test-scans.json is appended by hand and read as evidence
+      # by the audit skill's gate and by rain-org-health's scanner, neither of
+      # which validates it — so a short, mistyped or rebased-away SHA merges
+      # green and mis-bases the next audit. Shape plus ancestry against HEAD.
+      # No-op when absent.
+      - uses: rainlanguage/rainix/.github/actions/mutation-ledger@main
       # Custom NatSpec tags (@custom:) are banned org-wide — document behavior
       # in standard NatSpec. Sole exception: ERC-7201's normative
       # `@custom:storage-location erc7201:` annotation, which tooling reads.

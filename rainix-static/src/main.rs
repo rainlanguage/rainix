@@ -40,6 +40,20 @@
 //       origin/main). Snapshots are frozen once on the base branch; a release
 //       ADDS a new <tag>, never edits an existing one. Needs the base ref
 //       fetched with history (fetch-depth: 0 + `git fetch origin <base>`).
+//   mutation-ledger [--root <dir>] [--path <file>]
+//       fail if the adversarial-mutation-test skill's committed run record,
+//       audit/mutation-test-scans.json, is not a well-formed ledger or names a
+//       commit this history does not contain. The record is appended BY HAND
+//       and is read as evidence by two automated consumers (the audit skill's
+//       Pass-2 gate and rain-org-health's roh-scan), neither of which validates
+//       it. Shape: a non-empty JSON array of run objects, each with a
+//       YYYY-MM-DDTHH:MM:SSZ timestamp, a 40-char lowercase-hex commit, the
+//       tool literal, a scope and a summary object (testsAfterCommit and
+//       skillVersion are checked when written and never required). Ancestry:
+//       every recorded SHA must be an ancestor of HEAD, since one that is not
+//       mis-bases every later "what changed since the last run" comparison.
+//       Needs full history — a shallow checkout is refused, not answered.
+//       A repo with no ledger passes.
 //   ci-gate [--timeout-secs N] [--poll-secs N] [--grace-secs N]
 //       Publish gate on the gated commit's own CI: exit 0 only when every
 //       other workflow run on GITHUB_SHA is green and the discovery grace
@@ -84,6 +98,7 @@ mod agent_context_cap;
 mod ci_gate;
 mod context_bytes;
 mod frozen_snapshots;
+mod mutation_ledger;
 mod no_submodules;
 mod prompt_cap;
 mod release_guard;
@@ -180,6 +195,12 @@ fn main() {
                 }
             }
         }
+        "mutation-ledger" => {
+            let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
+            let path =
+                flag(&args, "--path").unwrap_or_else(|| mutation_ledger::LEDGER_PATH.to_string());
+            mutation_ledger::run(Path::new(&root), &path);
+        }
         "ci-gate" => {
             let timeout = num(&args, "--timeout-secs", 7200);
             let poll = num(&args, "--poll-secs", 30);
@@ -251,8 +272,8 @@ fn main() {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
                  (available: no-submodules, agent-context-cap, prompt-cap, \
-                 snapshots-append-only, ci-gate, soldeer-gate, rpc-preflight, \
-                 release-guard)"
+                 snapshots-append-only, mutation-ledger, ci-gate, soldeer-gate, \
+                 rpc-preflight, release-guard)"
             );
             std::process::exit(2);
         }
