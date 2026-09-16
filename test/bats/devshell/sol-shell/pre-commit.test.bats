@@ -58,6 +58,8 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+# JSON is the one file type denofmt excludes and prettier-rainix owns, so it is
+# the whole of the gap.
 # Pinned so the claim cannot rot: if sol-shell ever gains the prettier bundle
 # this test fails, which is the signal to restate the gate's coverage rather
 # than to relax the test.
