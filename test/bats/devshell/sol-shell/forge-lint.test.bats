@@ -1,3 +1,17 @@
+# The `forge lint -D warnings` gate that rainix-sol-static runs over every sol
+# consumer. Two properties of that command are load-bearing and neither is
+# visible in it, so both are pinned here:
+#
+#   - `forge lint` on its own ALWAYS exits 0. It prints its findings and
+#     succeeds. The subcommand is not the gate; `-D warnings` is.
+#   - `-D` is a compiler flag, not a lint flag. It denies solc diagnostics as
+#     well as forge-lint findings, so a repo with zero forge-lint findings
+#     still fails the gate on a plain solc warning.
+#
+# Each case is a throwaway foundry project outside this repo, pinned to the
+# sol-shell `solc` so no case reaches the network for a compiler, and invisible
+# to the fixture project's own lint/fmt/reuse runs.
+
 setup() {
   TESTDIR="$(mktemp -d)"
   mkdir -p "$TESTDIR/src"
