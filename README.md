@@ -159,6 +159,20 @@ single job it runs whichever of these the repo has:
   plus the alias and released-suites libs generated from the record). The same
   regeneration `rainix-tag-release` re-runs at publish time to prove the tagged
   commit's frozen snapshot is a fresh one.
+- `install-staged-config` → the repo root, for a `Build.sol` that also generates
+  the repo's own `foundry.toml` network sections and `.env.example` variables.
+  It cannot write them — foundry refuses every filesystem-cheatcode write to the
+  project root's `foundry.toml`, whatever `fs_permissions` says — so it splices
+  between the repo's own markers and writes to `.staged-config/`, and rainix
+  installs each staged file over the file of that name at the root, then removes
+  the directory. `rainix-tag-release` runs the same install after its
+  release-time regeneration, so the publish guard's clean-tree check covers the
+  config too; `rainix-static install-staged-config` is the same step locally
+  (`sol-shell` carries it). Such a repo supplies the marker pairs in its two
+  files, `fs_permissions` `read` on `./foundry.toml` and `./.env.example` plus
+  `read-write` on `./.staged-config`, and `script/Build.sol` — no install script
+  of its own, and no `.gitignore` entry, the install having removed the
+  directory before anything looks at the tree.
 - `forge build` + `./script/CopyArtifacts.sol --ffi` → committed ABI JSON
 
 then `forge fmt` and the `git diff` assert.
