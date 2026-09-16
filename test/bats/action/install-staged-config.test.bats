@@ -44,8 +44,8 @@ run_step() {
   [[ "$output" == *"<install-staged-config>"* ]]
 }
 
-# The common case by 37 repos to 1: a repo that generates no config stages
-# nothing, and must not pay a nix build to be told so.
+# Every consumer that generates no config stages nothing, and must not pay a
+# nix build to be told so.
 @test "a repo with nothing staged skips without building the binary" {
   run run_step
 

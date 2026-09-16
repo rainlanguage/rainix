@@ -9,14 +9,14 @@ runs:
       run: |
         set -euo pipefail
         # A presence test on the one path the generator and this step agree on.
-        # Bash decides only whether there is anything to look at: a repo that
-        # stages nothing must not pay a nix build to be told so, and it is the
-        # common case by 37 repos to 1. WHAT is there is the Rust check's call,
-        # which treats an absent directory as a pass too — so running the
-        # binary directly gives the same verdict this step does. `-L` as well
-        # as `-e`, because a dangling symlink at the path fails `-e` while
-        # being something rather than nothing, and skipping it would be exactly
-        # the silent pass the check refuses.
+        # Bash decides only whether there is anything to look at: every consumer
+        # that generates no config stages nothing, and must not pay a nix build
+        # to be told so. WHAT is there is the Rust check's call, which treats an
+        # absent directory as a pass too — so running the binary directly gives
+        # the same verdict this step does. `-L` as well as `-e`, because a
+        # dangling symlink at the path fails `-e` while being something rather
+        # than nothing, and skipping it would be exactly the silent pass the
+        # check refuses.
         if [ ! -e .staged-config ] && [ ! -L .staged-config ]; then
           echo "install-staged-config: nothing staged; skip"
           exit 0
