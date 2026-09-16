@@ -15,9 +15,9 @@ jobs:
           - os: ubuntu-latest
             task: forge fmt --check
           # The gate rainix-sol-static hands every consumer, run here against
-          # the fixture consumer so rainix eats it too. Cold `cache`/`out` on a
-          # miss, warm on a hit, and green either way only while the fixture
-          # carries no forge-lint finding and no solc warning.
+          # the fixture consumer so rainix eats it too. Always cold `cache`/
+          # `out` (see the cache step's allowlist below), and green only while
+          # the fixture carries no forge-lint finding and no solc warning.
           - os: ubuntu-latest
             task: forge lint -D warnings
           - os: ubuntu-latest
@@ -59,7 +59,17 @@ jobs:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       # Cache Foundry's incremental compilation cache + artifacts so unchanged
       # contracts aren't recompiled (forge build is the dominant CI cost).
+      #
+      # Allowlisted to the tasks that run a FULL `forge build`. `slither .`
+      # builds `--skip ./test/** ./script/**` and `forge lint` writes AST-only
+      # artifacts with no bytecode, so either leaves an `out/` that
+      # `cache/solidity-files-cache.json` nonetheless calls complete; saving
+      # that into the shared `foundry-full-` namespace hands it to `forge test
+      # -vvv` on a later run, which then skips compilation and reverts every
+      # `vm.getCode`. rainix-sol-static drops this step outright for the same
+      # reason — it has no full-build task to keep it for.
       - name: Cache Foundry build
+        if: contains(fromJSON('["forge test -vvv", "rainix-sol-artifacts"]'), matrix.task)
         uses: rainlanguage/rainix/.github/actions/cache@main
         with:
           path: |
