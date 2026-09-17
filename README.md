@@ -61,6 +61,19 @@ All tasks are Nix packages run via `nix run`. From a consuming repo:
 - `nix run ..#rainix-rs-test` — cargo test
 - `nix run ..#rainix-rs-static` — cargo fmt + clippy
 
+#### Subgraph
+
+Available on `subgraph-shell` / default shell (requires `GOLDSKY_TOKEN` and
+`GOLDSKY_SUBGRAPH_NAME`, e.g. `raindex`):
+
+- `subgraph-deploy` — build + deploy each `networks.json` entry, then enforce a
+  hard cap of **2** always-on Goldsky versions per chain (deletes older
+  versions; reclaims a 2-version migration older than `GOLDSKY_MIGRATION_HOURS`,
+  default 24)
+- `subgraph-goldsky-version-cap` — same reclaim enforcement across
+  `networks.json` (for cron/manual), plus an account-level orphan audit against
+  the networks allowlist
+
 ### Reusable Outputs
 
 Downstream flakes can compose their own tasks and shells using:
