@@ -163,6 +163,22 @@ single job it runs whichever of these the repo has:
 
 then `forge fmt` and the `git diff` assert.
 
+The diff is only half the check. Re-running the generators and diffing proves
+the committed **content** is current, but it cannot see a generator that has
+**stopped emitting a file**: the committed copy is already correct, so nothing
+is rewritten, nothing differs, and the job is green over a dead emitter
+(rainlanguage/rain.factory.deploy#35). So the job also witnesses which files the
+hooks actually wrote, against a committed declaration:
+
+- `script/codegen-manifest.txt` — one repo-relative path per line (`#` comments
+  and blank lines ignored), naming every committed file the hooks generate.
+  Every path listed must be written on each run, or the job fails by name. A
+  file written but not listed is a printed note, never a failure.
+
+A repo that runs any of the hooks above **must** carry this file; a repo that
+generates nothing needs neither. If it is missing, the job fails and prints the
+manifest that run would justify, to be reviewed and committed.
+
 ```yaml
 name: copy-artifacts
 on: [push]

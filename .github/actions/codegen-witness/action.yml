@@ -1,0 +1,33 @@
+name: codegen-witness
+description: >-
+  Witnesses that the repo's codegen hooks still EMIT each committed generated file, which `rainix-copy-artifacts`' own currency check cannot. That check re-runs the generators and then `git diff --exit-code`, which proves the committed CONTENT is current but is structurally blind to a generator that has STOPPED emitting a file: the committed copy is already correct, so nothing is rewritten, nothing differs, and the job is green over a dead emitter (rainlanguage/rain.factory.deploy#35, reproduced there with a control — a marker appended to a generated file survived the generator run once the single call emitting that file was removed, with `git diff` clean throughout). The blind spot is structural rather than a bug in any repo: the generator's output is the check's only oracle for what the committed files should hold, so a file the generator never writes has no oracle at all, and seeing it needs an INDEPENDENT statement of which committed files are generated. That statement is `script/codegen-manifest.txt`. Two phases, and both must run in the same job. `mark` records every git-tracked file's mtime before the first codegen hook; `verify` re-stats them after the last one and calls a file WRITTEN when it exists and its mtime moved — `vm.writeFile` and its kin rewrite unconditionally, so a live emitter moves the mtime even when the bytes are identical, which is exactly the case a diff cannot tell from a dead one. Any path the manifest declares that nothing wrote fails the job by name. A path written but NOT declared is a printed note and never a failure: set equality would keep the manifest self-maintaining, but it would also couple a gate every Rain repo runs at `@main` to every incidental write inside the window (`forge build` is in there), so the day some tool starts touching a lock file it would redden the whole org at once. The claim worth gating on is the one the defect is about. Scope is git-tracked files, which keeps `out/`, `cache/`, `broadcast/` and `dependencies/` out of the witness whether or not a repo ignores them properly. A repo that runs no codegen hook and carries no manifest is a no-op; a repo with a hook and no manifest fails, and is printed the manifest its own run would justify.
+inputs:
+  phase:
+    description: >-
+      `mark` before the first codegen hook runs, `verify` after the last one. `verify` must come BEFORE any formatter: `forge fmt` rewrites sources of its own, so running it first forges the witness — a file fmt happened to touch would look like one a generator wrote.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Codegen witness
+      shell: bash
+      env:
+        # Via env rather than interpolated into the script text: caller input
+        # never gets pasted into a shell command.
+        RAINIX_CODEGEN_WITNESS_PHASE: ${{ inputs.phase }}
+        # The two phases are separate steps, so the state has to outlive one of
+        # them — and it must not land in the working tree, where it would show
+        # up in the very `git diff` this check runs beside.
+        RAINIX_CODEGEN_WITNESS_STATE: ${{ runner.temp }}/rainix-codegen-witness.json
+      run: |
+        set -euo pipefail
+        # Single source of truth: the Rust rainix-static binary (its unit tests
+        # run in the nix build, and test/bats/action/codegen-witness.test.bats
+        # runs the built binary end to end). The path: flake ref runs it from
+        # THIS composite's own checkout, so the check version always matches the
+        # action version regardless of any RAINIX_SHA the caller pins — which
+        # also means a new subcommand ships with the action instead of waiting
+        # on a sha bump that would otherwise leave every consumer red in between.
+        nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- \
+          codegen-witness "$RAINIX_CODEGEN_WITNESS_PHASE" \
+          --state "$RAINIX_CODEGEN_WITNESS_STATE"

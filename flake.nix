@@ -474,6 +474,7 @@
             bats test/bats/action/prompt-cap.test.bats
             bats test/bats/action/frozen-snapshots-append-only.test.bats
             bats test/bats/action/mutation-ledger.test.bats
+            bats test/bats/action/codegen-witness.test.bats
             bats test/bats/task/skip-simulation.test.bats
             bats test/bats/task/subgraph-build.test.bats
             bats test/bats/task/subgraph-deploy-version.test.bats
@@ -481,6 +482,7 @@
             bats test/bats/task/no-custom-natspec.test.bats
             bats test/bats/workflow/rainix-sol-static.test.bats
             bats test/bats/workflow/rainix-rs-static.test.bats
+            bats test/bats/workflow/rainix-copy-artifacts.test.bats
             bats test/bats/workflow/test-yml.test.bats
           '';
           additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs ++ node-build-inputs;

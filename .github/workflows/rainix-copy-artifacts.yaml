@@ -21,6 +21,26 @@ jobs:
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
+      # Half of the currency check that the diff at the bottom cannot make.
+      # Re-running the generators and diffing proves the committed CONTENT is
+      # current, but it is blind to a generator that has STOPPED emitting a file:
+      # nothing is rewritten, the already-correct committed copy does not differ,
+      # and the job is green over a dead emitter
+      # (rainlanguage/rain.factory.deploy#35, verified there with a control).
+      # `mark` records every tracked file's mtime before the first codegen hook
+      # below; `verify`, after the last one, fails on any path
+      # `script/codegen-manifest.txt` declares generated that nothing wrote.
+      # Semantics: rainix-static/src/codegen_witness.rs.
+      #
+      # Unconditional, with no `hashFiles` guard: the binary decides whether
+      # there is anything to witness (a repo with no codegen hook and no manifest
+      # passes), so that predicate lives in one tested place rather than
+      # duplicated across two steps where it can drift — and a repo cannot make
+      # the check vanish by deleting the hooks it was checking.
+      - name: Mark tracked files before codegen
+        uses: rainlanguage/rainix/.github/actions/codegen-witness@main
+        with:
+          phase: mark
       # Currency-check every committed generated artifact by re-running each
       # consumer-provided codegen step. The final git diff fails if any
       # committed file has drifted from its source. The build-meta.sh hook is
@@ -53,6 +73,13 @@ jobs:
       - name: Regenerate derived artifacts
         if: hashFiles('script/build.sh') != ''
         run: ./script/build.sh
+      # The other half, BEFORE `forge fmt`: fmt rewrites sources of its own, so
+      # running it first would forge the witness — a file fmt happened to touch
+      # would look like one a generator wrote.
+      - name: Assert every declared generated file was written
+        uses: rainlanguage/rainix/.github/actions/codegen-witness@main
+        with:
+          phase: verify
       - name: Format (so generated artifacts match committed style)
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge fmt
       - name: Assert committed artifacts match freshly built
