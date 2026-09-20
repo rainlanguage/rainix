@@ -35,18 +35,10 @@
 //       files are prompts and what they may weigh is per-repo, so both are an
 //       input, and a glob matching nothing is an error rather than a pass.
 //   codegen-witness mark|verify --state <file> [--root <dir>] [--manifest <file>]
-//       prove the repo's codegen hooks still EMIT each committed generated
-//       file, which rainix-copy-artifacts' "re-run the generators, then git
-//       diff" cannot: a generator that has STOPPED emitting a file rewrites
-//       nothing, so the already-correct committed copy does not differ and the
-//       job is green over a dead emitter (rain.factory.deploy#35). `mark`
-//       records every tracked file's mtime before the first hook; `verify`
-//       re-stats them after the last one and fails on any path
-//       script/codegen-manifest.txt declares that nothing wrote. Written-but-
-//       undeclared paths are a printed note, never a failure, so an incidental
-//       write inside the window cannot redden every consumer at once. A repo
-//       with a codegen hook and no manifest fails (and is printed one); a repo
-//       with neither passes.
+//       fail if any path script/codegen-manifest.txt declares generated was not
+//       written between `mark` (before the first codegen hook) and `verify`
+//       (after the last), by mtime. A repo with a codegen hook and no manifest
+//       fails (and is printed one); a repo with neither passes.
 //   snapshots-append-only [--base <ref>] [--root <dir>]
 //       fail if the branch modifies or deletes an existing per-tag deploy-pin
 //       snapshot under <root>/<tag>/ (default root src/generated, base
@@ -228,9 +220,6 @@ fn main() {
         }
         "codegen-witness" => {
             let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
-            // No default: the state must outlive one step and must not land in
-            // the worktree, where it would show up in the very git diff this
-            // check runs beside. The caller names a runner temp path.
             let state = flag(&args, "--state")
                 .unwrap_or_else(|| fail("codegen-witness: --state <file> required"));
             match args.get(2).map(String::as_str).unwrap_or("") {

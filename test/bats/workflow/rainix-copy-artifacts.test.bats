@@ -1,14 +1,3 @@
-# Nothing in this repo executes rainix-copy-artifacts.yaml — it is
-# `workflow_call` only, so its only runners are the consumer repos, which means
-# a step silently dropped from it goes unnoticed here and ungated everywhere.
-#
-# What the codegen witness DOES is covered in test/bats/action/codegen-witness
-# and in rainix-static/src/codegen_witness.rs. What is asserted here is the part
-# that only the workflow can get wrong: that both phases are still invoked, and
-# that they still bracket every codegen hook — a witness taken on the wrong side
-# of a step measures nothing and reports green, which is the exact failure mode
-# it was added to remove (rainlanguage/rain.factory.deploy#35).
-
 setup() {
   repo_root="$BATS_TEST_DIRNAME/../../.."
   workflow="$repo_root/.github/workflows/rainix-copy-artifacts.yaml"
@@ -19,12 +8,10 @@ setup() {
   verify_step="Assert every declared generated file was written"
 }
 
-# 1-based position of a step in the job, by name.
 step_at() {
   echo "$names" | grep -nxF "$1" | cut -d: -f1
 }
 
-# The `uses`/`with.phase` of a step, by name.
 step_field() {
   yq -r ".jobs[\"copy-artifacts\"].steps[] | select(.name == \"$1\") | $2" "$workflow"
 }
@@ -36,9 +23,6 @@ step_field() {
   [ "$(step_field "$verify_step" .with.phase)" = "verify" ]
 }
 
-# THE ordering invariant. A hook that runs before `mark` or after `verify` is
-# outside the window, so whatever it writes looks unwritten — or, worse, a hook
-# added later beside `forge fmt` would make a dead emitter look alive.
 @test "both witness phases bracket every codegen hook step" {
   local mark verify
   mark="$(step_at "$mark_step")"
@@ -47,9 +31,6 @@ step_field() {
   [ -n "$verify" ]
   [ "$mark" -lt "$verify" ]
 
-  # Every step that INVOKES a consumer codegen hook (`./script/<hook>`), by
-  # position. The invocation form is what matters: the final assertion step
-  # names the same paths in its error text without running any of them.
   local hooked
   hooked="$(yq -r '.jobs["copy-artifacts"].steps | to_entries[]
     | select((.value.run // "") | test("\./script/(build-meta\.sh|Build\.sol|CopyArtifacts\.sol|build\.sh)"))
@@ -65,8 +46,6 @@ step_field() {
   done <<<"$hooked"
 }
 
-# `forge fmt` rewrites sources of its own, so a witness taken after it cannot
-# tell a file a generator wrote from one the formatter touched.
 @test "the witness closes before forge fmt runs" {
   local verify fmt
   verify="$(step_at "$verify_step")"
@@ -75,8 +54,6 @@ step_field() {
   [ "$verify" -lt "$fmt" ]
 }
 
-# The diff is the other half of the check and must not be traded away for this
-# one: content currency and emitter liveness are different claims.
 @test "the committed-artifacts diff is still asserted after the witness" {
   local verify diff
   verify="$(step_at "$verify_step")"
@@ -86,9 +63,6 @@ step_field() {
   echo "$runs" | grep -q 'git diff --exit-code'
 }
 
-# A `hashFiles` guard would let a repo delete its codegen hooks and take the
-# check that was watching them along with it. Whether there is anything to
-# witness is the binary's decision, in one tested place.
 @test "neither witness step is conditional" {
   local step guard
   for step in "$mark_step" "$verify_step"; do
@@ -100,9 +74,6 @@ step_field() {
   done
 }
 
-# The binary decides "does this repo run codegen?" from its own HOOKS list. If
-# the workflow gains or renames a hook and that list does not follow, a repo
-# with codegen is told it has none and is never asked for a manifest.
 @test "the binary's hook list is exactly the hooks the workflow runs" {
   local declared invoked
   declared="$(sed -n '/pub(crate) const HOOKS/,/^];/p' "$witness" |

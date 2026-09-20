@@ -12,22 +12,12 @@ runs:
     - name: Codegen witness
       shell: bash
       env:
-        # Via env rather than interpolated into the script text: caller input
-        # never gets pasted into a shell command.
+        # Via env, never interpolated into the script: caller input must not reach a shell command.
         RAINIX_CODEGEN_WITNESS_PHASE: ${{ inputs.phase }}
-        # The two phases are separate steps, so the state has to outlive one of
-        # them — and it must not land in the working tree, where it would show
-        # up in the very `git diff` this check runs beside.
+        # Must not land in the working tree: it would show up in the git diff this check runs beside.
         RAINIX_CODEGEN_WITNESS_STATE: ${{ runner.temp }}/rainix-codegen-witness.json
       run: |
         set -euo pipefail
-        # Single source of truth: the Rust rainix-static binary (its unit tests
-        # run in the nix build, and test/bats/action/codegen-witness.test.bats
-        # runs the built binary end to end). The path: flake ref runs it from
-        # THIS composite's own checkout, so the check version always matches the
-        # action version regardless of any RAINIX_SHA the caller pins — which
-        # also means a new subcommand ships with the action instead of waiting
-        # on a sha bump that would otherwise leave every consumer red in between.
         nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- \
           codegen-witness "$RAINIX_CODEGEN_WITNESS_PHASE" \
           --state "$RAINIX_CODEGEN_WITNESS_STATE"
