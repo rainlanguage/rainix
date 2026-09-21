@@ -474,7 +474,7 @@
             bats test/bats/action/prompt-cap.test.bats
             bats test/bats/action/frozen-snapshots-append-only.test.bats
             bats test/bats/action/mutation-ledger.test.bats
-            bats test/bats/action/codegen-witness.test.bats
+            bats test/bats/action/codegen-declaration.test.bats
             bats test/bats/task/skip-simulation.test.bats
             bats test/bats/task/subgraph-build.test.bats
             bats test/bats/task/subgraph-deploy-version.test.bats

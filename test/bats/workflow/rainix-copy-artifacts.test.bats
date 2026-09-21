@@ -1,98 +1,72 @@
+# Nothing in this repo executes rainix-copy-artifacts.yaml — it is
+# `workflow_call` only, so its only runners are the consumer repos.
+#
+# The declaration check's verdict is covered by the Rust unit tests and
+# test/bats/action/codegen-declaration.test.bats; what is asserted here is the
+# wiring it cannot see: that the hooks' stdout actually reaches the log the
+# action reads, and that teeing did not swallow a hook's exit status.
+
 setup() {
   repo_root="$BATS_TEST_DIRNAME/../../.."
   workflow="$repo_root/.github/workflows/rainix-copy-artifacts.yaml"
-  witness="$repo_root/rainix-static/src/codegen_witness.rs"
-  names="$(yq -r '.jobs["copy-artifacts"].steps[] | .name // "«unnamed»"' "$workflow")"
-  runs="$(yq -r '.jobs["copy-artifacts"].steps[] | select(.run) | .run' "$workflow")"
-  mark_step="Mark tracked files before codegen"
-  verify_step="Assert every declared generated file was written"
+  action="$repo_root/.github/actions/codegen-declaration/action.yml"
+  runs="$(yq -r '.jobs.copy-artifacts.steps[] | select(.run) | .run' "$workflow")"
+  uses="$(yq -r '.jobs.copy-artifacts.steps[] | select(.uses) | .uses' "$workflow")"
+  sha="$(yq -r '.env.RAINIX_SHA' "$workflow")"
+  # The one path the two files have to agree on.
+  log_path="$(yq -r '.runs.steps[0].run' "$action" | grep -o '\--log "[^"]*"' | sed 's/--log "//; s/"$//')"
+  teed="$(yq -r '.jobs.copy-artifacts.steps[] | select(.run) | select(.run | contains("tee")) | .run' "$workflow")"
 }
 
-step_at() {
-  echo "$names" | grep -nxF "$1" | cut -d: -f1
+@test "the codegen declaration is checked, at the ref the check ships from" {
+  echo "$uses" | grep -q '^rainlanguage/rainix/.github/actions/codegen-declaration@main$'
 }
 
-step_field() {
-  yq -r ".jobs[\"copy-artifacts\"].steps[] | select(.name == \"$1\") | $2" "$workflow"
+@test "the action reads a log under the runner temp dir, never the working tree" {
+  [ -n "$log_path" ]
+  # The literal the action script carries, not an expansion of it.
+  # shellcheck disable=SC2016
+  [[ "$log_path" == '$RUNNER_TEMP/'* ]]
 }
 
-@test "the job invokes both codegen-witness phases" {
-  [ "$(step_field "$mark_step" .uses)" = "rainlanguage/rainix/.github/actions/codegen-witness@main" ]
-  [ "$(step_field "$mark_step" .with.phase)" = "mark" ]
-  [ "$(step_field "$verify_step" .uses)" = "rainlanguage/rainix/.github/actions/codegen-witness@main" ]
-  [ "$(step_field "$verify_step" .with.phase)" = "verify" ]
+@test "every codegen hook tees into the log the action reads" {
+  local teed_steps occurrences
+  teed_steps="$(yq -r '[.jobs.copy-artifacts.steps[] | select(.run) | select(.run | contains("tee -a"))] | length' "$workflow")"
+  [ "$teed_steps" -eq 4 ]
+  occurrences="$(grep -cF "tee -a \"$log_path\"" "$workflow")"
+  [ "$occurrences" -eq 4 ]
 }
 
-@test "both witness phases bracket every codegen hook step" {
-  local mark verify
-  mark="$(step_at "$mark_step")"
-  verify="$(step_at "$verify_step")"
-  [ -n "$mark" ]
-  [ -n "$verify" ]
-  [ "$mark" -lt "$verify" ]
-
-  local hooked
-  hooked="$(yq -r '.jobs["copy-artifacts"].steps | to_entries[]
-    | select((.value.run // "") | test("\./script/(build-meta\.sh|Build\.sol|CopyArtifacts\.sol|build\.sh)"))
-    | (.key + 1 | tostring) + " " + (.value.name // "«unnamed»")' "$workflow")"
-  [ -n "$hooked" ]
-
-  local pos name
-  while read -r pos name; do
-    if [ "$pos" -lt "$mark" ] || [ "$pos" -gt "$verify" ]; then
-      echo "FAIL: codegen step '$name' (position $pos) is outside the witness window ($mark..$verify)" >&2
-      return 1
-    fi
-  done <<<"$hooked"
-}
-
-@test "the witness closes before forge fmt runs" {
-  local verify fmt
-  verify="$(step_at "$verify_step")"
-  fmt="$(echo "$names" | grep -n 'Format' | cut -d: -f1)"
-  [ -n "$fmt" ]
-  [ "$verify" -lt "$fmt" ]
-}
-
-@test "the committed-artifacts diff is still asserted after the witness" {
-  local verify diff
-  verify="$(step_at "$verify_step")"
-  diff="$(step_at "Assert committed artifacts match freshly built")"
-  [ -n "$diff" ]
-  [ "$verify" -lt "$diff" ]
-  echo "$runs" | grep -q 'git diff --exit-code'
-}
-
-@test "neither witness step is conditional" {
-  local step guard
-  for step in "$mark_step" "$verify_step"; do
-    guard="$(step_field "$step" '.["if"] // "none"')"
-    if [ "$guard" != "none" ]; then
-      echo "FAIL: '$step' is guarded by: $guard" >&2
-      return 1
-    fi
+@test "every codegen hook reaches the log — none is left undeclarable" {
+  local hook
+  for hook in script/build-meta.sh script/Build.sol script/CopyArtifacts.sol script/build.sh; do
+    echo "$teed" | grep -qF "$hook"
   done
 }
 
-@test "the binary's hook list is exactly the hooks the workflow runs" {
-  local declared invoked
-  declared="$(sed -n '/pub(crate) const HOOKS/,/^];/p' "$witness" |
-    grep -o '"script/[^"]*"' | tr -d '"' | sort)"
-  invoked="$(echo "$runs" | grep -oE '\./script/[A-Za-z0-9_-]+\.(sol|sh)' |
-    sed 's|^\./||' | sort -u)"
-  [ -n "$declared" ]
-  if [ "$declared" != "$invoked" ]; then
-    echo "FAIL: codegen_witness.rs HOOKS and the hooks the workflow invokes disagree" >&2
-    diff <(echo "$declared") <(echo "$invoked") >&2 || true
-    return 1
-  fi
+# Without pipefail bash reports tee's status, so a failing generator would pass
+# the step it just failed.
+@test "every teed step sets pipefail" {
+  local n_teed n_pipefail
+  n_teed="$(yq -r '[.jobs.copy-artifacts.steps[] | select(.run) | select(.run | contains("tee -a"))] | length' "$workflow")"
+  n_pipefail="$(yq -r '[.jobs.copy-artifacts.steps[] | select(.run) | select(.run | contains("tee -a")) | select(.run | contains("set -euo pipefail"))] | length' "$workflow")"
+  [ "$n_teed" -gt 0 ]
+  [ "$n_pipefail" -eq "$n_teed" ]
+}
+
+@test "the declaration is checked after the last codegen hook and before the diff" {
+  local last_hook check diff
+  last_hook="$(yq -r '[.jobs.copy-artifacts.steps | to_entries[] | select(.value.run) | select(.value.run | contains("tee -a")) | .key] | max' "$workflow")"
+  check="$(yq -r '[.jobs.copy-artifacts.steps | to_entries[] | select(.value.uses) | select(.value.uses | contains("codegen-declaration")) | .key] | .[0]' "$workflow")"
+  diff="$(yq -r '[.jobs.copy-artifacts.steps | to_entries[] | select(.value.run) | select(.value.run | contains("git diff --exit-code")) | .key] | .[0]' "$workflow")"
+  [ "$last_hook" -lt "$check" ]
+  [ "$check" -lt "$diff" ]
 }
 
 @test "every rainix-copy-artifacts run step resolves rainix through the pinned sha" {
-  local sha unpinned
-  sha="$(yq -r '.env.RAINIX_SHA' "$workflow")"
   [ -n "$sha" ]
   [ "$sha" != "null" ]
+  local unpinned
   unpinned="$(echo "$runs" | grep 'github:rainlanguage/rainix' | grep -v 'env.RAINIX_SHA' || true)"
   if [ -n "$unpinned" ]; then
     echo "FAIL: unpinned rainix refs in rainix-copy-artifacts.yaml:" >&2

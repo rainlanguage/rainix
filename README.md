@@ -163,21 +163,23 @@ single job it runs whichever of these the repo has:
 
 then `forge fmt` and the `git diff` assert.
 
-The diff is only half the check. Re-running the generators and diffing proves
-the committed **content** is current, but it cannot see a generator that has
-**stopped emitting a file**: the committed copy is already correct, so nothing
-is rewritten, nothing differs, and the job is green over a dead emitter
-(rainlanguage/rain.factory.deploy#35). So the job also witnesses which files the
-hooks actually wrote, against a committed declaration:
+The diff answers "is the committed **content** current". It cannot answer "is
+anything still generating it": a generator that has stopped emitting a file
+writes nothing, the already-correct committed copy is left alone, and the job is
+green over a dead emitter (rainlanguage/rain.factory.deploy#35). Only the
+generator knows which paths it owns, as against a `src/generated/<tag>/`
+snapshot deliberately frozen forever — so the generator says so, on stdout:
 
-- `script/codegen-manifest.txt` — one repo-relative path per line (`#` comments
-  and blank lines ignored), naming every committed file the hooks generate.
-  Every path listed must be written on each run, or the job fails by name. A
-  file written but not listed is a printed note, never a failure.
+```
+rainix-codegen owns src/lib/LibReleasedSuites.sol
+rainix-codegen wrote src/lib/LibReleasedSuites.sol
+```
 
-A repo that runs any of the hooks above **must** carry this file; a repo that
-generates nothing needs neither. If it is missing, the job fails and prints the
-manifest that run would justify, to be reviewed and committed.
+The job tees every hook's stdout into one log and fails, naming the path, on
+anything declared `owns` that no hook then `wrote`. Nothing is declared by hand
+and no repo maintains a list: the same code that computes where to write emits
+these lines. A repo whose hooks print neither keeps exactly today's behaviour —
+green, with a note that a dead emitter there is still invisible.
 
 ```yaml
 name: copy-artifacts
