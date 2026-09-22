@@ -42,25 +42,25 @@ run_cap_action() {
 fixture_repo() {
   git -C "$work" init -q
   mkdir -p "$work/src" "$work/test"
-  printf '// a\n// b\n// c\nx;\ny;\n' >"$work/src/Over.sol"
+  printf '// a\n// b\n// c\n// d\n// e\n// f\n// g\nx;\ny;\n' >"$work/src/Over.sol"
   printf '// a\nx;\n' >"$work/src/Ok.sol"
   printf '# a\n# b\n' >"$work/test/notes.md"
   git -C "$work" add src test
 }
 
-@test "a file with more comment lines than code lines exits 1 and is listed with both counts" {
+@test "an aggregate over the cap exits 1 with totals and every file listed" {
   fixture_repo
 
   run rainix-static comment-loc-cap --root "$work"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"1 of 2 files"* ]]
-  [[ "$output" == *"3       2  src/Over.sol"* ]]
-  [[ "$output" != *"Ok.sol"* ]]
+  [[ "$output" == *"8 comment lines against a cap of 6 (twice 3 code lines) across 2 files"* ]]
+  [[ "$output" == *"7       2  src/Over.sol"* ]]
+  [[ "$output" == *"1       1  src/Ok.sol"* ]]
   [[ "$output" != *"notes.md"* ]]
 }
 
-@test "a tree whose every file has at least as much code as comment exits 0" {
+@test "a tree whose comment lines are at or under twice its code lines in aggregate exits 0" {
   fixture_repo
   git -C "$work" rm -qf src/Over.sol
 

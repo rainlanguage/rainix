@@ -24,14 +24,15 @@
 //       breakdown on failure. The cap is a floor-only ratchet that may only
 //       ever be lowered. A repo with no agent context passes.
 //   comment-loc-cap [--root <dir>] [--paths <dirs>]
-//       fail if any tracked source file under <dirs> (default `src test`,
-//       whitespace or comma separated) has more comment lines than code
-//       lines. Per file, strict: equal passes. Blank lines count as
-//       neither; a line with any code on it is code, even with a trailing
-//       comment. Syntax by extension: `//` and `/* */` for .sol/.rs/.ts/.js,
-//       `#` for .sh/.toml/.yaml, both for .nix; other extensions are not
-//       counted. Prints every offender with both counts. A path set that
-//       selects no counted file is an error, not a pass.
+//       fail if, summed over every tracked source file under <dirs> (default
+//       `src test`, whitespace or comma separated), comment lines exceed
+//       twice the code lines. One aggregate cap, strict: equal passes. Blank lines
+//       count as neither; a line with any code on it is code, even with a
+//       trailing comment. Syntax by extension: `//` and `/* */` for
+//       .sol/.rs/.ts/.js, `#` for .sh/.toml/.yaml, both for .nix; other
+//       extensions are not counted. On failure prints the totals and every
+//       file with both counts. A path set that selects no counted file is
+//       an error, not a pass.
 //   prompt-cap --paths <globs> --cap <bytes> [--root <dir>]
 //       the same check as agent-context-cap, over the prompt files a repo
 //       points it at: a prompt is read whole at launch and re-read on every

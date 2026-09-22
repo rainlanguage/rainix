@@ -60,12 +60,6 @@ pub(crate) struct Counts {
     pub(crate) code: usize,
 }
 
-impl Counts {
-    pub(crate) fn over(self) -> bool {
-        self.comment > self.code
-    }
-}
-
 /// Classify every line of `text`. Block comment state carries across lines;
 /// a `"…"` or `'…'` literal on a code line is skipped so a marker inside it
 /// does not open a comment.
@@ -193,20 +187,26 @@ pub(crate) fn scan(root: &Path, paths: &[String]) -> Result<Vec<(String, Counts)
 
 /// The report lines for the files over the cap: a header, then one row per
 /// offender with both counts. Empty when every file passes.
+/// Totals over every scanned file. Empty when comment lines are at or under
+/// twice the code lines in aggregate; otherwise the totals and every file's
+/// counts, heaviest comment share first.
 pub(crate) fn report(files: &[(String, Counts)]) -> Vec<String> {
-    let over: Vec<&(String, Counts)> = files.iter().filter(|(_, c)| c.over()).collect();
-    if over.is_empty() {
+    let comment: usize = files.iter().map(|(_, c)| c.comment).sum();
+    let code: usize = files.iter().map(|(_, c)| c.code).sum();
+    let cap = 2 * code;
+    if comment <= cap {
         return Vec::new();
     }
     let mut lines = vec![
         format!(
-            "comment-loc-cap: {} of {} files have more comment lines than code lines:",
-            over.len(),
+            "comment-loc-cap: {comment} comment lines against a cap of {cap} (twice {code} code lines) across {} files:",
             files.len()
         ),
         "  comment    code  file".to_string(),
     ];
-    for (name, c) in over {
+    let mut sorted: Vec<&(String, Counts)> = files.iter().collect();
+    sorted.sort_by(|(_, a), (_, b)| (b.comment * a.code.max(1)).cmp(&(a.comment * b.code.max(1))));
+    for (name, c) in sorted {
         lines.push(format!("  {:>7} {:>7}  {name}", c.comment, c.code));
     }
     lines
@@ -273,10 +273,11 @@ mod tests {
     }
 
     #[test]
-    fn empty_and_equal_pass_strictly_more_fails() {
-        assert!(!Counts::default().over());
-        assert!(!Counts { comment: 3, code: 3 }.over());
-        assert!(Counts { comment: 4, code: 3 }.over());
+    fn empty_and_twice_pass_over_twice_fails() {
+        let at = |comment, code| report(&[("f".to_string(), Counts { comment, code })]);
+        assert!(at(0, 0).is_empty());
+        assert!(at(6, 3).is_empty());
+        assert!(!at(7, 3).is_empty());
     }
 
     #[test]
@@ -312,7 +313,7 @@ mod tests {
                 .success());
         };
         git(&["init", "-q"]);
-        std::fs::write(d.join("src/Over.sol"), "// a\n// b\n// c\nx;\ny;\n").unwrap();
+        std::fs::write(d.join("src/Over.sol"), "// a\n// b\n// c\n// d\n// e\n// f\n// g\nx;\ny;\n").unwrap();
         std::fs::write(d.join("src/Ok.sol"), "// a\nx;\n").unwrap();
         std::fs::write(d.join("src/notes.md"), "# all\n# comment\n").unwrap();
         std::fs::write(d.join("test/Untracked.sol"), "// a\n// b\nx;\n").unwrap();
@@ -321,21 +322,33 @@ mod tests {
     }
 
     #[test]
-    fn offender_is_reported_with_both_counts_and_others_are_not() {
+    fn aggregate_over_is_reported_with_totals_and_every_file() {
         let d = repo();
         let files = scan(&d, &["src".into(), "test".into()]).unwrap();
         assert_eq!(
             files,
             vec![
                 ("src/Ok.sol".to_string(), Counts { comment: 1, code: 1 }),
-                ("src/Over.sol".to_string(), Counts { comment: 3, code: 2 }),
+                ("src/Over.sol".to_string(), Counts { comment: 7, code: 2 }),
             ]
         );
         let lines = report(&files);
-        assert_eq!(lines.len(), 3, "{lines:?}");
-        assert!(lines[0].contains("1 of 2 files"), "{lines:?}");
-        assert!(lines[2].ends_with("3       2  src/Over.sol"), "{lines:?}");
-        assert!(!lines.iter().any(|l| l.contains("Ok.sol")), "{lines:?}");
+        assert_eq!(lines.len(), 4, "{lines:?}");
+        assert!(
+            lines[0].contains("8 comment lines against a cap of 6 (twice 3 code lines) across 2 files"),
+            "{lines:?}"
+        );
+        assert!(lines[2].ends_with("7       2  src/Over.sol"), "{lines:?}");
+        assert!(lines[3].ends_with("1       1  src/Ok.sol"), "{lines:?}");
+    }
+
+    #[test]
+    fn a_file_over_on_its_own_passes_when_the_aggregate_is_under() {
+        let d = repo();
+        std::fs::write(d.join("src/Code.sol"), "x;\ny;\nz;\n").unwrap();
+        assert!(Command::new("git").arg("-C").arg(&d).args(["add", "src"]).status().unwrap().success());
+        let files = scan(&d, &["src".into()]).unwrap();
+        assert!(report(&files).is_empty(), "8 comment lines against a cap of 12 is under");
     }
 
     #[test]
