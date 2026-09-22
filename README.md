@@ -89,6 +89,12 @@ jobs:
 
 Runs `forge soldeer install` automatically when a `soldeer.lock` is present.
 
+Also fails when any tracked file under `src/` or `test/` has more comment lines
+than code lines (`rainix-static comment-loc-cap`, per file, strict, every
+offender printed with both counts). To scan other directories call
+`rainlanguage/rainix/.github/actions/comment-loc-cap@main` directly with its
+`paths` input.
+
 #### rainix-sol-legal
 
 `.github/workflows/rainix-sol-legal.yaml` runs `rainix-sol-legal` (`reuse lint`)

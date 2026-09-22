@@ -40,6 +40,10 @@ jobs:
       # in standard NatSpec. Sole exception: ERC-7201's normative
       # `@custom:storage-location erc7201:` annotation, which tooling reads.
       - uses: rainlanguage/rainix/.github/actions/no-custom-natspec@main
+      # Comment lines may not outnumber code lines in any tracked file under
+      # src/ and test/: a file that is mostly prose is prose in the wrong
+      # place. Per file, strict, both counts printed per offender.
+      - uses: rainlanguage/rainix/.github/actions/comment-loc-cap@main
       # This job caches no `cache`/`out`, unlike every other sol workflow.
       # Restoring would be pointless: `slither .` shells out to `forge clean`
       # before its own build, so whatever was restored is deleted unused.

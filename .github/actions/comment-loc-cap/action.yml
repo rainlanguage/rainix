@@ -1,0 +1,26 @@
+name: comment-loc-cap
+description: >-
+  Fails when any tracked source file under the given paths has more comment lines than code lines. The cap is per file and strict: equal passes. Blank lines count as neither; a line carrying any code is a code line even with a trailing comment; a line whose every character is inside a comment is a comment line. Comment syntax follows the extension (`//` and `/* */` for .sol/.rs/.ts/.js, `#` for .sh/.toml/.yaml, both for .nix); files with any other extension are not counted. Every offender is printed with both counts. A path set that selects no counted file is an error, not a pass.
+inputs:
+  paths:
+    description: >-
+      Directories to scan, relative to the repo root, whitespace or comma separated. Only files `git ls-files` reports under them are read.
+    required: false
+    default: src test
+runs:
+  using: composite
+  steps:
+    - name: Check comment-to-code line cap
+      shell: bash
+      env:
+        # Via env, not interpolated into the script: caller input is never
+        # pasted into the shell text.
+        RAINIX_COMMENT_LOC_PATHS: ${{ inputs.paths }}
+      run: |
+        set -euo pipefail
+        # Single source of truth: the Rust rainix-static binary (its unit tests
+        # run inside the nix build). The path: flake ref runs it from this
+        # composite's own checkout, so the check version always matches the
+        # action version regardless of any RAINIX_SHA the caller pins.
+        nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- \
+          comment-loc-cap --paths "$RAINIX_COMMENT_LOC_PATHS"
