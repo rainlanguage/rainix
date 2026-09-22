@@ -23,6 +23,16 @@
 //       rules, subdirectory CLAUDE.md, CLAUDE.local.md. Prints the per-file
 //       breakdown on failure. The cap is a floor-only ratchet that may only
 //       ever be lowered. A repo with no agent context passes.
+//   comment-loc-cap [--root <dir>] [--paths <dirs>]
+//       fail if, summed over every tracked source file under <dirs> (default
+//       `src test`, whitespace or comma separated), comment lines exceed
+//       twice the code lines. One aggregate cap, strict: equal passes. Blank lines
+//       count as neither; a line with any code on it is code, even with a
+//       trailing comment. Syntax by extension: `//` and `/* */` for
+//       .sol/.rs/.ts/.js, `#` for .sh/.toml/.yaml, both for .nix; other
+//       extensions are not counted. On failure prints the totals and every
+//       file with both counts. A path set that selects no counted file is
+//       an error, not a pass.
 //   prompt-cap --paths <globs> --cap <bytes> [--root <dir>]
 //       the same check as agent-context-cap, over the prompt files a repo
 //       points it at: a prompt is read whole at launch and re-read on every
@@ -95,6 +105,7 @@
 //       where git is on PATH.
 
 mod agent_context_cap;
+mod comment_loc_cap;
 mod ci_gate;
 mod context_bytes;
 mod frozen_snapshots;
@@ -195,6 +206,29 @@ fn main() {
                 }
             }
         }
+        "comment-loc-cap" => {
+            let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
+            let paths = comment_loc_cap::parse_paths(
+                &flag(&args, "--paths").unwrap_or_else(|| "src test".to_string()),
+            );
+            if paths.is_empty() {
+                fail("comment-loc-cap: --paths names no directory");
+            }
+            match comment_loc_cap::scan(Path::new(&root), &paths) {
+                Err(e) => fail(&format!("comment-loc-cap: {e}")),
+                Ok(files) => {
+                    let lines = comment_loc_cap::report(&files);
+                    if lines.is_empty() {
+                        println!("comment-loc-cap: clean — {} files", files.len());
+                    } else {
+                        for line in lines {
+                            println!("{line}");
+                        }
+                        std::process::exit(1);
+                    }
+                }
+            }
+        }
         "mutation-ledger" => {
             let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
             let path =
@@ -272,7 +306,7 @@ fn main() {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
                  (available: no-submodules, agent-context-cap, prompt-cap, \
-                 snapshots-append-only, mutation-ledger, ci-gate, soldeer-gate, \
+                 comment-loc-cap, snapshots-append-only, mutation-ledger, ci-gate, soldeer-gate, \
                  rpc-preflight, release-guard)"
             );
             std::process::exit(2);
