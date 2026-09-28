@@ -37,3 +37,18 @@ setup() {
   v=$(subgraph_deploy_version "0xabc" "abc1234")
   [ "$v" = "0xabc-abc1234" ]
 }
+
+@test "ormi_query_is_deployed accepts a live _meta response" {
+  run ormi_query_is_deployed '{"data":{"_meta":{"block":{"number":51907769}}}}'
+  [ "$status" -eq 0 ]
+}
+
+@test "ormi_query_is_deployed rejects a missing version" {
+  run ormi_query_is_deployed '{"error":"subgraph name/version error"}'
+  [ "$status" -eq 1 ]
+}
+
+@test "ormi_query_is_deployed rejects an empty response" {
+  run ormi_query_is_deployed ""
+  [ "$status" -eq 1 ]
+}
