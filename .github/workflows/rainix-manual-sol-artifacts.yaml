@@ -118,7 +118,6 @@ jobs:
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
-      - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge selectors up --all
       # archive: false — this is a broadcast, so it only ever reads head state.
       # Requiring historical state here would reject a perfectly good pruning
       # endpoint; the RPC_URL_<NET>_FORK name is a misnomer on this path.
@@ -176,3 +175,24 @@ jobs:
           CI_DEPLOY_ROBINHOOD_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_ROBINHOOD_ETHERSCAN_API_KEY || vars.CI_DEPLOY_ROBINHOOD_ETHERSCAN_API_KEY || '' }}
           CI_DEPLOY_BSC_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_BSC_ETHERSCAN_API_KEY || vars.CI_DEPLOY_BSC_ETHERSCAN_API_KEY || '' }}
           CI_DEPLOY_FLARE_ETHERSCAN_API_KEY: ${{ secrets.CI_DEPLOY_FLARE_ETHERSCAN_API_KEY || vars.CI_DEPLOY_FLARE_ETHERSCAN_API_KEY || '' }}
+      # AFTER the broadcast, deliberately.
+      #
+      # This uploads selectors to a public registry (openchain) so explorers and
+      # `cast 4byte` can decode calls into the deployed contract. Useful, and
+      # entirely independent of the deployment: nothing the broadcast does reads
+      # it, and the addresses land whether it succeeds or not.
+      #
+      # It ran BEFORE the RPC preflight until now, which made a third party's
+      # availability a precondition for every Rain production deploy. On
+      # 2026-09-28 that registry began answering with a non-JSON body and
+      # `forge selectors up` exited 1 on it — `error decoding response body`,
+      # `expected value at line 2 column 1` — so `rain.math.float.deploy` could
+      # not deploy at all, twice, having broadcast nothing. Same rainix SHA and
+      # same command as the run that succeeded on 2026-09-10, so nothing here
+      # changed; their response did.
+      #
+      # Left as a failing step rather than made `continue-on-error`, because a
+      # registry that stops accepting uploads is worth a red run. What it must
+      # not do is stand between a green build and the chains, and after the
+      # broadcast it cannot.
+      - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge selectors up --all
