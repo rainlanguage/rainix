@@ -118,22 +118,8 @@ jobs:
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
-      # Best effort: this publishes selectors to a public registry (openchain)
-      # so explorers and `cast 4byte` can decode calls into the deployed
-      # contract. Nothing the broadcast does reads it and the addresses land
-      # either way, so its availability is not a precondition for deploying.
-      #
-      # Without `continue-on-error` it was one. On 2026-09-28 the registry
-      # started answering HTTP 503 with an HTML body, `forge selectors up` failed
-      # to parse it as JSON (`error decoding response body`, `expected value at
-      # line 2 column 1` — line 2 of that body is `  <head>`), and the step
-      # exited 1 before the RPC preflight. `rain.math.float.deploy` could not
-      # deploy at all, twice, with nothing broadcast. Same RAINIX_SHA, same
-      # single contract, same command as the run that succeeded on 2026-09-10.
-      #
-      # The step still runs, and still reports red when it fails, so a registry
-      # that stops accepting uploads stays visible. It just no longer decides
-      # whether a deploy happens.
+      # Best effort. Nothing the broadcast reads comes from this registry, so its
+      # outages must not stop a deploy. Still runs, still reports red.
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge selectors up --all
         continue-on-error: true
       # archive: false — this is a broadcast, so it only ever reads head state.
