@@ -1,0 +1,28 @@
+name: install-staged-config
+description: >-
+  Installs what a repo's codegen staged: every flat file in `.staged-config/` is copied over the file of that name at the repo root, and the directory is then removed. A repo can generate its own `foundry.toml` network sections and `.env.example` endpoint variables from a single roster, but `forge script ./script/Build.sol` cannot WRITE the project root's `foundry.toml` — foundry refuses every filesystem cheatcode write to its own config, whatever `fs_permissions` says and however the path is spelled. So the generator reads each file, splices its blocks between the consumer's markers and writes the result to `.staged-config/`, and this installs it. That install is the step every generating repo would otherwise carry as its own copy of a `script/build.sh` that is the same script in all of them (rainlanguage/rainix#390); here it needs no forge, no nix devshell and no `--ffi`, granting `--ffi` to every consumer's build being the alternative it avoids. An ABSENT `.staged-config/` is a skip, because this action runs in every sol consumer and the directory's presence is the only signal available there — a repo that generates no config stages nothing and must not go red for being what it is. Every OTHER shape is refused: a file or a symlink at the path, an empty directory, a staged entry that is not a regular file, and a staged name matching no file at the repo root. Each of those is a generated file that would not be installed, and an uninstalled generated file leaves the committed config saying whatever it said while the build reports success — the silent pass this step exists to make impossible. Validation precedes every copy, so a refusal installs nothing rather than leaving the root half generated. Run it after the codegen and before any currency check: `git diff --exit-code` is what fails a tree whose config has drifted from the roster it pins.
+runs:
+  using: composite
+  steps:
+    - name: Install the staged config
+      shell: bash
+      run: |
+        set -euo pipefail
+        # A presence test on the one path the generator and this step agree on.
+        # Bash decides only whether there is anything to look at: every consumer
+        # that generates no config stages nothing, and must not pay a nix build
+        # to be told so. WHAT is there is the Rust check's call, which treats an
+        # absent directory as a pass too — so running the binary directly gives
+        # the same verdict this step does. `-L` as well as `-e`, because a
+        # dangling symlink at the path fails `-e` while being something rather
+        # than nothing, and skipping it would be exactly the silent pass the
+        # check refuses.
+        if [ ! -e .staged-config ] && [ ! -L .staged-config ]; then
+          echo "install-staged-config: nothing staged; skip"
+          exit 0
+        fi
+        # path: ref runs the install from THIS composite's own checkout, so the
+        # installed version always matches the action version (same pattern as
+        # no-submodules) regardless of any RAINIX_SHA the caller pins.
+        nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- \
+          install-staged-config

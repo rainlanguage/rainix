@@ -42,6 +42,18 @@ jobs:
           if [ -f script/Build.sol ]; then
             nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ./script/Build.sol
           fi
+      # `forge script ./script/Build.sol` can GENERATE the root foundry.toml's
+      # network sections and .env.example's endpoint variables but cannot write
+      # foundry.toml: foundry refuses every filesystem cheatcode write to the
+      # project root's own config, whatever fs_permissions says. So a repo that
+      # generates its config stages it to .staged-config/, and this installs
+      # each staged file over the file of that name at the root — the step
+      # every such repo would otherwise carry as its own copy of one script
+      # (rainlanguage/rainix#390). No-op for a repo that stages nothing, which
+      # is every repo that generates no config. Ahead of the build so each
+      # later step reads the config the tree will be asked to commit, and ahead
+      # of the git diff that fails a stale tree.
+      - uses: rainlanguage/rainix/.github/actions/install-staged-config@main
       - name: Build Solidity
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge build
       - name: Copy forge artifacts into committed location
@@ -58,6 +70,6 @@ jobs:
       - name: Assert committed artifacts match freshly built
         run: |
           if ! git diff --exit-code; then
-            echo "::error::Committed artifacts are stale. Regenerate (script/build-meta.sh, script/Build.sol, script/CopyArtifacts.sol, script/build.sh, forge fmt) and commit."
+            echo "::error::Committed artifacts are stale. Regenerate (script/build-meta.sh, script/Build.sol, rainix-static install-staged-config, script/CopyArtifacts.sol, script/build.sh, forge fmt) and commit."
             exit 1
           fi

@@ -272,6 +272,18 @@ jobs:
             exit 1
           fi
           nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c bash -c 'set -euo pipefail; forge script ./script/Build.sol && forge fmt'
+      # The regeneration above STAGES a generated config rather than writing it
+      # — foundry refuses every filesystem cheatcode write to the project
+      # root's own foundry.toml — so installing it is what puts the config
+      # inside the guard's clean-tree check at all: uninstalled, the staged file
+      # changes no tracked file, the tree is trivially clean, and a release
+      # publishes a config that nothing regenerated. The same action
+      # rainix-copy-artifacts runs at PR time, so release-time and PR-time go on
+      # proving the same thing about the same commands. It also removes
+      # .staged-config/, so the staging cannot surface as untracked in the
+      # guard's `git status --untracked-files=all`. No-op for a repo that stages
+      # nothing.
+      - uses: rainlanguage/rainix/.github/actions/install-staged-config@main
       - name: Publish guard (fail-closed)
         # The point of the push-free change: refuse to publish a tag whose commit
         # did not actually cut this release's snapshot. Runs immediately before

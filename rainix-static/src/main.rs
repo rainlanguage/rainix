@@ -93,6 +93,18 @@
 //       removed — a deploy repo's generated released-suites lib imports it, so
 //       removing it makes the tree uncompilable (rainlanguage/rainix#341). Runs
 //       where git is on PATH.
+//   install-staged-config [--root <dir>]
+//       install every file a repo's codegen staged in `.staged-config/` over the
+//       file of that name at the repo root, then remove the directory. `forge
+//       script ./script/Build.sol` can GENERATE the root `foundry.toml`'s network
+//       sections but cannot write them: foundry refuses every filesystem
+//       cheatcode write to the project root's own config, whatever
+//       `fs_permissions` says. So the generator stages and this installs. An
+//       absent directory is a skip (every repo that generates no config stages
+//       nothing); every other shape — a file or symlink at the path, an empty
+//       directory, a staged entry that is not a flat file, a staged name that
+//       matches no root file — is refused, because a staged file left
+//       uninstalled leaves the committed config stale and the build green.
 
 mod agent_context_cap;
 mod ci_gate;
@@ -104,6 +116,7 @@ mod prompt_cap;
 mod release_guard;
 mod rpc_preflight;
 mod soldeer_gate;
+mod staged_config;
 
 use std::path::Path;
 
@@ -268,12 +281,25 @@ fn main() {
                 burst,
             );
         }
+        "install-staged-config" => {
+            let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
+            match staged_config::install(Path::new(&root)) {
+                Err(e) => fail(&format!("install-staged-config: {e}")),
+                Ok(staged_config::Outcome::NothingStaged) => {
+                    println!("install-staged-config: nothing staged; skip")
+                }
+                Ok(staged_config::Outcome::Installed(names)) => println!(
+                    "install-staged-config: installed {} over the repo root",
+                    names.join(", ")
+                ),
+            }
+        }
         other => {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
                  (available: no-submodules, agent-context-cap, prompt-cap, \
                  snapshots-append-only, mutation-ledger, ci-gate, soldeer-gate, \
-                 rpc-preflight, release-guard)"
+                 rpc-preflight, release-guard, install-staged-config)"
             );
             std::process::exit(2);
         }
