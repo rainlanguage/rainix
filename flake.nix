@@ -229,10 +229,14 @@
             version = "0.1.0";
             hash = "sha256-2ZCPiTO11UhhWUAhn3C433VrLfOB+Dlld/B4wh14DXY=";
           };
-          nativeCheckInputs = [ pkgs.git ];
+          nativeCheckInputs = [
+            pkgs.git
+            pkgs.scc
+          ];
           nativeBuildInputs = [ pkgs.makeWrapper ];
-          # The subcommands shell out to git (`ls-files`, `diff`) and curl
-          # (`rpc-preflight`'s probes, `soldeer-gate`'s fetches). The composite
+          # The subcommands shell out to git (`ls-files`, `diff`), curl
+          # (`rpc-preflight`'s probes, `soldeer-gate`'s fetches) and scc
+          # (`comment-loc-cap`'s line counting). The composite
           # actions invoke this binary with `nix run`, i.e. OUTSIDE any devshell,
           # so ambient PATH is whatever the runner image happens to ship. Wrap it
           # with the pinned tools and a CA bundle so the checks are hermetic and
@@ -243,6 +247,7 @@
                 pkgs.lib.makeBinPath [
                   pkgs.curl
                   pkgs.git
+                  pkgs.scc
                 ]
               } \
               --set-default SSL_CERT_FILE ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
@@ -388,6 +393,9 @@
         common-shell-inputs = [
           pkgs.gh
           pkgs.pre-commit
+          # `comment-loc-cap` counts with it. The wrapped `rainix-static` below
+          # carries its own copy, but the crate's tests run unwrapped.
+          pkgs.scc
           # General rainix tooling on PATH in every shell; workflows call it
           # instead of inline bash/Python (rainlanguage/rainix#255).
           rainix-static

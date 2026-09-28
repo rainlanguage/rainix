@@ -105,8 +105,8 @@
 //       where git is on PATH.
 
 mod agent_context_cap;
-mod comment_loc_cap;
 mod ci_gate;
+mod comment_loc_cap;
 mod context_bytes;
 mod frozen_snapshots;
 mod mutation_ledger;
