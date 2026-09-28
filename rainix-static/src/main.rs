@@ -34,6 +34,14 @@
 //       Nothing is stripped: a shell script reads the bytes on disk. Which
 //       files are prompts and what they may weigh is per-repo, so both are an
 //       input, and a glob matching nothing is an error rather than a pass.
+//   codegen-declaration --log <file> [--root <dir>]
+//       fail if a codegen hook declared a generated path it then did not
+//       write. Re-running the generators and diffing proves the committed
+//       CONTENT is current but is blind to a generator that has STOPPED
+//       emitting a file, and only the generator knows which paths it owns
+//       rather than deliberately leaves frozen. Hooks declare on stdout as
+//       `rainix-codegen owns <path>` and `rainix-codegen wrote <path>`, which
+//       the workflow tees into <file>. A repo declaring nothing passes.
 //   snapshots-append-only [--base <ref>] [--root <dir>]
 //       fail if the branch modifies or deletes an existing per-tag deploy-pin
 //       snapshot under <root>/<tag>/ (default root src/generated, base
@@ -96,6 +104,7 @@
 
 mod agent_context_cap;
 mod ci_gate;
+mod codegen_declaration;
 mod context_bytes;
 mod frozen_snapshots;
 mod mutation_ledger;
@@ -212,6 +221,12 @@ fn main() {
                 .unwrap_or_else(|| fail("soldeer-gate: --package <name> required"));
             soldeer_gate::run(&pkg, flag(&args, "--github-output").as_deref());
         }
+        "codegen-declaration" => {
+            let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
+            let log = flag(&args, "--log")
+                .unwrap_or_else(|| fail("codegen-declaration: --log <file> required"));
+            codegen_declaration::run(Path::new(&root), Path::new(&log));
+        }
         "snapshots-append-only" => {
             let base = flag(&args, "--base").unwrap_or_else(|| "origin/main".to_string());
             let root = flag(&args, "--root").unwrap_or_else(|| "src/generated".to_string());
@@ -272,8 +287,8 @@ fn main() {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
                  (available: no-submodules, agent-context-cap, prompt-cap, \
-                 snapshots-append-only, mutation-ledger, ci-gate, soldeer-gate, \
-                 rpc-preflight, release-guard)"
+                 codegen-declaration, snapshots-append-only, mutation-ledger, \
+                 ci-gate, soldeer-gate, rpc-preflight, release-guard)"
             );
             std::process::exit(2);
         }

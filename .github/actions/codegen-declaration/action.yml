@@ -1,0 +1,15 @@
+name: codegen-declaration
+description: >-
+  Fails `rainix-copy-artifacts` when a codegen hook declared a generated path it then did not write. Re-running the generators and diffing proves the committed CONTENT is current, but a generator that has STOPPED emitting a file writes nothing, so the already-correct committed copy is left alone, nothing differs and the job is green over a dead emitter (rainlanguage/rain.factory.deploy#35). Only the generator knows which paths it owns rather than deliberately leaves frozen, so it declares them on stdout — `rainix-codegen owns <path>` and `rainix-codegen wrote <path>` — and the workflow tees that into the log this reads. A repo whose hooks declare nothing is a no-op.
+runs:
+  using: composite
+  steps:
+    - name: Check the codegen declaration
+      shell: bash
+      run: |
+        set -euo pipefail
+        # path: ref runs the check from THIS composite's own checkout, so the
+        # check version always matches the action version (same pattern as
+        # mutation-ledger) regardless of any RAINIX_SHA the caller pins.
+        nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- \
+          codegen-declaration --log "$RUNNER_TEMP/rainix-codegen.log"

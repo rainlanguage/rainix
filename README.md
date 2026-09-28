@@ -163,6 +163,24 @@ single job it runs whichever of these the repo has:
 
 then `forge fmt` and the `git diff` assert.
 
+The diff answers "is the committed **content** current". It cannot answer "is
+anything still generating it": a generator that has stopped emitting a file
+writes nothing, the already-correct committed copy is left alone, and the job is
+green over a dead emitter (rainlanguage/rain.factory.deploy#35). Only the
+generator knows which paths it owns, as against a `src/generated/<tag>/`
+snapshot deliberately frozen forever — so the generator says so, on stdout:
+
+```
+rainix-codegen owns src/lib/LibReleasedSuites.sol
+rainix-codegen wrote src/lib/LibReleasedSuites.sol
+```
+
+The job tees every hook's stdout into one log and fails, naming the path, on
+anything declared `owns` that no hook then `wrote`. Nothing is declared by hand
+and no repo maintains a list: the same code that computes where to write emits
+these lines. A repo whose hooks print neither keeps exactly today's behaviour —
+green, with a note that a dead emitter there is still invisible.
+
 ```yaml
 name: copy-artifacts
 on: [push]

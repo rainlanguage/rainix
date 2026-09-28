@@ -26,33 +26,48 @@ jobs:
       # committed file has drifted from its source. The build-meta.sh hook is
       # consumer-supplied because rain meta build's invocation (input/output
       # filenames, meta type) varies per repo.
+      #
+      # Each hook's stdout is teed into one log: a hook may declare there which
+      # generated paths it owns and which it wrote, which is the half of the
+      # currency check the diff cannot do (codegen-declaration, below).
+      # `pipefail` is set in every teed step — bash otherwise reports `tee`'s
+      # exit status, so a failing generator would pass.
       - name: Regenerate meta artifacts
         if: hashFiles('script/build-meta.sh') != ''
-        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c ./script/build-meta.sh
+        run: |
+          set -euo pipefail
+          nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c ./script/build-meta.sh | tee -a "$RUNNER_TEMP/rainix-codegen.log"
       # Committed generated sources must be regenerable here, or the currency
       # check below passes without checking anything. The codegen script is
       # `script/Build.sol`, matched exactly: a repo that renames or drops it
       # goes red rather than skipping regeneration and reporting green.
       - name: Regenerate generated sources
         run: |
+          set -euo pipefail
           if [ -d src/generated ] && [ ! -f script/Build.sol ]; then
             echo "::error::src/generated/ is committed but script/Build.sol was not found, so the committed sources cannot be currency checked here. The codegen script must be script/Build.sol."
             exit 1
           fi
           if [ -f script/Build.sol ]; then
-            nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ./script/Build.sol
+            nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ./script/Build.sol | tee -a "$RUNNER_TEMP/rainix-codegen.log"
           fi
       - name: Build Solidity
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge build
       - name: Copy forge artifacts into committed location
         if: hashFiles('script/CopyArtifacts.sol') != ''
-        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ./script/CopyArtifacts.sol --ffi
+        run: |
+          set -euo pipefail
+          nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ./script/CopyArtifacts.sol --ffi | tee -a "$RUNNER_TEMP/rainix-codegen.log"
       # Catch-all post-forge regen hook: consumer-supplied. Runs outside any
       # nix devshell so the script picks shells per command (subgraph-shell,
       # sol-shell, etc.) for whatever derived artifacts it emits.
       - name: Regenerate derived artifacts
         if: hashFiles('script/build.sh') != ''
-        run: ./script/build.sh
+        run: |
+          set -euo pipefail
+          ./script/build.sh | tee -a "$RUNNER_TEMP/rainix-codegen.log"
+      - name: Assert every declared generated path was written
+        uses: rainlanguage/rainix/.github/actions/codegen-declaration@main
       - name: Format (so generated artifacts match committed style)
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge fmt
       - name: Assert committed artifacts match freshly built
