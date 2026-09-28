@@ -30,9 +30,7 @@ on:
           address on every network, so one value covers the whole `networks`
           list; a repo whose address differs per network dispatches this once
           per network instead.
-    # No `networks` input: the explorers are the caller's own `[etherscan]`,
-    # read in the step below. `rainix-manual-sol-artifacts` does not ask for a
-    # network list either, and a restated one goes stale silently.
+    # No `networks` input: explorers are the caller's own `[etherscan]`.
     #
     # Secrets consumed by the verify step. Declared here so callers in a
     # different organization can pass them explicitly — `secrets: inherit`
@@ -108,9 +106,7 @@ jobs:
       # runs when the explorer is coldest. Only a failed attempt sleeps.
       - name: Verify
         run: |
-          # `required: true` only says a value was passed. A blank one reaches
-          # forge and lands in the failure list as if the explorer had rejected
-          # the source, so refuse it here.
+          # A blank value reaches forge and reads as an explorer rejection.
           for required in VERIFY_CONTRACT VERIFY_ADDRESS
           do
             if [[ -z ${!required//[[:space:]]/} ]]
@@ -120,11 +116,8 @@ jobs:
             fi
           done
 
-          # Chain IDs, not names: a section's keys are the repo's
-          # `[rpc_endpoints]` aliases, which `--chain` rejects (`base_sepolia`
-          # vs `base-sepolia`), and IDs cover chains foundry cannot name.
-          # `|| true`: a no-match grep under pipefail would kill the step before
-          # the check below.
+          # Chain IDs: section keys are `[rpc_endpoints]` aliases `--chain`
+          # rejects. `|| true`: a no-match grep under pipefail kills the step.
           VERIFY_NETWORKS="$(sed -n '/^\[etherscan\]/,/^\[/{/^\[/!p}' foundry.toml \
             | grep -oE 'chain = [0-9]+' \
             | grep -oE '[0-9]+' \
