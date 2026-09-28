@@ -148,6 +148,8 @@
           '';
         };
 
+        # Kept for consumers that still invoke the Goldsky CLI directly
+        # (gildlab/offchainAssetVault-subgraph). subgraph-deploy targets Ormi.
         goldsky = pkgs.stdenv.mkDerivation rec {
           pname = "goldsky";
           version = "13.3.4";
@@ -424,29 +426,53 @@
             set -euxo pipefail
             source ${./lib/subgraph.sh}
 
+            : "''${ORMI_DEPLOY_KEY:?ORMI_DEPLOY_KEY is required}"
+            : "''${SUBGRAPH_NAME:?SUBGRAPH_NAME is required}"
+            : "''${ORMI_QUERY_BASE:?ORMI_QUERY_BASE is required}"
+
             # subgraph/abis and subgraph/generated are committed, so the deploy
-            # builds the subgraph directly from them with just the graph +
-            # goldsky toolchain — the same committed-artifact path as
-            # subgraph-test, slim enough for the subgraph shell.
+            # builds the subgraph directly from them. The deployment name stays
+            # <SUBGRAPH_NAME>-<network> and the version label stays
+            # <address>-<commit>, so an Ormi tag can move between versions.
             (cd ./subgraph && ${pkgs.nodejs_22}/bin/npm ci)
 
             commit="$(${pkgs.git}/bin/git rev-parse --short HEAD)"
+            ormi_node="https://subgraph.api.ormilabs.com/deploy"
+            ormi_ipfs="https://subgraph.api.ormilabs.com/ipfs"
             for network in $(subgraph_networks ./subgraph/networks.json); do
               address=$(subgraph_network_address ./subgraph/networks.json "$network")
               version=$(subgraph_deploy_version "$address" "$commit")
-              name_and_version="''${GOLDSKY_SUBGRAPH_NAME}-$network/$version"
+              name="''${SUBGRAPH_NAME}-$network"
+              query_url="''${ORMI_QUERY_BASE%/}/subgraphs/$name/$version/gn"
+              query_json="$(${pkgs.curl}/bin/curl -sS -X POST "$query_url" \
+                -H 'content-type: application/json' \
+                --data '{"query":"{ _meta { block { number } } }"}' || true)"
 
-              if ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph list "$name_and_version" 2>/dev/null | grep -q "$name_and_version"; then
-                echo "Subgraph $name_and_version already deployed, skipping."
+              if ormi_query_is_deployed "$query_json"; then
+                echo "Subgraph $name/$version already deployed, skipping."
               else
                 echo "Building subgraph for $network..."
                 (cd ./subgraph && ${the-graph}/bin/graph build --network "$network")
-                echo "Deploying subgraph $name_and_version..."
-                (cd ./subgraph && ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph deploy "$name_and_version")
+                echo "Deploying subgraph $name/$version..."
+                # set -x would print ORMI_DEPLOY_KEY.
+                set +x
+                if (
+                  cd ./subgraph &&
+                    ${the-graph}/bin/graph deploy "$name" \
+                      --node "$ormi_node" \
+                      --ipfs "$ormi_ipfs" \
+                      --deploy-key "''${ORMI_DEPLOY_KEY}" \
+                      --version-label "$version"
+                ); then
+                  set -x
+                else
+                  set -x
+                  exit 1
+                fi
               fi
             done
           '';
-          additionalBuildInputs = node-build-inputs;
+          additionalBuildInputs = node-build-inputs ++ [ pkgs.curl ];
         };
 
         subgraph-tasks = [
