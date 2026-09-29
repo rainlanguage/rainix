@@ -30,30 +30,8 @@ on:
           address on every network, so one value covers the whole `networks`
           list; a repo whose address differs per network dispatches this once
           per network instead.
-      networks:
-        type: string
-        required: false
-        default: ''
-        description: |
-          Whitespace separated `forge verify-contract --chain` values, one per
-          explorer to submit to. These are FOUNDRY's chain names, which are not
-          always the caller's `[rpc_endpoints]` aliases — `base-sepolia` is a
-          chain name and `base_sepolia` is rejected outright.
-
-          Leave unset, which is the normal case. The step then reads the chain
-          IDs out of the caller's own `[etherscan]` section, which is the set of
-          explorers that repo is configured to submit to. A caller passing this
-          is restating a list it already maintains, and one that acquires a
-          network in `foundry.toml` and forgets to add it here gets a
-          verification pass that silently skips it.
-
-          `rainix-manual-sol-artifacts` never asks for a network list — the
-          deploy script iterates `LibRainDeploy.supportedNetworks()` itself — so
-          requiring one here made verification the odd half of the same
-          operation.
-
-          Pass a value only to submit to a SUBSET, e.g. re-running one explorer
-          that was down.
+    # No `networks` input: explorers are the caller's own `[etherscan]`.
+    #
     # Secrets consumed by the verify step. Declared here so callers in a
     # different organization can pass them explicitly — `secrets: inherit`
     # only forwards a caller's secrets within the same org, so a cross-org
@@ -128,15 +106,7 @@ jobs:
       # runs when the explorer is coldest. Only a failed attempt sleeps.
       - name: Verify
         run: |
-          # `required: true` only says a value was passed, not that it says
-          # anything. A blank `contract` or `address` does reach forge and is
-          # rejected there, but only after a shell and an explorer round trip
-          # per network, and it lands in the failure list as if the explorer had
-          # rejected the source. Both are caller mistakes, so refuse them up
-          # front rather than let the run answer for them.
-          #
-          # `networks` is NOT among them — blank is its normal value, and is
-          # handled below by reading the caller's `[etherscan]`.
+          # A blank value reaches forge and reads as an explorer rejection.
           for required in VERIFY_CONTRACT VERIFY_ADDRESS
           do
             if [[ -z ${!required//[[:space:]]/} ]]
@@ -146,28 +116,16 @@ jobs:
             fi
           done
 
-          # Unset `networks` means every explorer the caller is configured for,
-          # read from its own `[etherscan]`. Chain IDs, because `chain = <id>` is
-          # what an entry binds and because a repo's section keys are its
-          # `[rpc_endpoints]` aliases, which `--chain` does not accept —
-          # `base_sepolia` is rejected where `base-sepolia` is the chain name. An
-          # ID sidesteps that and also covers chains foundry has no name for.
-          #
-          # `|| true` because under `pipefail` a grep that matches nothing exits
-          # 1, which would kill the step before the check below could say which
-          # read came back empty.
-          if [[ -z ${VERIFY_NETWORKS//[[:space:]]/} ]]
-          then
-            VERIFY_NETWORKS="$(sed -n '/^\[etherscan\]/,/^\[/{/^\[/!p}' foundry.toml \
-              | grep -oE 'chain = [0-9]+' \
-              | grep -oE '[0-9]+' \
-              | tr '\n' ' ' || true)"
-            echo "networks unset; read from [etherscan]:$VERIFY_NETWORKS"
-          fi
+          # Chain IDs: section keys are `[rpc_endpoints]` aliases `--chain`
+          # rejects. `|| true`: a no-match grep under pipefail kills the step.
+          VERIFY_NETWORKS="$(sed -n '/^\[etherscan\]/,/^\[/{/^\[/!p}' foundry.toml \
+            | grep -oE 'chain = [0-9]+' \
+            | grep -oE '[0-9]+' \
+            | tr '\n' ' ' || true)"
+          echo "explorers from [etherscan]:$VERIFY_NETWORKS"
 
-          # A blank list here gives the loop zero iterations, so the step would
-          # exit 0 having submitted nothing — a green run that verified nothing,
-          # which is the failure this whole workflow exists to correct.
+          # An empty list gives the loop zero iterations: a green run that
+          # verified nothing, which is the failure this workflow exists to fix.
           if [[ -z ${VERIFY_NETWORKS//[[:space:]]/} ]]
           then
             echo "::error::no networks to verify on, and no [etherscan] entry in foundry.toml carries a chain id"
@@ -199,7 +157,6 @@ jobs:
         env:
           VERIFY_CONTRACT: ${{ inputs.contract }}
           VERIFY_ADDRESS: ${{ inputs.address }}
-          VERIFY_NETWORKS: ${{ inputs.networks }}
           CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY || vars.CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY || '' }}
           CI_DEPLOY_BASE_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_BASE_ETHERSCAN_API_KEY || vars.CI_DEPLOY_BASE_ETHERSCAN_API_KEY || '' }}
           CI_DEPLOY_BASE_SEPOLIA_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_BASE_SEPOLIA_ETHERSCAN_API_KEY || vars.CI_DEPLOY_BASE_SEPOLIA_ETHERSCAN_API_KEY || '' }}
