@@ -132,13 +132,23 @@ jobs:
             exit 1
           fi
 
+          # Blanked for the Sourcify retry below: forge goes to Etherscan
+          # whenever the chain's key holds a value. Blank, not unset — unset it
+          # errors resolving the table.
+          mapfile -t blanked < <(compgen -e | grep -E '^CI_DEPLOY_[A-Z_]+_ETHERSCAN_API_KEY$' | sed 's/$/=/')
+
           failed=''
           for network in $VERIFY_NETWORKS
           do
             echo "::group::$VERIFY_CONTRACT on $network"
             nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c \
               forge verify-contract --chain "$network" "$VERIFY_ADDRESS" "$VERIFY_CONTRACT" --watch --retries 40 --delay 15 \
-              || failed="$failed $network"
+              || {
+                echo "$network's explorer rejected the submission; retrying through Sourcify"
+                env "${blanked[@]}" nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c \
+                  forge verify-contract --verifier sourcify --chain "$network" "$VERIFY_ADDRESS" "$VERIFY_CONTRACT" --watch --retries 40 --delay 15 \
+                  || failed="$failed $network"
+              }
             echo '::endgroup::'
             sleep 15
           done
