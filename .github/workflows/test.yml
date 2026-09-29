@@ -173,3 +173,24 @@ jobs:
             fi
           done
           exit "$fail"
+  # rainix eats the caps it hands consumers, like the sol gates above. Neither
+  # ran against rainix itself: both are composite actions, and the matrix jobs
+  # here run devshell TASKS. So the repo that sets the org's limits was the one
+  # repo not held to them.
+  #
+  # `comment-loc-cap` takes explicit paths because rainix has no `src/`, where a
+  # consumer takes the default. `agent-context-cap` always scans `.`.
+  #
+  # `./` rather than the fully qualified `@main` ref every other step here uses:
+  # a local ref resolves against THIS checkout, so the PR that adds an action
+  # tests the version it adds rather than the one on main.
+  caps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: ./.github/actions/comment-loc-cap
+        with:
+          paths: rainix-static lib test .github flake.nix
+      - uses: ./.github/actions/agent-context-cap
