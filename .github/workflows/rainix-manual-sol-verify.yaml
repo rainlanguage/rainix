@@ -132,13 +132,27 @@ jobs:
             exit 1
           fi
 
+          # Sourcify takes the chains whose explorer refuses us — Robinhood's
+          # Blockscout serves a Cloudflare challenge no retry count outlasts.
+          #
+          # Keys are blanked for the retry because forge picks the verifier from
+          # the `[etherscan]` entry and goes to Etherscan whenever the chain's
+          # key holds a value. Blank, not unset: it resolves the whole table
+          # before honouring `--verifier` and errors on a name with no value.
+          mapfile -t blanked < <(compgen -e | grep -E '^CI_DEPLOY_[A-Z_]+_ETHERSCAN_API_KEY$' | sed 's/$/=/')
+
           failed=''
           for network in $VERIFY_NETWORKS
           do
             echo "::group::$VERIFY_CONTRACT on $network"
             nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c \
               forge verify-contract --chain "$network" "$VERIFY_ADDRESS" "$VERIFY_CONTRACT" --watch --retries 40 --delay 15 \
-              || failed="$failed $network"
+              || {
+                echo "$network's explorer rejected the submission; retrying through Sourcify"
+                env "${blanked[@]}" nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c \
+                  forge verify-contract --verifier sourcify --chain "$network" "$VERIFY_ADDRESS" "$VERIFY_CONTRACT" --watch --retries 40 --delay 15 \
+                  || failed="$failed $network"
+              }
             echo '::endgroup::'
             sleep 15
           done
