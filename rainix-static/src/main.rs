@@ -103,6 +103,13 @@
 //       removed — a deploy repo's generated released-suites lib imports it, so
 //       removing it makes the tree uncompilable (rainlanguage/rainix#341). Runs
 //       where git is on PATH.
+//   ormi-probe --base <ORMI_QUERY_BASE> --name <name> --version <version>
+//       subgraph-deploy's skip decision: is <name>/<version> already live on
+//       Ormi? Exit 0 = deployed, 10 = confirmed missing, 1 = anything else
+//       (transport/HTTP failure after retries, unrecognised body, wrong query
+//       base, malformed argument) — so a failed probe can never read as "not
+//       deployed" and trigger a deploy. Needs no secret. Semantics:
+//       ormi_probe.rs module doc. Runs where curl is on PATH.
 
 mod agent_context_cap;
 mod ci_gate;
@@ -111,6 +118,7 @@ mod context_bytes;
 mod frozen_snapshots;
 mod mutation_ledger;
 mod no_submodules;
+mod ormi_probe;
 mod prompt_cap;
 mod release_guard;
 mod rpc_preflight;
@@ -267,6 +275,14 @@ fn main() {
             let foundry = flag(&args, "--foundry").unwrap_or_else(|| "foundry.toml".to_string());
             release_guard::run(&version, &root, &foundry);
         }
+        "ormi-probe" => {
+            let base = flag(&args, "--base")
+                .unwrap_or_else(|| fail("ormi-probe: --base <query base url> required"));
+            let name = flag(&args, "--name").unwrap_or_else(|| fail("ormi-probe: --name required"));
+            let version =
+                flag(&args, "--version").unwrap_or_else(|| fail("ormi-probe: --version required"));
+            ormi_probe::run(&base, &name, &version);
+        }
         "rpc-preflight" => {
             let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
             // There is no stdout fallback on purpose: the selected URL may be
@@ -307,7 +323,7 @@ fn main() {
                 "rainix-static: unknown subcommand {other:?} \
                  (available: no-submodules, agent-context-cap, prompt-cap, \
                  comment-loc-cap, snapshots-append-only, mutation-ledger, ci-gate, soldeer-gate, \
-                 rpc-preflight, release-guard)"
+                 rpc-preflight, release-guard, ormi-probe)"
             );
             std::process::exit(2);
         }
