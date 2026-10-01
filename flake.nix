@@ -475,6 +475,7 @@
             bats test/bats/task/skip-simulation.test.bats
             bats test/bats/task/subgraph-build.test.bats
             bats test/bats/task/subgraph-deploy-version.test.bats
+            bats test/bats/task/subgraph-deploy.test.bats
             bats test/bats/task/sol-single-contract.test.bats
             bats test/bats/task/no-custom-natspec.test.bats
             bats test/bats/workflow/rainix-sol-static.test.bats
