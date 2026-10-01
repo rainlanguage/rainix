@@ -30,14 +30,8 @@ on:
           address on every network, so one value covers the whole `networks`
           list; a repo whose address differs per network dispatches this once
           per network instead.
-      networks:
-        type: string
-        required: true
-        description: |
-          Whitespace separated `forge verify-contract --chain` values, one per
-          explorer to submit to. These are FOUNDRY's chain names, which are not
-          always the caller's `[rpc_endpoints]` aliases — `base-sepolia` is a
-          chain name and `base_sepolia` is rejected outright.
+    # No `networks` input: explorers are the caller's own `[etherscan]`.
+    #
     # Secrets consumed by the verify step. Declared here so callers in a
     # different organization can pass them explicitly — `secrets: inherit`
     # only forwards a caller's secrets within the same org, so a cross-org
@@ -112,16 +106,8 @@ jobs:
       # runs when the explorer is coldest. Only a failed attempt sleeps.
       - name: Verify
         run: |
-          # `required: true` only says a value was passed, not that it says
-          # anything. A blank `networks` gives the loop below zero iterations,
-          # so the step exits 0 having submitted nothing — a green run that
-          # verified nothing is the exact failure this whole workflow exists to
-          # prevent. A blank `contract` or `address` does reach forge and is
-          # rejected there, but only after a shell and an explorer round trip
-          # per network, and it lands in the failure list as if the explorer
-          # had rejected the source. Every one of them is a caller mistake, so
-          # refuse all three up front rather than let the run answer for them.
-          for required in VERIFY_CONTRACT VERIFY_ADDRESS VERIFY_NETWORKS
+          # A blank value reaches forge and reads as an explorer rejection.
+          for required in VERIFY_CONTRACT VERIFY_ADDRESS
           do
             if [[ -z ${!required//[[:space:]]/} ]]
             then
@@ -129,13 +115,40 @@ jobs:
               exit 1
             fi
           done
+
+          # Chain IDs: section keys are `[rpc_endpoints]` aliases `--chain`
+          # rejects. `|| true`: a no-match grep under pipefail kills the step.
+          VERIFY_NETWORKS="$(sed -n '/^\[etherscan\]/,/^\[/{/^\[/!p}' foundry.toml \
+            | grep -oE 'chain = [0-9]+' \
+            | grep -oE '[0-9]+' \
+            | tr '\n' ' ' || true)"
+          echo "explorers from [etherscan]:$VERIFY_NETWORKS"
+
+          # An empty list gives the loop zero iterations: a green run that
+          # verified nothing, which is the failure this workflow exists to fix.
+          if [[ -z ${VERIFY_NETWORKS//[[:space:]]/} ]]
+          then
+            echo "::error::no networks to verify on, and no [etherscan] entry in foundry.toml carries a chain id"
+            exit 1
+          fi
+
+          # Blanked for the Sourcify retry below: forge goes to Etherscan
+          # whenever the chain's key holds a value. Blank, not unset — unset it
+          # errors resolving the table.
+          mapfile -t blanked < <(compgen -e | grep -E '^CI_DEPLOY_[A-Z_]+_ETHERSCAN_API_KEY$' | sed 's/$/=/')
+
           failed=''
           for network in $VERIFY_NETWORKS
           do
             echo "::group::$VERIFY_CONTRACT on $network"
             nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c \
               forge verify-contract --chain "$network" "$VERIFY_ADDRESS" "$VERIFY_CONTRACT" --watch --retries 40 --delay 15 \
-              || failed="$failed $network"
+              || {
+                echo "$network's explorer rejected the submission; retrying through Sourcify"
+                env "${blanked[@]}" nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c \
+                  forge verify-contract --verifier sourcify --chain "$network" "$VERIFY_ADDRESS" "$VERIFY_CONTRACT" --watch --retries 40 --delay 15 \
+                  || failed="$failed $network"
+              }
             echo '::endgroup::'
             sleep 15
           done
@@ -154,7 +167,6 @@ jobs:
         env:
           VERIFY_CONTRACT: ${{ inputs.contract }}
           VERIFY_ADDRESS: ${{ inputs.address }}
-          VERIFY_NETWORKS: ${{ inputs.networks }}
           CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY || vars.CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY || '' }}
           CI_DEPLOY_BASE_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_BASE_ETHERSCAN_API_KEY || vars.CI_DEPLOY_BASE_ETHERSCAN_API_KEY || '' }}
           CI_DEPLOY_BASE_SEPOLIA_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_BASE_SEPOLIA_ETHERSCAN_API_KEY || vars.CI_DEPLOY_BASE_SEPOLIA_ETHERSCAN_API_KEY || '' }}
