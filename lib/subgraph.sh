@@ -22,14 +22,3 @@ subgraph_networks() {
   local networks_json="$1"
   jq -r 'keys[]' "$networks_json"
 }
-
-# Exit 0 when an Ormi subgraph query response is a deployed version.
-# A missing name/version returns {"error":"..."}; a live one returns data._meta.
-# Usage: ormi_query_is_deployed <json>
-ormi_query_is_deployed() {
-  local json="${1:-}"
-  if [ -z "$json" ]; then
-    return 1
-  fi
-  jq -e '.data._meta.block.number != null' <<<"$json" >/dev/null
-}

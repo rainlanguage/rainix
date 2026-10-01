@@ -428,59 +428,22 @@
           '';
         };
 
+        # Tracing stays off for the whole task: ORMI_DEPLOY_KEY is a credential
+        # and `set -x` would print it. The logic lives in lib/subgraph-deploy.sh.
         subgraph-deploy = mkTask {
           name = "subgraph-deploy";
           body = ''
-            set -euxo pipefail
+            set -euo pipefail
             source ${./lib/subgraph.sh}
+            source ${./lib/subgraph-deploy.sh}
 
-            : "''${ORMI_DEPLOY_KEY:?ORMI_DEPLOY_KEY is required}"
-            : "''${SUBGRAPH_NAME:?SUBGRAPH_NAME is required}"
-            : "''${ORMI_QUERY_BASE:?ORMI_QUERY_BASE is required}"
-
-            # subgraph/abis and subgraph/generated are committed, so the deploy
-            # builds the subgraph directly from them. The deployment name stays
-            # <SUBGRAPH_NAME>-<network> and the version label stays
-            # <address>-<commit>, so an Ormi tag can move between versions.
-            (cd ./subgraph && ${pkgs.nodejs_22}/bin/npm ci)
-
-            commit="$(${pkgs.git}/bin/git rev-parse --short HEAD)"
-            ormi_node="https://subgraph.api.ormilabs.com/deploy"
-            ormi_ipfs="https://subgraph.api.ormilabs.com/ipfs"
-            for network in $(subgraph_networks ./subgraph/networks.json); do
-              address=$(subgraph_network_address ./subgraph/networks.json "$network")
-              version=$(subgraph_deploy_version "$address" "$commit")
-              name="''${SUBGRAPH_NAME}-$network"
-              query_url="''${ORMI_QUERY_BASE%/}/subgraphs/$name/$version/gn"
-              query_json="$(${pkgs.curl}/bin/curl -sS -X POST "$query_url" \
-                -H 'content-type: application/json' \
-                --data '{"query":"{ _meta { block { number } } }"}' || true)"
-
-              if ormi_query_is_deployed "$query_json"; then
-                echo "Subgraph $name/$version already deployed, skipping."
-              else
-                echo "Building subgraph for $network..."
-                (cd ./subgraph && ${the-graph}/bin/graph build --network "$network")
-                echo "Deploying subgraph $name/$version..."
-                # set -x would print ORMI_DEPLOY_KEY.
-                set +x
-                if (
-                  cd ./subgraph &&
-                    ${the-graph}/bin/graph deploy "$name" \
-                      --node "$ormi_node" \
-                      --ipfs "$ormi_ipfs" \
-                      --deploy-key "''${ORMI_DEPLOY_KEY}" \
-                      --version-label "$version"
-                ); then
-                  set -x
-                else
-                  set -x
-                  exit 1
-                fi
-              fi
-            done
+            subgraph_deploy \
+              ${the-graph}/bin/graph \
+              ${pkgs.nodejs_22}/bin/npm \
+              ${pkgs.git}/bin/git \
+              ${rainix-static}/bin/rainix-static
           '';
-          additionalBuildInputs = node-build-inputs ++ [ pkgs.curl ];
+          additionalBuildInputs = node-build-inputs;
         };
 
         subgraph-tasks = [
