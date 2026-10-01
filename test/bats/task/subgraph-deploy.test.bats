@@ -11,19 +11,24 @@ setup() {
   printf '%s' '{"mainnet":{"Counter":{"address":"0xabc","startBlock":0}}}' \
     >"$work/subgraph/networks.json"
 
-  # Each stub records `<tool> <args> key=<visible ORMI_DEPLOY_KEY>`.
+  # Each stub records `<tool> <args> key=<visible ORMI_DEPLOY_KEY>`. graph
+  # fails when it is a deploy for a name listed in $DEPLOY_FAILS.
   for tool in npm graph git; do
     cat >"$work/bin/$tool" <<'EOF'
 #!/usr/bin/env bash
 if [ "$(basename "$0")" = git ]; then echo abc1234; fi
 echo "$(basename "$0") $* key=${ORMI_DEPLOY_KEY-unset}" >>"$CALLS_LOG"
+case " ${DEPLOY_FAILS:-} " in *" $2 "*) exit 1 ;; esac
 EOF
   done
-  # The probe stub exits with $PROBE_RC, standing in for rainix-static.
+  # The probe stub stands in for rainix-static: it exits with
+  # PROBE_RC_<NETWORK> for that network, else with $PROBE_RC.
   cat >"$work/bin/rainix-static" <<'EOF'
 #!/usr/bin/env bash
 echo "probe $* key=${ORMI_DEPLOY_KEY-unset}" >>"$CALLS_LOG"
-exit "${PROBE_RC:?}"
+net="${5#raindex-}"
+var="PROBE_RC_$(echo "$net" | tr a-z A-Z)"
+exit "${!var:-${PROBE_RC:?}}"
 EOF
   chmod +x "$work/bin/"*
 
@@ -44,6 +49,11 @@ logged() {
   grep -c "$1" "$log" || true
 }
 
+two_networks() {
+  printf '%s' '{"base":{"C":{"address":"0xbbb"}},"mainnet":{"C":{"address":"0xabc"}}}' \
+    >"$work/subgraph/networks.json"
+}
+
 # Run subgraph_deploy in a fresh bash, optionally under `bash -x`.
 deploy() {
   local flags="${1:-}"
@@ -55,12 +65,14 @@ deploy() {
   ' _ "$repo_root" "$work/bin"
 }
 
-@test "a confirmed-missing version is built and deployed" {
+@test "a confirmed-missing version is deployed with its network, in one compile" {
   PROBE_RC=10 deploy
   [ "$status" -eq 0 ]
   grep -q "^probe ormi-probe --base $ORMI_QUERY_BASE --name raindex-mainnet --version 0xabc-abc1234 key=unset$" "$log"
-  grep -q "^graph build --network mainnet " "$log"
-  grep -q "^graph deploy raindex-mainnet --node https://subgraph.api.ormilabs.com/deploy --ipfs https://subgraph.api.ormilabs.com/ipfs --deploy-key $ORMI_DEPLOY_KEY --version-label 0xabc-abc1234 " "$log"
+  grep -q "^graph deploy raindex-mainnet --network mainnet --node https://subgraph.api.ormilabs.com/deploy --ipfs https://subgraph.api.ormilabs.com/ipfs --deploy-key $ORMI_DEPLOY_KEY --version-label 0xabc-abc1234 key=unset$" "$log"
+  # graph deploy compiles the manifest itself; a separate build is a second,
+  # redundant compile.
+  [ "$(logged '^graph build')" -eq 0 ]
 }
 
 @test "an already-deployed version is skipped" {
@@ -70,7 +82,7 @@ deploy() {
   [ "$(logged '^graph ')" -eq 0 ]
 }
 
-@test "a failed probe fails the task and never builds or deploys" {
+@test "a failed probe fails the task and never deploys" {
   # 1 is what ormi-probe exits for transport/HTTP failure, an unrecognised body
   # or a wrong query base; the rest guard against any other status being
   # mistaken for "missing".
@@ -79,21 +91,46 @@ deploy() {
     PROBE_RC=$rc deploy
     [ "$status" -ne 0 ]
     [[ "$output" == *"not deploying"* ]]
+    [[ "$output" == *"Did not complete: raindex-mainnet"* ]]
     [ "$(logged '^graph ')" -eq 0 ]
   done
 }
 
-@test "the deploy key reaches only graph deploy, not npm ci or graph build" {
+@test "one network failing its probe does not stop the others" {
+  two_networks
+  PROBE_RC_BASE=1 PROBE_RC_MAINNET=10 deploy
+  # The task still fails, naming the network that did not complete...
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Did not complete: raindex-base"* ]]
+  # ...but the failed one was never deployed and the healthy one was.
+  [ "$(logged '^graph deploy raindex-base ')" -eq 0 ]
+  [ "$(logged '^graph deploy raindex-mainnet ')" -eq 1 ]
+}
+
+@test "a failed network after a good one still reports and deploys the rest" {
+  two_networks
+  PROBE_RC_BASE=10 PROBE_RC_MAINNET=1 deploy
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Did not complete: raindex-mainnet"* ]]
+  [ "$(logged '^graph deploy raindex-base ')" -eq 1 ]
+}
+
+@test "a failed deploy does not stop the other networks and fails the task" {
+  two_networks
+  DEPLOY_FAILS="raindex-base" PROBE_RC=10 deploy
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Did not complete: raindex-base"* ]]
+  [ "$(logged '^graph deploy raindex-mainnet ')" -eq 1 ]
+}
+
+@test "the deploy key is only ever an argument of graph deploy" {
   PROBE_RC=10 deploy
   [ "$status" -eq 0 ]
-  grep -q '^npm ci key=unset$' "$log"
-  grep -q '^git rev-parse --short HEAD key=unset$' "$log"
-  grep -q '^probe .* key=unset$' "$log"
-  grep -q '^graph build --network mainnet key=unset$' "$log"
-  # graph deploy receives it as the --deploy-key argument and nothing else, and
-  # the probe is a public read that must not be handed the credential.
-  [ "$(logged '^probe .*s3cr3t')" -eq 0 ]
+  # Every tool, graph deploy included, sees an empty environment for it...
+  [ "$(logged 'key=unset$')" -eq "$(wc -l <"$log" | tr -d ' ')" ]
+  # ...and the only place the value appears is graph deploy's --deploy-key.
   [ "$(logged 's3cr3t')" -eq 1 ]
+  [ "$(logged '^graph deploy .*--deploy-key s3cr3t')" -eq 1 ]
 }
 
 @test "the deploy key never appears in output, even under bash -x" {
