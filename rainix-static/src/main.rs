@@ -23,10 +23,15 @@
 //       rules, subdirectory CLAUDE.md, CLAUDE.local.md. Prints the per-file
 //       breakdown on failure. The cap is a floor-only ratchet that may only
 //       ever be lowered. A repo with no agent context passes.
-//   comment-loc-cap [--root <dir>] [--paths <dirs>]
-//       fail if, summed over every tracked source file under <dirs> (default
-//       `src test`, whitespace or comma separated), comment lines exceed
-//       twice the code lines. One aggregate cap, strict: equal passes. Blank lines
+//   comment-loc-cap [--root <dir>] [--paths <dirs> | --bucket <dirs>...]
+//       fail if, summed over every tracked source file in a BUCKET, comment
+//       lines exceed twice the code lines. Each bucket is capped on its own,
+//       so a code-heavy test tree cannot pay for prose in src. Buckets are
+//       `src .github` and `test` by default; `--bucket`, repeated, replaces
+//       them, and `--paths` is the one-bucket spelling. Paths within a bucket
+//       are whitespace or comma separated. A bucket the caller named must
+//       select a file; a default one that selects none is skipped unless no
+//       bucket counted anything. Strict: equal passes. Blank lines
 //       count as neither; a line with any code on it is code, even with a
 //       trailing comment. Syntax by extension: `//` and `/* */` for
 //       .sol/.rs/.ts/.js, `#` for .sh/.toml/.yaml, both for .nix; other
@@ -140,6 +145,23 @@ fn flag(args: &[String], name: &str) -> Option<String> {
     None
 }
 
+/// Every value following a repeated `--name`, in order.
+fn flags(args: &[String], name: &str) -> Vec<String> {
+    let prefix = format!("{name}=");
+    let mut values = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if a == name {
+            if let Some(v) = it.next() {
+                values.push(v.clone());
+            }
+        } else if let Some(v) = a.strip_prefix(&prefix) {
+            values.push(v.to_string());
+        }
+    }
+    values
+}
+
 /// Numeric value following `--name`, or `default` when absent. A present but
 /// unparseable value is a typo, not a request for the default — fail loud.
 fn num(args: &[String], name: &str, default: u32) -> u32 {
@@ -208,22 +230,50 @@ fn main() {
         }
         "comment-loc-cap" => {
             let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
-            let paths = comment_loc_cap::parse_paths(
-                &flag(&args, "--paths").unwrap_or_else(|| "src test".to_string()),
-            );
-            if paths.is_empty() {
-                fail("comment-loc-cap: --paths names no directory");
+            // Each bucket is capped on its own. One aggregate over the repo
+            // lets a code-heavy test tree pay for prose in src, which is the
+            // one place the ratio is worth reading.
+            //
+            // A bucket the CALLER named must select files: it named them, so
+            // nothing there is a typo. The defaults are a guess that has to
+            // hold for every repo, and not every repo has a `test/`, so an
+            // empty default bucket is skipped — unless none counted anything,
+            // which `report_buckets` rejects.
+            let named = flags(&args, "--bucket");
+            let (specs, caller_named) = if !named.is_empty() {
+                (named, true)
+            } else if let Some(paths) = flag(&args, "--paths") {
+                (vec![paths], true)
+            } else {
+                (
+                    comment_loc_cap::DEFAULT_BUCKETS
+                        .iter()
+                        .map(|b| b.to_string())
+                        .collect(),
+                    false,
+                )
+            };
+            let mut buckets = Vec::new();
+            for spec in specs {
+                let paths = comment_loc_cap::parse_paths(&spec);
+                if paths.is_empty() {
+                    fail("comment-loc-cap: a bucket names no directory");
+                }
+                match comment_loc_cap::scan(Path::new(&root), &paths) {
+                    Err(comment_loc_cap::ScanError::NoSourceFile(_)) if !caller_named => {
+                        buckets.push((spec, Vec::new()))
+                    }
+                    Err(e) => fail(&format!("comment-loc-cap: {e}")),
+                    Ok(files) => buckets.push((spec, files)),
+                }
             }
-            match comment_loc_cap::scan(Path::new(&root), &paths) {
+            match comment_loc_cap::report_buckets(&buckets) {
                 Err(e) => fail(&format!("comment-loc-cap: {e}")),
-                Ok(files) => {
-                    let lines = comment_loc_cap::report(&files);
-                    if lines.is_empty() {
-                        println!("comment-loc-cap: clean — {} files", files.len());
-                    } else {
-                        for line in lines {
-                            println!("{line}");
-                        }
+                Ok((lines, over)) => {
+                    for line in lines {
+                        println!("{line}");
+                    }
+                    if over {
                         std::process::exit(1);
                     }
                 }

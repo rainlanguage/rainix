@@ -178,8 +178,9 @@ jobs:
   # here run devshell TASKS. So the repo that sets the org's limits was the one
   # repo not held to them.
   #
-  # `comment-loc-cap` takes explicit paths because rainix has no `src/`, where a
-  # consumer takes the default. `agent-context-cap` always scans `.`.
+  # `comment-loc-cap` takes explicit buckets because rainix has no `src/`, where
+  # a consumer takes the default. Two buckets, same shape as the default: the
+  # test tree answers for its own ratio. `agent-context-cap` always scans `.`.
   #
   # `./` rather than the fully qualified `@main` ref every other step here uses:
   # a local ref resolves against THIS checkout, so the PR that adds an action
@@ -192,5 +193,7 @@ jobs:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - uses: ./.github/actions/comment-loc-cap
         with:
-          paths: rainix-static lib test .github flake.nix
+          buckets: |
+            rainix-static lib .github flake.nix
+            test
       - uses: ./.github/actions/agent-context-cap

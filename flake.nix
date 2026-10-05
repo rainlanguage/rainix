@@ -473,7 +473,10 @@
 
         default-shell-test = mkTask {
           name = "default-shell-test";
+          # Without `set -e` a body's status is its LAST command's, so every
+          # bats file but the last one here could fail unnoticed.
           body = ''
+            set -euo pipefail
             bats test/bats/devshell/default/solc.test.bats
             bats test/bats/devshell/default/gh.test.bats
             bats test/bats/devshell/default/age.test.bats
@@ -498,6 +501,7 @@
         sol-shell-test = mkTask {
           name = "sol-shell-test";
           body = ''
+            set -euo pipefail
             bats test/bats/devshell/sol-shell/forge.test.bats
             bats test/bats/devshell/sol-shell/slither.test.bats
             bats test/bats/devshell/sol-shell/solc.test.bats
@@ -517,6 +521,7 @@
         rust-shell-test = mkTask {
           name = "rust-shell-test";
           body = ''
+            set -euo pipefail
             bats test/bats/devshell/rust-shell/closure.test.bats
             bats test/bats/devshell/rust-shell/cargo-expand.test.bats
             bats test/bats/devshell/rust-shell/anvil.test.bats

@@ -90,11 +90,14 @@ jobs:
 Runs `forge soldeer install` automatically when a `soldeer.lock` is present.
 
 Also fails when comment lines exceed twice the code lines summed over the
-tracked files under `src/` and `test/` (`rainix-static comment-loc-cap`, one
-aggregate cap, strict; totals and every file's counts printed on failure). To
-scan other directories call
+tracked files in a bucket (`rainix-static comment-loc-cap`, strict; the over-cap
+bucket's totals and every file's counts printed on failure). Two buckets by
+default, `src .github` and `test`, each capped on its own: test code is bulky
+and assertion-dense, so pooling it with `src` raises the cap src's prose is
+measured against until the ratio stops meaning anything. A default bucket a repo
+has no directory for is skipped. To scan other directories call
 `rainlanguage/rainix/.github/actions/comment-loc-cap@main` directly with its
-`paths` input.
+`buckets` input, one bucket per line.
 
 #### rainix-sol-legal
 

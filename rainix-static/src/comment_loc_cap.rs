@@ -1,8 +1,12 @@
 //! `comment-loc-cap` — fail when comment lines exceed twice the code lines,
 //! summed over every tracked source file under the given paths.
 //!
-//! One aggregate cap, strict: at twice passes. A single prose-heavy file is
-//! fine if the tree is under.
+//! One aggregate cap per BUCKET, strict: at twice passes. A single prose-heavy
+//! file is fine if its bucket is under. Buckets exist because one aggregate
+//! over the whole repo lets a code-heavy test tree pay for prose in `src`:
+//! tests run long and assert in bulk, so they carry a ratio far under the cap
+//! and raise the denominator the prose is measured against. Splitting them
+//! means each tree answers for its own.
 //!
 //! Counting is `scc`'s, not ours. It lexes per language, so a marker inside a
 //! string literal is code and a doc comment is a comment. What stays here is
@@ -52,7 +56,38 @@ pub(crate) struct Counts {
     pub(crate) code: usize,
 }
 
-/// Split the `--paths` value on whitespace and commas.
+/// The buckets the cap is applied to when the caller names none. Two, so that
+/// `test` answers for its own ratio rather than funding `src`'s.
+///
+/// `.github` stays with `src` because `test` is the tree being split out, and
+/// these were one bucket before. It does dilute `src` — rain.deploy's src is
+/// 2.18 alone and 1.97 pooled with its `.github` and its generated tree — so a
+/// third bucket is a live question, not a settled one.
+pub(crate) const DEFAULT_BUCKETS: [&str; 2] = ["src .github", "test"];
+
+/// Why a scan counted nothing. The two cases are not interchangeable: one is
+/// about the repo's shape, the other is a broken toolchain.
+#[derive(Debug)]
+pub(crate) enum ScanError {
+    /// The path set selected no tracked counted file. A misconfiguration when
+    /// a caller named those paths, and ordinary when a DEFAULT bucket names a
+    /// directory this repo does not have.
+    NoSourceFile(String),
+    /// git or scc failed, or reported something unreadable. Never skippable:
+    /// counting nothing because the counter is broken must not read as a repo
+    /// that has nothing to count.
+    Failed(String),
+}
+
+impl std::fmt::Display for ScanError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ScanError::NoSourceFile(m) | ScanError::Failed(m) => f.write_str(m),
+        }
+    }
+}
+
+/// Split a bucket's paths on whitespace and commas.
 pub(crate) fn parse_paths(spec: &str) -> Vec<String> {
     spec.split(|c: char| c.is_whitespace() || c == ',')
         .filter(|p| !p.is_empty())
@@ -95,21 +130,22 @@ fn parse_scc(stdout: &[u8]) -> Result<HashMap<String, Counts>, String> {
 }
 
 /// Every tracked, counted file under `paths` with its counts, in `git
-/// ls-files` order. `Err` when git or scc fails, or when nothing is counted: a
-/// path set that selects no source file is a misconfiguration, not a pass.
-pub(crate) fn scan(root: &Path, paths: &[String]) -> Result<Vec<(String, Counts)>, String> {
+/// ls-files` order. `Err` when git or scc fails, or when nothing is counted —
+/// which of the two is the caller's to act on, so they are distinct variants
+/// rather than one string.
+pub(crate) fn scan(root: &Path, paths: &[String]) -> Result<Vec<(String, Counts)>, ScanError> {
     let out = Command::new("git")
         .arg("-C")
         .arg(root)
         .args(["ls-files", "-z", "--"])
         .args(paths)
         .output()
-        .map_err(|e| format!("git ls-files failed to spawn: {e}"))?;
+        .map_err(|e| ScanError::Failed(format!("git ls-files failed to spawn: {e}")))?;
     if !out.status.success() {
-        return Err(format!(
+        return Err(ScanError::Failed(format!(
             "git ls-files failed: {}",
             String::from_utf8_lossy(&out.stderr).trim()
-        ));
+        )));
     }
     let names: Vec<String> = out
         .stdout
@@ -119,11 +155,11 @@ pub(crate) fn scan(root: &Path, paths: &[String]) -> Result<Vec<(String, Counts)
         .filter(|n| is_counted(n))
         .collect();
     if names.is_empty() {
-        return Err(format!(
+        return Err(ScanError::NoSourceFile(format!(
             "no tracked source file under {} (checked from {})",
             paths.join(" "),
             root.display()
-        ));
+        )));
     }
 
     // The file list is explicit rather than handing scc the paths, so only
@@ -141,39 +177,48 @@ pub(crate) fn scan(root: &Path, paths: &[String]) -> Result<Vec<(String, Counts)
         ])
         .args(&names)
         .output()
-        .map_err(|e| format!("scc failed to spawn: {e}"))?;
+        .map_err(|e| ScanError::Failed(format!("scc failed to spawn: {e}")))?;
     if !out.status.success() {
-        return Err(format!(
+        return Err(ScanError::Failed(format!(
             "scc failed: {}",
             String::from_utf8_lossy(&out.stderr).trim()
-        ));
+        )));
     }
-    let mut counted = parse_scc(&out.stdout)?;
+    let mut counted = parse_scc(&out.stdout).map_err(ScanError::Failed)?;
 
     names
         .into_iter()
         .map(|name| {
             let counts = counted
                 .remove(&name)
-                .ok_or_else(|| format!("scc did not report {name}"))?;
+                .ok_or_else(|| ScanError::Failed(format!("scc did not report {name}")))?;
             Ok((name, counts))
         })
         .collect()
 }
 
-/// Totals over every scanned file. Empty when comment lines are at or under
+/// One bucket's comment and code lines, summed.
+fn totals(files: &[(String, Counts)]) -> Counts {
+    Counts {
+        comment: files.iter().map(|(_, c)| c.comment).sum(),
+        code: files.iter().map(|(_, c)| c.code).sum(),
+    }
+}
+
+/// Totals over one bucket's files. Empty when comment lines are at or under
 /// twice the code lines in aggregate; otherwise the totals and every file's
-/// counts, heaviest comment share first.
-pub(crate) fn report(files: &[(String, Counts)]) -> Vec<String> {
-    let comment: usize = files.iter().map(|(_, c)| c.comment).sum();
-    let code: usize = files.iter().map(|(_, c)| c.code).sum();
+/// counts, heaviest comment share first. `bucket` names the path set in the
+/// header, because with several buckets the totals alone do not say which one
+/// is over.
+fn report(bucket: &str, files: &[(String, Counts)]) -> Vec<String> {
+    let Counts { comment, code } = totals(files);
     let cap = 2 * code;
     if comment <= cap {
         return Vec::new();
     }
     let mut lines = vec![
         format!(
-            "comment-loc-cap: {comment} comment lines against a cap of {cap} (twice {code} code lines) across {} files:",
+            "comment-loc-cap: {bucket}: {comment} comment lines against a cap of {cap} (twice {code} code lines) across {} files:",
             files.len()
         ),
         "  comment    code  file".to_string(),
@@ -186,6 +231,53 @@ pub(crate) fn report(files: &[(String, Counts)]) -> Vec<String> {
     lines
 }
 
+/// What to print for every bucket, and whether any bucket is over its cap.
+///
+/// A bucket with no files prints as skipped rather than passing silently: a
+/// caller reading the log sees that the ratio it expected was never measured.
+/// `Err` only when NO bucket counted a file, which is a repo the cap has not
+/// been pointed at at all.
+pub(crate) fn report_buckets(
+    buckets: &[(String, Vec<(String, Counts)>)],
+) -> Result<(Vec<String>, bool), String> {
+    if buckets.iter().all(|(_, files)| files.is_empty()) {
+        return Err(format!(
+            "no tracked source file under any bucket: {}",
+            buckets
+                .iter()
+                .map(|(b, _)| format!("`{b}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    let mut lines = Vec::new();
+    let mut over = false;
+    for (bucket, files) in buckets {
+        if files.is_empty() {
+            lines.push(format!(
+                "comment-loc-cap: {bucket}: no tracked source file — skipped"
+            ));
+            continue;
+        }
+        let bucket_lines = report(bucket, files);
+        if bucket_lines.is_empty() {
+            // The counts, not just a verdict: a bucket's ratio is the number
+            // worth watching between runs, and a pass that prints none leaves
+            // the only reading of it to the run that fails.
+            let Counts { comment, code } = totals(files);
+            lines.push(format!(
+                "comment-loc-cap: {bucket}: clean — {comment} comment against a cap of {} (twice {code} code lines) across {} files",
+                2 * code,
+                files.len()
+            ));
+        } else {
+            over = true;
+            lines.extend(bucket_lines);
+        }
+    }
+    Ok((lines, over))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,7 +287,7 @@ mod tests {
 
     #[test]
     fn empty_and_twice_pass_over_twice_fails() {
-        let at = |comment, code| report(&[("f".to_string(), Counts { comment, code })]);
+        let at = |comment, code| report("src", &[("f".to_string(), Counts { comment, code })]);
         assert!(at(0, 0).is_empty());
         assert!(at(6, 3).is_empty());
         assert!(!at(7, 3).is_empty());
@@ -301,11 +393,12 @@ mod tests {
                 ),
             ]
         );
-        let lines = report(&files);
+        let lines = report("src test", &files);
         assert_eq!(lines.len(), 4, "{lines:?}");
         assert!(
-            lines[0]
-                .contains("8 comment lines against a cap of 6 (twice 3 code lines) across 2 files"),
+            lines[0].contains(
+                "src test: 8 comment lines against a cap of 6 (twice 3 code lines) across 2 files"
+            ),
             "{lines:?}"
         );
         assert!(lines[2].ends_with("7       2  src/Over.sol"), "{lines:?}");
@@ -325,7 +418,7 @@ mod tests {
             .success());
         let files = scan(&d, &["src".into()]).unwrap();
         assert!(
-            report(&files).is_empty(),
+            report("src", &files).is_empty(),
             "8 comment lines against a cap of 12 is under"
         );
     }
@@ -341,14 +434,113 @@ mod tests {
             .unwrap()
             .success());
         let files = scan(&d, &["src".into()]).unwrap();
-        assert!(report(&files).is_empty());
+        assert!(report("src", &files).is_empty());
     }
 
     #[test]
     fn a_path_set_selecting_no_source_file_is_an_error() {
         let d = repo();
         let e = scan(&d, &["test".into()]).unwrap_err();
-        assert!(e.contains("no tracked source file under test"), "{e}");
+        assert!(matches!(e, ScanError::NoSourceFile(_)), "{e:?}");
+        assert!(
+            e.to_string().contains("no tracked source file under test"),
+            "{e}"
+        );
+    }
+
+    /// The whole reason buckets exist: `test`'s code is what funded `src`'s
+    /// prose under one aggregate, and `src` is where the ratio is worth
+    /// reading.
+    #[test]
+    fn a_bucket_over_its_own_cap_fails_though_the_repo_aggregate_is_under() {
+        let d = repo();
+        std::fs::write(d.join("test/Heavy.sol"), "x;\n".repeat(20)).unwrap();
+        assert!(Command::new("git")
+            .arg("-C")
+            .arg(&d)
+            // Only this file: `repo()` leaves an untracked one beside it, and
+            // the counts below are this file's alone.
+            .args(["add", "test/Heavy.sol"])
+            .status()
+            .unwrap()
+            .success());
+        let src = scan(&d, &["src".into()]).unwrap();
+        let test = scan(&d, &["test".into()]).unwrap();
+
+        let mut aggregate = src.clone();
+        aggregate.extend(test.clone());
+        assert!(
+            report("src test", &aggregate).is_empty(),
+            "8 comment lines against twice 23 code lines is under in aggregate"
+        );
+
+        let (lines, over) =
+            report_buckets(&[("src".to_string(), src), ("test".to_string(), test)]).unwrap();
+        assert!(over, "{lines:?}");
+        assert!(
+            lines[0].contains("src: 8 comment lines against a cap of 6"),
+            "{lines:?}"
+        );
+        // A passing bucket still reports its ratio, so the number can be read
+        // between runs rather than only when it has already been breached.
+        assert!(
+            lines.iter().any(|l| l.contains(
+                "test: clean — 0 comment against a cap of 40 (twice 20 code lines) across 1 files"
+            )),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn an_empty_bucket_is_skipped_rather_than_failing_while_another_counts() {
+        let d = repo();
+        assert!(Command::new("git")
+            .arg("-C")
+            .arg(&d)
+            .args(["rm", "-qf", "src/Over.sol"])
+            .status()
+            .unwrap()
+            .success());
+        let src = scan(&d, &["src".into()]).unwrap();
+
+        let (lines, over) =
+            report_buckets(&[("src".to_string(), src), ("test".to_string(), Vec::new())]).unwrap();
+        assert!(!over, "{lines:?}");
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("test: no tracked source file — skipped")),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn every_bucket_empty_is_an_error() {
+        let e = report_buckets(&[
+            ("src".to_string(), Vec::new()),
+            ("test".to_string(), Vec::new()),
+        ])
+        .unwrap_err();
+        assert!(
+            e.contains("no tracked source file under any bucket: `src`, `test`"),
+            "{e}"
+        );
+    }
+
+    /// The default must hold `test` apart from `src`, not merely list both.
+    #[test]
+    fn the_default_buckets_hold_test_apart_from_src() {
+        let with_src: Vec<Vec<String>> = DEFAULT_BUCKETS
+            .iter()
+            .map(|b| parse_paths(b))
+            .filter(|p| p.iter().any(|d| d == "src"))
+            .collect();
+        assert_eq!(with_src.len(), 1, "{DEFAULT_BUCKETS:?}");
+        assert!(!with_src[0].iter().any(|d| d == "test"), "{with_src:?}");
+        assert!(
+            DEFAULT_BUCKETS.iter().any(|b| parse_paths(b) == ["test"]),
+            "{DEFAULT_BUCKETS:?}"
+        );
     }
 
     #[test]
@@ -359,6 +551,9 @@ mod tests {
         ));
         std::fs::create_dir_all(&d).unwrap();
         let e = scan(&d, &["src".into()]).unwrap_err();
-        assert!(e.contains("git ls-files failed"), "{e}");
+        // `Failed`, never `NoSourceFile`: a broken counter must not read as a
+        // bucket with nothing in it, which a default bucket would skip.
+        assert!(matches!(e, ScanError::Failed(_)), "{e:?}");
+        assert!(e.to_string().contains("git ls-files failed"), "{e}");
     }
 }
