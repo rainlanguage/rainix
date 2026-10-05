@@ -148,38 +148,6 @@
           '';
         };
 
-        # Kept for consumers that still invoke the Goldsky CLI directly
-        # (gildlab/offchainAssetVault-subgraph). subgraph-deploy targets Ormi.
-        goldsky = pkgs.stdenv.mkDerivation rec {
-          pname = "goldsky";
-          version = "13.3.4";
-          src =
-            let
-              release-name = "13.3.4";
-              system-mapping = {
-                x86_64-linux = "linux";
-                x86_64-darwin = "macos";
-                aarch64-darwin = "macos";
-              };
-              system-sha = {
-                x86_64-linux = "sha256:1wg09vz652hv3hb0w7mx7hjxm00c857h2a8kd2vj11wnik8gh73m";
-                x86_64-darwin = "sha256:048w06x56lk84h9x8q2jf7mdxx8lyzd9nrkxsmfkj39rns1nr4yk";
-                aarch64-darwin = "sha256:048w06x56lk84h9x8q2jf7mdxx8lyzd9nrkxsmfkj39rns1nr4yk";
-              };
-            in
-            builtins.fetchurl {
-              url = "https://cli.goldsky.com/${release-name}/${system-mapping.${system}}/goldsky";
-              sha256 = system-sha.${system};
-            };
-          buildInputs = [ ];
-          phases = [ "installPhase" ];
-          installPhase = ''
-            mkdir -p $out/bin
-            cp $src $out/bin/goldsky
-            chmod +x $out/bin/goldsky
-          '';
-        };
-
         # rainix-curated prettier bundle: a single nix-built node_modules
         # tree containing prettier + the standardized plugins, plus a
         # .prettierrc.json picked up via PRETTIER_BUNDLE_DIR. Consumers
@@ -773,10 +741,9 @@
             '';
           };
 
-          # Slim shell for subgraph repos: node + the-graph + goldsky +
-          # subgraph-tasks. No rust, no foundry, no sqlite/yq/age. Lets
-          # consumers avoid the heavy default closure when CI is just
-          # subgraph-test.
+          # Slim shell for subgraph repos: node + the-graph + subgraph-tasks. No
+          # rust, no foundry, no sqlite/yq/age. Lets consumers avoid the heavy
+          # default closure when CI is just subgraph-test.
           subgraph-shell = pkgs.mkShell {
             buildInputs =
               node-build-inputs
@@ -784,7 +751,6 @@
               ++ common-shell-inputs
               ++ [
                 the-graph
-                goldsky
               ];
             shellHook = ''
               ${pre-commit.shellHook}
@@ -802,7 +768,6 @@
               ++ common-shell-inputs
               ++ [
                 the-graph
-                goldsky
                 pkgs.sqlite
                 pkgs.yq-go
                 pkgs.age
