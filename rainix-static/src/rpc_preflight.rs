@@ -190,10 +190,22 @@ pub(crate) const NETWORKS: &[Network] = &[
         // pin in the org (~20 months back).
         archive_blocks: &[280_000_000],
         probe_contract: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", // WETH
+        // arb-pokt.nodies.app is demoted from FIRST to last, 2026-10-05. All
+        // three pass the probe below at 5/5 sequential and 16/16 burst, so the
+        // order here was arbitrary; running rain.deploy's LibRainDeploy.t.sol
+        // (82 tests, 37 fork instantiations, ~250 calls) against each separates
+        // them completely:
+        //
+        //   arbitrum.gateway.tenderly.co    0 failing
+        //   42161.rpc.thirdweb.com         16 × HTTP 429
+        //   arb-pokt.nodies.app            38 × HTTP 429
+        //
+        // A 16-way burst cannot predict a 250-call suite, which is why the
+        // probe scored these equal while CI red-lined on the one it picked.
         defaults: &[
-            "https://arb-pokt.nodies.app",
-            "https://42161.rpc.thirdweb.com",
             "https://arbitrum.gateway.tenderly.co",
+            "https://42161.rpc.thirdweb.com",
+            "https://arb-pokt.nodies.app",
         ],
     },
     Network {
@@ -207,11 +219,16 @@ pub(crate) const NETWORKS: &[Network] = &[
         // mid-history, so a node holding only early state cannot pass either.
         archive_blocks: &[1, 39_000_000],
         probe_contract: "0x4200000000000000000000000000000000000006", // WETH predeploy
+        // Same suite run, same day: base.gateway.tenderly.co carried it with 0
+        // failing, base-pokt.nodies.app shed 30 requests as HTTP 429. nodies
+        // goes last for the reason given on arbitrum above; the middle two keep
+        // the order they had, both 5/5 and 16/16 on the probe and neither
+        // suite-tested.
         defaults: &[
-            "https://mainnet.base.org",
-            "https://base-pokt.nodies.app",
             "https://base.gateway.tenderly.co",
+            "https://mainnet.base.org",
             "https://base.drpc.org",
+            "https://base-pokt.nodies.app",
         ],
     },
     Network {
@@ -1355,6 +1372,27 @@ mod tests {
             assert_eq!(n.secret_name, format!("RPC_URL_{}_FORK", upper(n.key)));
             assert!(n.probe_contract.starts_with("0x") && n.probe_contract.len() == 42);
             assert!(n.defaults.iter().all(|d| d.starts_with("https://")));
+        }
+    }
+
+    /// An endpoint a real suite measured as shedding requests must not be the
+    /// FIRST default, because first is what a repo with no secret and no
+    /// variable gets. The probe scores these equal to the ones that carry the
+    /// load, so nothing else in this file holds the order the measurement
+    /// bought.
+    #[test]
+    fn an_endpoint_a_suite_measured_as_rate_limiting_is_not_tried_first() {
+        for (key, shed) in [
+            ("arbitrum", "https://arb-pokt.nodies.app"),
+            ("base", "https://base-pokt.nodies.app"),
+            ("ethereum", "https://eth-pokt.nodies.app"),
+        ] {
+            let net = net(key);
+            assert!(
+                net.defaults.contains(&shed),
+                "{key}: {shed} is no longer a candidate; drop this row too"
+            );
+            assert_ne!(net.defaults[0], shed, "{key}: {shed} is first again");
         }
     }
 
