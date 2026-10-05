@@ -1,12 +1,12 @@
 name: comment-loc-cap
 description: >-
-  Fails when, summed over every tracked source file under the given paths, comment lines exceed twice the code lines. One aggregate cap, strict: at twice passes. Counting is `scc`'s, which lexes per language, so a comment marker inside a string literal is code and a doc comment is a comment. Counted extensions are .sol/.rs/.ts/.js, .sh/.toml/.yaml and .nix; anything else, prose formats included, is not counted at all — `scc` scores Markdown text as comments, so counting it would fail every repo that has a README. On failure the totals and every file's counts are printed. A path set that selects no counted file is an error, not a pass.
+  Fails when, summed over every tracked source file in a bucket, comment lines exceed twice the code lines. Each bucket is capped on its own, strict: at twice passes. Counting is `scc`'s, which lexes per language, so a comment marker inside a string literal is code and a doc comment is a comment. Counted extensions are .sol/.rs/.ts/.js, .sh/.toml/.yaml and .nix; anything else, prose formats included, is not counted at all — `scc` scores Markdown text as comments, so counting it would fail every repo that has a README. On failure the over-cap bucket's totals and every file's counts are printed.
 inputs:
-  paths:
+  buckets:
     description: >-
-      Directories to scan, relative to the repo root, whitespace or comma separated. Only files `git ls-files` reports under them are read. `.github` is included by default because CI config is where prose accumulates unread, and the YAML there is counted the same as source.
+      One bucket per line, each a whitespace or comma separated set of directories relative to the repo root; only files `git ls-files` reports under them are read. Unset — the default — caps the buckets `rainix-static comment-loc-cap` itself defaults to, where a bucket this repo has no directory for is skipped rather than failing, so a repo with no `test/` needs no override. A bucket named here MUST select a counted file: naming it is the claim that it is there. The default holds `test` apart from `src` because test code is bulky and assertion-dense, so pooling the two raises the cap src's prose is measured against until the ratio stops meaning anything.
     required: false
-    default: src test .github
+    default: ""
 runs:
   using: composite
   steps:
@@ -15,12 +15,21 @@ runs:
       env:
         # Via env, not interpolated into the script: caller input is never
         # pasted into the shell text.
-        RAINIX_COMMENT_LOC_PATHS: ${{ inputs.paths }}
+        RAINIX_COMMENT_LOC_BUCKETS: ${{ inputs.buckets }}
       run: |
         set -euo pipefail
+        # One `--bucket` per non-blank line, so a bucket holding several
+        # directories stays one argument and one cap. An unset input adds no
+        # argument at all: the default buckets are the binary's, in one place,
+        # rather than a copy here that can drift out of step with it.
+        args=(comment-loc-cap)
+        while IFS= read -r bucket; do
+          [ -n "${bucket//[[:space:]]/}" ] || continue
+          args+=(--bucket "$bucket")
+        done <<<"$RAINIX_COMMENT_LOC_BUCKETS"
         # Single source of truth: the Rust rainix-static binary (its unit tests
         # run inside the nix build). The path: flake ref runs it from this
         # composite's own checkout, so the check version always matches the
         # action version regardless of any RAINIX_SHA the caller pins.
         nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- \
-          comment-loc-cap --paths "$RAINIX_COMMENT_LOC_PATHS"
+          "${args[@]}"

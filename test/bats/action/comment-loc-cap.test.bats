@@ -12,7 +12,7 @@ teardown() {
 # The action script with `nix` stubbed to echo its argv, so what reaches the
 # binary is asserted without building it.
 run_cap_action() {
-  RAINIX_COMMENT_LOC_PATHS="$1" \
+  RAINIX_COMMENT_LOC_BUCKETS="$1" \
     GITHUB_ACTION_PATH="$repo_root/.github/actions/comment-loc-cap" \
     ACTION_SCRIPT="$action_script" \
     bash -c '
@@ -26,15 +26,37 @@ run_cap_action() {
     '
 }
 
-@test "the paths input reaches the binary as one argument" {
-  run run_cap_action 'src test'
+@test "each line of the buckets input is one --bucket argument" {
+  run run_cap_action 'src .github
+test'
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"<comment-loc-cap> <--paths> <src test>" ]]
+  [[ "$output" == *"<comment-loc-cap> <--bucket> <src .github> <--bucket> <test>" ]]
 }
 
-@test "the action defaults its paths input to src test" {
-  [ "$(yq -r '.inputs.paths.default' "$action")" = "src test" ]
+@test "blank lines in the buckets input are not buckets" {
+  run run_cap_action '
+src
+
+   '
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"<comment-loc-cap> <--bucket> <src>" ]]
+}
+
+# The defaults live in the binary, in one place. A copy here is how the old
+# `paths` default drifted to `src test .github` while this file still asserted
+# `src test` — and nothing noticed, because the bats suite swallowed it.
+@test "an unset buckets input passes no bucket, leaving the defaults to the binary" {
+  run run_cap_action ''
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"<comment-loc-cap>" ]]
+  [[ "$output" != *"--bucket"* ]]
+}
+
+@test "the action does not carry its own copy of the default buckets" {
+  [ "$(yq -r '.inputs.buckets.default' "$action")" = "" ]
 }
 
 # The binary itself, as CI invokes it: rainix-static is on PATH in every shell.
@@ -67,7 +89,7 @@ fixture_repo() {
   run rainix-static comment-loc-cap --root "$work"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"clean — 1 files"* ]]
+  [[ "$output" == *"clean — 1 comment against a cap of 2 (twice 1 code lines) across 1 files"* ]]
 }
 
 @test "an untracked offender is not counted" {
@@ -86,4 +108,49 @@ fixture_repo() {
 
   [ "$status" -eq 1 ]
   [[ "$output" == *"no tracked source file under test"* ]]
+}
+
+@test "a named bucket selecting no counted file exits 1 rather than passing" {
+  fixture_repo
+
+  run rainix-static comment-loc-cap --root "$work" --bucket src --bucket test
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no tracked source file under test"* ]]
+}
+
+@test "every bucket selecting no counted file exits 1" {
+  fixture_repo
+  git -C "$work" rm -q --cached src/Over.sol src/Ok.sol
+
+  run rainix-static comment-loc-cap --root "$work"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no tracked source file under any bucket"* ]]
+}
+
+@test "a default bucket this repo has no files for is skipped rather than failing" {
+  fixture_repo
+  git -C "$work" rm -qf src/Over.sol
+
+  run rainix-static comment-loc-cap --root "$work"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"test: no tracked source file — skipped"* ]]
+}
+
+# The whole point: by default `test`'s code cannot fund `src`'s prose.
+@test "src is over its own cap though the repo aggregate is under" {
+  fixture_repo
+  for _ in $(seq 20); do printf 'x;\n' >>"$work/test/Heavy.sol"; done
+  git -C "$work" add test/Heavy.sol
+
+  run rainix-static comment-loc-cap --root "$work" --paths 'src test'
+  [ "$status" -eq 0 ]
+
+  run rainix-static comment-loc-cap --root "$work"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"src .github: 8 comment lines against a cap of 6"* ]]
+  [[ "$output" == *"test: clean — 0 comment against a cap of 40 (twice 20 code lines) across 1 files"* ]]
 }
