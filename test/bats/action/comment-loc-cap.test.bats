@@ -70,7 +70,7 @@ fixture_repo() {
   git -C "$work" add src test
 }
 
-@test "an aggregate over the cap exits 1 with totals and every file listed" {
+@test "a bucket over the cap exits 1 with totals and every file listed" {
   fixture_repo
 
   run rainix-static comment-loc-cap --root "$work"
@@ -82,7 +82,7 @@ fixture_repo() {
   [[ "$output" != *"notes.md"* ]]
 }
 
-@test "a tree whose comment lines are at or under twice its code lines in aggregate exits 0" {
+@test "a bucket whose comment lines are at or under twice its code lines exits 0" {
   fixture_repo
   git -C "$work" rm -qf src/Over.sol
 
