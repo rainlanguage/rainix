@@ -360,20 +360,11 @@ pub(crate) const NETWORKS: &[Network] = &[
         // Latest-only in every consumer today.
         archive_blocks: &[],
         probe_contract: "0x5555555555555555555555555555555555555555", // WHYPE
-        // rpc.hyperliquid.xyz/evm is demoted from FIRST, 2026-10-06. It serves
-        // a single fork and every history probe this file makes, and still
-        // fails a suite: two consecutive rain.deploy CI runs failed only on
-        // hyperevm, with `-32603 invalid block height` for a height the node
-        // itself had just reported — load-balanced nodes disagreeing on head.
-        //
-        // Reproduced with 12 repeated `createFork`/`createSelectFork` against
-        // one alias, which is the pattern the nine-network fork tests put on it:
-        //
-        //   hyperliquid.drpc.org        2/2 passed
-        //   rpc.hyperliquid.xyz/evm     1/2, -32603 invalid block height
-        //
-        // All three are full archive (block 1_000_000 through head), so
-        // `archive_blocks` cannot separate them and is left empty.
+        // drpc leads, 2026-10-06. All three pass a single fork and every
+        // history depth; 12 repeated createFork/createSelectFork separates
+        // them, which is the pattern the nine-network fork tests use:
+        //   hyperliquid.drpc.org      2/2
+        //   rpc.hyperliquid.xyz/evm   1/2, -32603 invalid block height
         defaults: &[
             "https://hyperliquid.drpc.org",
             "https://rpc.hyperliquid.xyz/evm",
@@ -1400,8 +1391,7 @@ mod tests {
             ("arbitrum", "https://arb-pokt.nodies.app"),
             ("base", "https://base-pokt.nodies.app"),
             ("ethereum", "https://eth-pokt.nodies.app"),
-            // Not a rate limit: `-32603 invalid block height` for a height it
-            // had just reported. Same consequence, same remedy.
+            // A block-height error rather than a rate limit; same remedy.
             ("hyperevm", "https://rpc.hyperliquid.xyz/evm"),
         ] {
             let net = net(key);
