@@ -360,10 +360,15 @@ pub(crate) const NETWORKS: &[Network] = &[
         // Latest-only in every consumer today.
         archive_blocks: &[],
         probe_contract: "0x5555555555555555555555555555555555555555", // WHYPE
+        // drpc leads, 2026-10-06. All three pass a single fork and every
+        // history depth; 12 repeated createFork/createSelectFork separates
+        // them, which is the pattern the nine-network fork tests use:
+        //   hyperliquid.drpc.org      2/2
+        //   rpc.hyperliquid.xyz/evm   1/2, -32603 invalid block height
         defaults: &[
+            "https://hyperliquid.drpc.org",
             "https://rpc.hyperliquid.xyz/evm",
             "https://rpc.hyperlend.finance",
-            "https://hyperliquid.drpc.org",
         ],
     },
     Network {
@@ -1386,6 +1391,8 @@ mod tests {
             ("arbitrum", "https://arb-pokt.nodies.app"),
             ("base", "https://base-pokt.nodies.app"),
             ("ethereum", "https://eth-pokt.nodies.app"),
+            // A block-height error rather than a rate limit; same remedy.
+            ("hyperevm", "https://rpc.hyperliquid.xyz/evm"),
         ] {
             let net = net(key);
             assert!(
