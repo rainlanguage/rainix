@@ -548,7 +548,6 @@ candidates at all is left exactly as it is today.
 - Solidity: solc 0.8.25
 - Foundry: via foundry.nix
 - Graph CLI: 0.69.2
-- Goldsky CLI: 13.3.4
 
 ## License
 

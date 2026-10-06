@@ -148,36 +148,6 @@
           '';
         };
 
-        goldsky = pkgs.stdenv.mkDerivation rec {
-          pname = "goldsky";
-          version = "13.3.4";
-          src =
-            let
-              release-name = "13.3.4";
-              system-mapping = {
-                x86_64-linux = "linux";
-                x86_64-darwin = "macos";
-                aarch64-darwin = "macos";
-              };
-              system-sha = {
-                x86_64-linux = "sha256:1wg09vz652hv3hb0w7mx7hjxm00c857h2a8kd2vj11wnik8gh73m";
-                x86_64-darwin = "sha256:048w06x56lk84h9x8q2jf7mdxx8lyzd9nrkxsmfkj39rns1nr4yk";
-                aarch64-darwin = "sha256:048w06x56lk84h9x8q2jf7mdxx8lyzd9nrkxsmfkj39rns1nr4yk";
-              };
-            in
-            builtins.fetchurl {
-              url = "https://cli.goldsky.com/${release-name}/${system-mapping.${system}}/goldsky";
-              sha256 = system-sha.${system};
-            };
-          buildInputs = [ ];
-          phases = [ "installPhase" ];
-          installPhase = ''
-            mkdir -p $out/bin
-            cp $src $out/bin/goldsky
-            chmod +x $out/bin/goldsky
-          '';
-        };
-
         # rainix-curated prettier bundle: a single nix-built node_modules
         # tree containing prettier + the standardized plugins, plus a
         # .prettierrc.json picked up via PRETTIER_BUNDLE_DIR. Consumers
@@ -426,33 +396,20 @@
           '';
         };
 
+        # Tracing stays off for the whole task: ORMI_DEPLOY_KEY is a credential
+        # and `set -x` would print it. The logic lives in lib/subgraph-deploy.sh.
         subgraph-deploy = mkTask {
           name = "subgraph-deploy";
           body = ''
-            set -euxo pipefail
+            set -euo pipefail
             source ${./lib/subgraph.sh}
+            source ${./lib/subgraph-deploy.sh}
 
-            # subgraph/abis and subgraph/generated are committed, so the deploy
-            # builds the subgraph directly from them with just the graph +
-            # goldsky toolchain — the same committed-artifact path as
-            # subgraph-test, slim enough for the subgraph shell.
-            (cd ./subgraph && ${pkgs.nodejs_22}/bin/npm ci)
-
-            commit="$(${pkgs.git}/bin/git rev-parse --short HEAD)"
-            for network in $(subgraph_networks ./subgraph/networks.json); do
-              address=$(subgraph_network_address ./subgraph/networks.json "$network")
-              version=$(subgraph_deploy_version "$address" "$commit")
-              name_and_version="''${GOLDSKY_SUBGRAPH_NAME}-$network/$version"
-
-              if ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph list "$name_and_version" 2>/dev/null | grep -q "$name_and_version"; then
-                echo "Subgraph $name_and_version already deployed, skipping."
-              else
-                echo "Building subgraph for $network..."
-                (cd ./subgraph && ${the-graph}/bin/graph build --network "$network")
-                echo "Deploying subgraph $name_and_version..."
-                (cd ./subgraph && ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph deploy "$name_and_version")
-              fi
-            done
+            subgraph_deploy \
+              ${the-graph}/bin/graph \
+              ${pkgs.nodejs_22}/bin/npm \
+              ${pkgs.git}/bin/git \
+              ${rainix-static}/bin/rainix-static
           '';
           additionalBuildInputs = node-build-inputs;
         };
@@ -489,6 +446,7 @@
             bats test/bats/task/skip-simulation.test.bats
             bats test/bats/task/subgraph-build.test.bats
             bats test/bats/task/subgraph-deploy-version.test.bats
+            bats test/bats/task/subgraph-deploy.test.bats
             bats test/bats/task/sol-single-contract.test.bats
             bats test/bats/task/no-custom-natspec.test.bats
             bats test/bats/workflow/rainix-sol-static.test.bats
@@ -788,10 +746,9 @@
             '';
           };
 
-          # Slim shell for subgraph repos: node + the-graph + goldsky +
-          # subgraph-tasks. No rust, no foundry, no sqlite/yq/age. Lets
-          # consumers avoid the heavy default closure when CI is just
-          # subgraph-test.
+          # Slim shell for subgraph repos: node + the-graph + subgraph-tasks. No
+          # rust, no foundry, no sqlite/yq/age. Lets consumers avoid the heavy
+          # default closure when CI is just subgraph-test.
           subgraph-shell = pkgs.mkShell {
             buildInputs =
               node-build-inputs
@@ -799,7 +756,6 @@
               ++ common-shell-inputs
               ++ [
                 the-graph
-                goldsky
               ];
             shellHook = ''
               ${pre-commit.shellHook}
@@ -817,7 +773,6 @@
               ++ common-shell-inputs
               ++ [
                 the-graph
-                goldsky
                 pkgs.sqlite
                 pkgs.yq-go
                 pkgs.age
