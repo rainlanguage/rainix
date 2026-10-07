@@ -389,10 +389,18 @@ pub(crate) const NETWORKS: &[Network] = &[
         // day: robinhood.drpc.org answers `eth_chainId` and then refuses
         // every `eth_call` (0/5) behind its plan gate; 4663.rpc.thirdweb.com
         // reports `-32001 Invalid chain`.
+        //
+        // The official endpoint is no longer first. On 2026-10-07 it served a
+        // Cloudflare managed challenge — HTTP 403, `cType: 'managed'` — to a
+        // GitHub runner, taking 13 fork tests and rain.deploy's 0.1.14 publish
+        // with it, while answering 8/8 from a non-CI host the same hour. A
+        // challenge keyed to the caller's address is invisible to any probe
+        // this table runs, so the order is what has to carry it: no sampling
+        // from a developer host can measure it.
         defaults: &[
-            "https://rpc.mainnet.chain.robinhood.com",
             "https://robinhood-chain.gateway.tenderly.co",
             "https://robinhood-rpc.publicnode.com",
+            "https://rpc.mainnet.chain.robinhood.com",
         ],
     },
     Network {
@@ -1393,6 +1401,8 @@ mod tests {
             ("ethereum", "https://eth-pokt.nodies.app"),
             // A block-height error rather than a rate limit; same remedy.
             ("hyperevm", "https://rpc.hyperliquid.xyz/evm"),
+            // A Cloudflare challenge served to CI addresses only; same remedy.
+            ("robinhood", "https://rpc.mainnet.chain.robinhood.com"),
         ] {
             let net = net(key);
             assert!(
