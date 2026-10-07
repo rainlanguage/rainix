@@ -251,10 +251,11 @@ pub(crate) const NETWORKS: &[Network] = &[
         env_name: "FLARE_RPC_URL",
         secret_name: "RPC_URL_FLARE_FORK",
         chain_id: 14,
-        // rain.flare forks at 31_843_105 in ~19 test files (~23 months back) —
-        // the deepest historical read in the org outside rain.deploy's genesis
-        // search, and Flare public nodes are the most prune-happy.
-        archive_blocks: &[31_000_000],
+        // rain.flare forks at 37_796_420 (2025-02-21) in 11 test files, moved
+        // forward from 31_843_105 by rainlanguage/rain.flare#218. No longer the
+        // deepest read in the org — arbitrum's 280_000_000 is 2024-11-30 — but
+        // Flare public nodes are still the most prune-happy.
+        archive_blocks: &[37_000_000],
         probe_contract: "0x1D80c49BbBCd1C0911346656B529DF9E5c2F783d", // WNAT
         defaults: &[
             "https://flare-api.flare.network/ext/C/rpc",
