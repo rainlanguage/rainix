@@ -389,10 +389,13 @@ pub(crate) const NETWORKS: &[Network] = &[
         // day: robinhood.drpc.org answers `eth_chainId` and then refuses
         // every `eth_call` (0/5) behind its plan gate; 4663.rpc.thirdweb.com
         // reports `-32001 Invalid chain`.
+        // The official endpoint lost first place 2026-10-07: HTTP 403
+        // Cloudflare challenge to a GitHub runner, 8/8 from a non-CI host the
+        // same hour. Keyed to the caller's address, so no probe here sees it.
         defaults: &[
-            "https://rpc.mainnet.chain.robinhood.com",
             "https://robinhood-chain.gateway.tenderly.co",
             "https://robinhood-rpc.publicnode.com",
+            "https://rpc.mainnet.chain.robinhood.com",
         ],
     },
     Network {
@@ -1393,6 +1396,8 @@ mod tests {
             ("ethereum", "https://eth-pokt.nodies.app"),
             // A block-height error rather than a rate limit; same remedy.
             ("hyperevm", "https://rpc.hyperliquid.xyz/evm"),
+            // A Cloudflare challenge served to CI addresses only; same remedy.
+            ("robinhood", "https://rpc.mainnet.chain.robinhood.com"),
         ] {
             let net = net(key);
             assert!(
