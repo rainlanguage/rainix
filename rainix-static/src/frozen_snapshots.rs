@@ -13,12 +13,14 @@
 //! rename). Anything after the prefix is an addition — a later top-level
 //! declaration cannot change the value of a constant before it — so appending
 //! is allowed; editing, truncating or moving a snapshot to another tag dir is
-//! not. A snapshot that is not a regular file on the base has no frozen bytes,
-//! so any change to it is flagged. Each added file carries at most one renamed
-//! snapshot, and deletions are paired with added files by a maximum one-to-one
-//! matching. Adding a new tag dir is allowed; regenerated non-tag files
-//! directly under `<root>/` (the current-pin deploy libs) are not snapshots and
-//! are ignored.
+//! not. The `DEPENDENCIES` declaration and its NatSpec are not frozen: both
+//! sides are compared without them, so a snapshot may re-encode, drop or gain
+//! that one constant while every other byte stays frozen. A snapshot that is
+//! not a regular file on the base has no frozen bytes, so any change to it is
+//! flagged. Each added file carries at most one renamed snapshot, and
+//! deletions are paired with added files by a maximum one-to-one matching.
+//! Adding a new tag dir is allowed; regenerated non-tag files directly under
+//! `<root>/` (the current-pin deploy libs) are not snapshots and are ignored.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -87,6 +89,112 @@ pub(crate) fn parse_changes(diff: &str) -> Vec<Change> {
     changes
 }
 
+/// `src` without its top-level `bytes constant DEPENDENCIES = …;` declaration
+/// and the NatSpec immediately above it. The removed span runs from just after
+/// the last code or non-NatSpec comment before the declaration's NatSpec up to
+/// and including the declaration's `;`, so adding or dropping the declaration
+/// and the blank line before it leaves the rest identical.
+///
+/// Declarations are found by lexing: comments and string literals are skipped,
+/// and only a statement at brace depth 0 whose first tokens are `bytes`,
+/// `constant`, `DEPENDENCIES`, `=` is removed. The token inside a comment or
+/// another constant's value never matches.
+pub(crate) fn without_dependencies(src: &[u8]) -> Vec<u8> {
+    const HEAD: [&[u8]; 4] = [b"bytes", b"constant", b"DEPENDENCIES", b"="];
+    let ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'$';
+    let mut spans = Vec::new();
+    let mut depth = 0usize;
+    // Just after the last code or non-NatSpec comment byte.
+    let mut run_from = 0;
+    // The current depth-0 statement: where its span starts, and its leading
+    // tokens.
+    let mut stmt: Option<usize> = None;
+    let mut tokens: Vec<&[u8]> = Vec::new();
+    let mut i = 0;
+    while i < src.len() {
+        let rest = &src[i..];
+        if rest[0].is_ascii_whitespace() {
+            i += 1;
+            continue;
+        }
+        if rest.starts_with(b"//") {
+            let end = rest
+                .iter()
+                .position(|&b| b == b'\n')
+                .map_or(src.len(), |n| i + n);
+            if !rest.starts_with(b"///") {
+                run_from = end;
+            }
+            i = end;
+            continue;
+        }
+        if rest.starts_with(b"/*") {
+            let end = rest[2..]
+                .windows(2)
+                .position(|w| w == b"*/")
+                .map_or(src.len(), |n| i + 2 + n + 2);
+            if !rest.starts_with(b"/**") || rest.starts_with(b"/**/") {
+                run_from = end;
+            }
+            i = end;
+            continue;
+        }
+        // Code.
+        let start = i;
+        if rest[0] == b'"' || rest[0] == b'\'' {
+            let quote = rest[0];
+            i += 1;
+            while i < src.len() && src[i] != quote {
+                i += if src[i] == b'\\' { 2 } else { 1 };
+            }
+            i = (i + 1).min(src.len());
+        } else if ident(rest[0]) {
+            while i < src.len() && ident(src[i]) {
+                i += 1;
+            }
+        } else {
+            i += 1;
+        }
+        if depth == 0 {
+            if stmt.is_none() {
+                stmt = Some(run_from);
+                tokens.clear();
+            }
+            if tokens.len() < HEAD.len() {
+                tokens.push(&src[start..i]);
+            }
+        }
+        run_from = i;
+        let ends = match src[start] {
+            b'{' => {
+                depth += 1;
+                false
+            }
+            b'}' => {
+                depth = depth.saturating_sub(1);
+                depth == 0
+            }
+            b';' => depth == 0,
+            _ => false,
+        };
+        if ends {
+            if let Some(from) = stmt.take() {
+                if tokens == HEAD {
+                    spans.push((from, i));
+                }
+            }
+        }
+    }
+    let mut out = Vec::with_capacity(src.len());
+    let mut kept = 0;
+    for (from, to) in spans {
+        out.extend_from_slice(&src[kept..from]);
+        kept = to;
+    }
+    out.extend_from_slice(&src[kept..]);
+    out
+}
+
 fn offender(verb: &str, path: &str, root: &str) -> String {
     format!(
         "ERROR: {verb} frozen snapshot {path} — snapshots under {root}/<tag>/ are \
@@ -128,6 +236,7 @@ fn augment(
 /// every changed snapshot that is a regular file at HEAD. A path missing from
 /// `base` has no frozen bytes to keep, and one missing from `head` cannot keep
 /// any, so a symlink whose target text matches a snapshot never passes as it.
+/// Both sides are compared without their `DEPENDENCIES` declaration.
 ///
 /// Deleted snapshots are paired with added files by a maximum one-to-one
 /// matching, so the order of `changes` cannot strand a deletion that has a
@@ -139,7 +248,7 @@ pub(crate) fn find_offenders(
     head: &BTreeMap<String, Vec<u8>>,
 ) -> Vec<String> {
     let keeps = |file: &Change, frozen: &str| match (head.get(&file.path), base.get(frozen)) {
-        (Some(h), Some(b)) => h.starts_with(b),
+        (Some(h), Some(b)) => without_dependencies(h).starts_with(&without_dependencies(b)),
         _ => false,
     };
     let of = |status: char| -> Vec<&Change> {
@@ -489,6 +598,195 @@ mod tests {
         ] {
             assert_eq!(find_offenders(&changes(diff), ROOT, &base, &head), Vec::<String>::new());
         }
+    }
+
+    /// A generated snapshot: `runtime` as RUNTIME_CODE, then `deps`
+    /// (a NatSpec'd DEPENDENCIES declaration, or nothing).
+    fn snapshot(runtime: &str, deps: &str) -> String {
+        format!(
+            "// A generated deploy-pin snapshot.\n\
+             pragma solidity ^0.8.25;\n\
+             \n\
+             /// @dev The runtime bytecode of the contract.\n\
+             bytes constant RUNTIME_CODE =\n    hex\"{runtime}\";\n\
+             {deps}"
+        )
+    }
+
+    const DEPS_ADDRESSES: &str = "\n/// @dev The addresses that MUST already have code on a network before\n\
+         /// this release can be broadcast there, `abi.encode`d as an `address[]`.\n\
+         bytes constant DEPENDENCIES =\n    hex\"0000000000000000000000000000000000000000000000000000000000000020\";\n";
+    const DEPS_REENCODED: &str = "\n/// @dev What MUST already be on a network before this release can be\n\
+         /// broadcast there, `abi.encode`d as a `DeployDependency[]`.\n\
+         bytes constant DEPENDENCIES =\n    hex\"00000000000000000000000000000000000000000000000000000000000000200001\";\n";
+
+    /// Offenders when the snapshot `base` becomes `head`, in place and as a
+    /// rename within its tag dir.
+    fn in_place_and_renamed(base: &str, head: &str) -> [Vec<String>; 2] {
+        let in_place = find_offenders(
+            &changes("M\tsrc/generated/0_1_4/A.sol\n"),
+            ROOT,
+            &content(&[("src/generated/0_1_4/A.sol", base)]),
+            &content(&[("src/generated/0_1_4/A.sol", head)]),
+        );
+        let renamed = find_offenders(
+            &changes("D\tsrc/generated/0_1_4/A.pointers.sol\nA\tsrc/generated/0_1_4/A.sol\n"),
+            ROOT,
+            &content(&[("src/generated/0_1_4/A.pointers.sol", base)]),
+            &content(&[("src/generated/0_1_4/A.sol", head)]),
+        );
+        [in_place, renamed]
+    }
+
+    #[test]
+    fn re_encoding_dropping_or_adding_dependencies_passes() {
+        for (base, head) in [
+            (DEPS_ADDRESSES, DEPS_REENCODED),
+            (DEPS_ADDRESSES, ""),
+            ("", DEPS_REENCODED),
+        ] {
+            for off in in_place_and_renamed(&snapshot("6080", base), &snapshot("6080", head)) {
+                assert_eq!(off, Vec::<String>::new(), "{base:?} -> {head:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn re_encoding_dependencies_before_another_constant_passes() {
+        let creation = "\n/// @dev The creation bytecode of the contract.\n\
+                        bytes constant CREATION_CODE =\n    hex\"6080\";\n";
+        let [in_place, renamed] = in_place_and_renamed(
+            &format!("{}{creation}", snapshot("6080", DEPS_ADDRESSES)),
+            &format!("{}{creation}", snapshot("6080", DEPS_REENCODED)),
+        );
+        assert_eq!(in_place, Vec::<String>::new());
+        assert_eq!(renamed, Vec::<String>::new());
+    }
+
+    #[test]
+    fn re_encoding_dependencies_after_a_block_passes() {
+        let block = "\nlibrary L {\n    function f() internal pure {}\n}\n";
+        let [in_place, renamed] = in_place_and_renamed(
+            &format!("{}{block}{DEPS_ADDRESSES}", snapshot("6080", "")),
+            &format!("{}{block}{DEPS_REENCODED}", snapshot("6080", "")),
+        );
+        assert_eq!(in_place, Vec::<String>::new());
+        assert_eq!(renamed, Vec::<String>::new());
+    }
+
+    #[test]
+    fn re_encoding_dependencies_does_not_unfreeze_another_constant() {
+        let [in_place, renamed] = in_place_and_renamed(
+            &snapshot("6080", DEPS_ADDRESSES),
+            &snapshot("6081", DEPS_REENCODED),
+        );
+        assert_eq!(in_place.len(), 1);
+        assert!(in_place[0].contains("modified frozen snapshot src/generated/0_1_4/A.sol"));
+        assert_eq!(renamed.len(), 1);
+        assert!(renamed[0].contains("deleted frozen snapshot src/generated/0_1_4/A.pointers.sol"));
+    }
+
+    #[test]
+    fn a_dependencies_token_outside_the_declaration_unfreezes_nothing() {
+        let deps = "bytes constant DEPENDENCIES = hex\"00\";";
+        for (base, head) in [
+            // inside another constant's string value
+            (
+                format!("string constant S = \"{deps}\";\n"),
+                format!("string constant S = \"{}\";\n", deps.replace("00", "01")),
+            ),
+            (
+                format!("string constant S = \"\\\"; {deps}\";\n"),
+                format!(
+                    "string constant S = \"\\\"; {}\";\n",
+                    deps.replace("00", "01")
+                ),
+            ),
+            // inside a comment, with the next constant edited
+            (
+                format!("/* {deps} */\nbytes constant R = hex\"00\";\n"),
+                format!("/* {deps} */\nbytes constant R = hex\"01\";\n"),
+            ),
+            (
+                format!("// {deps}\nbytes constant R = hex\"00\";\n"),
+                format!("// {deps}\nbytes constant R = hex\"01\";\n"),
+            ),
+            // a DEPENDENCIES that swallows an edited constant by dropping its `;`
+            (
+                format!("{deps}\nbytes constant R = hex\"00\";\n"),
+                "bytes constant DEPENDENCIES = hex\"00\"\nbytes constant R = hex\"01\";\n"
+                    .to_string(),
+            ),
+            // a DEPENDENCIES nested in a block is not the top-level declaration
+            (
+                format!("contract C {{ {deps} }}\n"),
+                format!("contract C {{ {} }}\n", deps.replace("00", "01")),
+            ),
+            (
+                format!("contract C {{ uint256 x; {deps} }}\n"),
+                format!("contract C {{ uint256 x; {} }}\n", deps.replace("00", "01")),
+            ),
+            // a name that only starts with DEPENDENCIES
+            (
+                "bytes constant DEPENDENCIES_V2 = hex\"00\";\n".to_string(),
+                "bytes constant DEPENDENCIES_V2 = hex\"01\";\n".to_string(),
+            ),
+        ] {
+            for off in in_place_and_renamed(&base, &head) {
+                assert_eq!(off.len(), 1, "{base:?} -> {head:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn without_dependencies_removes_the_declaration_and_its_natspec_only() {
+        let kept = "pragma solidity ^0.8.25;\n// plain";
+        let tail = "\n\n/// @dev R.\nbytes constant R = hex\"00\";\n";
+        for decl in [
+            "\n\n/// @dev D.\n/// more.\nbytes constant DEPENDENCIES =\n    hex\"00\";",
+            "\n\n/** @dev D. */\nbytes  constant\tDEPENDENCIES=hex\"00\";",
+            "\nbytes constant DEPENDENCIES = abi.encode(\"}\", ';');",
+        ] {
+            let src = format!("{kept}{decl}{tail}");
+            assert_eq!(
+                String::from_utf8(without_dependencies(src.as_bytes())).unwrap(),
+                format!("{kept}{tail}"),
+                "{decl:?}"
+            );
+        }
+        // a non-NatSpec comment between the NatSpec and the declaration stays
+        let src = "/// @dev D.\n// note\nbytes constant DEPENDENCIES = hex\"00\";\n";
+        assert_eq!(
+            String::from_utf8(without_dependencies(src.as_bytes())).unwrap(),
+            "/// @dev D.\n// note\n"
+        );
+        // an empty `/**/` is a plain comment, not NatSpec, so it stays
+        let src = "/**/\nbytes constant DEPENDENCIES = hex\"00\";\n";
+        assert_eq!(
+            String::from_utf8(without_dependencies(src.as_bytes())).unwrap(),
+            "/**/\n"
+        );
+    }
+
+    #[test]
+    fn without_dependencies_on_malformed_source_does_not_panic() {
+        // unterminated string literals run to the end and remove nothing
+        // and are kept, whether among a statement's leading tokens or after them
+        for src in [
+            "\"abc",
+            "\"\\",
+            "bytes constant \"\\",
+            "bytes constant DEPENDENCIES = \"abc",
+            "bytes constant DEPENDENCIES = \"\\",
+        ] {
+            assert_eq!(without_dependencies(src.as_bytes()), src.as_bytes());
+        }
+        // a stray `}` at the top level is its own statement
+        let src = "}\nbytes constant DEPENDENCIES = hex\"00\";\n";
+        assert_eq!(
+            String::from_utf8(without_dependencies(src.as_bytes())).unwrap(),
+            "}\n"
+        );
     }
 
     /// A throwaway git repository with `main` holding the base snapshots and
