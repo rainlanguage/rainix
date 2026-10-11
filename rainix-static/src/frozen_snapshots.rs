@@ -664,6 +664,17 @@ mod tests {
     }
 
     #[test]
+    fn re_encoding_dependencies_after_a_block_passes() {
+        let block = "\nlibrary L {\n    function f() internal pure {}\n}\n";
+        let [in_place, renamed] = in_place_and_renamed(
+            &format!("{}{block}{DEPS_ADDRESSES}", snapshot("6080", "")),
+            &format!("{}{block}{DEPS_REENCODED}", snapshot("6080", "")),
+        );
+        assert_eq!(in_place, Vec::<String>::new());
+        assert_eq!(renamed, Vec::<String>::new());
+    }
+
+    #[test]
     fn re_encoding_dependencies_does_not_unfreeze_another_constant() {
         let [in_place, renamed] = in_place_and_renamed(
             &snapshot("6080", DEPS_ADDRESSES),
@@ -707,6 +718,10 @@ mod tests {
             (
                 format!("contract C {{ {deps} }}\n"),
                 format!("contract C {{ {} }}\n", deps.replace("00", "01")),
+            ),
+            (
+                format!("contract C {{ uint256 x; {deps} }}\n"),
+                format!("contract C {{ uint256 x; {} }}\n", deps.replace("00", "01")),
             ),
             // a name that only starts with DEPENDENCIES
             (
