@@ -35,7 +35,8 @@
 //       count as neither; a line with any code on it is code, even with a
 //       trailing comment. Syntax by extension: `//` and `/* */` for
 //       .sol/.rs/.ts/.js, `#` for .sh/.toml/.yaml, both for .nix; other
-//       extensions are not counted. On failure prints the totals and every
+//       extensions are not counted, nor is any file under a directory
+//       named `deprecated`. On failure prints the totals and every
 //       file with both counts. A path set that selects no counted file is
 //       an error, not a pass.
 //   prompt-cap --paths <globs> --cap <bytes> [--root <dir>]

@@ -1,6 +1,6 @@
 name: comment-loc-cap
 description: >-
-  Fails when, summed over every tracked source file in a bucket, comment lines exceed twice the code lines. Each bucket is capped on its own, strict: at twice passes. Counting is `scc`'s, which lexes per language, so a comment marker inside a string literal is code and a doc comment is a comment. Counted extensions are .sol/.rs/.ts/.js, .sh/.toml/.yaml and .nix; anything else, prose formats included, is not counted at all — `scc` scores Markdown text as comments, so counting it would fail every repo that has a README. On failure the over-cap bucket's totals and every file's counts are printed.
+  Fails when, summed over every tracked source file in a bucket, comment lines exceed twice the code lines. Each bucket is capped on its own, strict: at twice passes. Counting is `scc`'s, which lexes per language, so a comment marker inside a string literal is code and a doc comment is a comment. Counted extensions are .sol/.rs/.ts/.js, .sh/.toml/.yaml and .nix; anything else, prose formats included, is not counted at all — `scc` scores Markdown text as comments, so counting it would fail every repo that has a README. A file under a directory named `deprecated` counts toward neither side, so deprecated code is never edited to satisfy the cap. On failure the over-cap bucket's totals and every file's counts are printed.
 inputs:
   buckets:
     description: >-
