@@ -13,7 +13,8 @@
 //! Anything after the prefix is an addition — a later top-level declaration
 //! cannot change the value of a constant before it — so appending is allowed;
 //! editing, truncating or moving a snapshot to another tag dir is not. Each
-//! added file carries at most one renamed snapshot. Adding a new tag dir is
+//! added file carries at most one renamed snapshot, and deletions are paired
+//! with added files by a maximum one-to-one matching. Adding a new tag dir is
 //! allowed; regenerated non-tag files directly under `<root>/` (the current-pin
 //! deploy libs) are not snapshots and are ignored.
 
@@ -74,9 +75,39 @@ fn offender(verb: &str, path: &str, root: &str) -> String {
     )
 }
 
+/// Try to give deleted snapshot `d` a carrier among `carries[d]`, re-homing the
+/// snapshot already carried by a candidate when it has another carrier (an
+/// augmenting path). `carrier[a]` is the deleted snapshot added file `a` carries.
+fn augment(
+    d: usize,
+    carries: &[Vec<usize>],
+    carrier: &mut [Option<usize>],
+    seen: &mut [bool],
+) -> bool {
+    for &a in &carries[d] {
+        if seen[a] {
+            continue;
+        }
+        seen[a] = true;
+        let free = match carrier[a] {
+            None => true,
+            Some(other) => augment(other, carries, carrier, seen),
+        };
+        if free {
+            carrier[a] = Some(d);
+            return true;
+        }
+    }
+    false
+}
+
 /// The offenders among `changes`. `base` holds the merge-base content of every
 /// modified or deleted snapshot, `head` the HEAD content of every modified or
 /// added snapshot.
+///
+/// Deleted snapshots are paired with added files by a maximum one-to-one
+/// matching, so the order of `changes` cannot strand a deletion that has a
+/// valid carrier.
 pub(crate) fn find_offenders(
     changes: &[Change],
     root: &str,
@@ -87,33 +118,40 @@ pub(crate) fn find_offenders(
         (Some(h), Some(b)) => h.starts_with(b),
         _ => false,
     };
+    let of = |status: char| -> Vec<&str> {
+        changes
+            .iter()
+            .filter(|c| c.status == status && is_snapshot(&c.path, root))
+            .map(|c| c.path.as_str())
+            .collect()
+    };
+    let deleted = of('D');
+    let added = of('A');
+    let carries: Vec<Vec<usize>> = deleted
+        .iter()
+        .map(|d| {
+            (0..added.len())
+                .filter(|&a| {
+                    snapshot_tag(added[a], root) == snapshot_tag(d, root)
+                        && starts_with(added[a], d)
+                })
+                .collect()
+        })
+        .collect();
+    let mut carrier: Vec<Option<usize>> = vec![None; added.len()];
+    for d in 0..deleted.len() {
+        augment(d, &carries, &mut carrier, &mut vec![false; added.len()]);
+    }
+    let renamed: BTreeSet<&str> = carrier.iter().flatten().map(|&d| deleted[d]).collect();
     let mut out = Vec::new();
-    let mut claimed: BTreeSet<&str> = BTreeSet::new();
     for change in changes {
         let path = change.path.as_str();
-        let Some(tag) = snapshot_tag(path, root) else {
+        if !is_snapshot(path, root) {
             continue;
-        };
+        }
         match change.status {
-            'M' => {
-                if !starts_with(path, path) {
-                    out.push(offender("modified", path, root));
-                }
-            }
-            'D' => {
-                let renamed_to = changes.iter().find(|added| {
-                    added.status == 'A'
-                        && snapshot_tag(&added.path, root) == Some(tag)
-                        && !claimed.contains(added.path.as_str())
-                        && starts_with(&added.path, path)
-                });
-                match renamed_to {
-                    Some(added) => {
-                        claimed.insert(added.path.as_str());
-                    }
-                    None => out.push(offender("deleted", path, root)),
-                }
-            }
+            'M' if !starts_with(path, path) => out.push(offender("modified", path, root)),
+            'D' if !renamed.contains(path) => out.push(offender("deleted", path, root)),
             _ => {}
         }
     }
@@ -384,5 +422,27 @@ mod tests {
         let off = find_offenders(&c, ROOT, &base, &head);
         assert_eq!(off.len(), 1);
         assert!(off[0].contains("deleted frozen snapshot src/generated/0_1_4/B.sol"));
+    }
+
+    #[test]
+    fn renames_pair_one_to_one_regardless_of_order() {
+        // A shorter frozen snapshot is a prefix of a longer one, so every file
+        // that can carry the longer can also carry the shorter. Pairing the
+        // shorter first with the only file the longer fits must not strand the
+        // longer: A -> Azz and AB -> ABx is a valid assignment.
+        let base = content(&[
+            ("src/generated/0_1_4/A.sol", "A"),
+            ("src/generated/0_1_4/AB.sol", "AB"),
+        ]);
+        let head = content(&[
+            ("src/generated/0_1_4/ABx.sol", "ABx"),
+            ("src/generated/0_1_4/Azz.sol", "Azz"),
+        ]);
+        for diff in [
+            "D\tsrc/generated/0_1_4/A.sol\nD\tsrc/generated/0_1_4/AB.sol\nA\tsrc/generated/0_1_4/ABx.sol\nA\tsrc/generated/0_1_4/Azz.sol\n",
+            "A\tsrc/generated/0_1_4/Azz.sol\nA\tsrc/generated/0_1_4/ABx.sol\nD\tsrc/generated/0_1_4/AB.sol\nD\tsrc/generated/0_1_4/A.sol\n",
+        ] {
+            assert_eq!(find_offenders(&changes(diff), ROOT, &base, &head), Vec::<String>::new());
+        }
     }
 }
