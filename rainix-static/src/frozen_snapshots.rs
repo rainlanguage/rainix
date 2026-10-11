@@ -604,7 +604,7 @@ mod tests {
     /// (a NatSpec'd DEPENDENCIES declaration, or nothing).
     fn snapshot(runtime: &str, deps: &str) -> String {
         format!(
-            "// SPDX-License-Identifier: LicenseRef-DCL-1.0\n\
+            "// A generated deploy-pin snapshot.\n\
              pragma solidity ^0.8.25;\n\
              \n\
              /// @dev The runtime bytecode of the contract.\n\
@@ -697,7 +697,10 @@ mod tests {
             ),
             (
                 format!("string constant S = \"\\\"; {deps}\";\n"),
-                format!("string constant S = \"\\\"; {}\";\n", deps.replace("00", "01")),
+                format!(
+                    "string constant S = \"\\\"; {}\";\n",
+                    deps.replace("00", "01")
+                ),
             ),
             // inside a comment, with the next constant edited
             (
