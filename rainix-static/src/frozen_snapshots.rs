@@ -768,7 +768,14 @@ mod tests {
     #[test]
     fn without_dependencies_on_malformed_source_does_not_panic() {
         // unterminated string literals run to the end and remove nothing
-        for src in ["bytes constant DEPENDENCIES = \"abc", "bytes constant DEPENDENCIES = \"\\"] {
+        // and are kept, whether among a statement's leading tokens or after them
+        for src in [
+            "\"abc",
+            "\"\\",
+            "bytes constant \"\\",
+            "bytes constant DEPENDENCIES = \"abc",
+            "bytes constant DEPENDENCIES = \"\\",
+        ] {
             assert_eq!(without_dependencies(src.as_bytes()), src.as_bytes());
         }
         // a stray `}` at the top level is its own statement
