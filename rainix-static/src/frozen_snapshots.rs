@@ -8,8 +8,9 @@
 //! by editing an existing one.
 //!
 //! What is frozen is the bytes, not the filename. Every snapshot on the base
-//! must survive at HEAD as the verbatim PREFIX of a file in the same tag dir:
-//! either at its own path, or at a path the branch added there (a rename).
+//! must survive at HEAD as the verbatim PREFIX of a regular file in the same
+//! tag dir: either at its own path, or at a path the branch added there (a
+//! rename).
 //! Anything after the prefix is an addition — a later top-level declaration
 //! cannot change the value of a constant before it — so appending is allowed;
 //! editing, truncating or moving a snapshot to another tag dir is not. Each
@@ -46,25 +47,39 @@ pub(crate) fn is_snapshot(path: &str, root: &str) -> bool {
     snapshot_tag(path, root).is_some()
 }
 
-/// One `git diff --no-renames --name-status` entry under the root.
+/// One `git diff --no-renames --raw` entry under the root.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Change {
     pub(crate) status: char,
+    /// The file's mode at HEAD (`000000` for a deletion).
+    pub(crate) head_mode: String,
     pub(crate) path: String,
 }
 
-/// Parse `git diff --no-renames --name-status -z` output: NUL-terminated
-/// `status`, `path` fields in pairs. Paths are taken verbatim; with `-z` git
-/// neither quotes nor escapes them.
+impl Change {
+    /// True if the file at HEAD is a regular file. A symlink, submodule or
+    /// deletion holds no snapshot bytes, whatever `git show` prints for it.
+    fn is_regular_at_head(&self) -> bool {
+        matches!(self.head_mode.as_str(), "100644" | "100755")
+    }
+}
+
+/// Parse `git diff --no-renames --raw -z` output: NUL-terminated
+/// `:old_mode head_mode old_sha head_sha status`, `path` fields in pairs.
+/// Paths are taken verbatim; with `-z` git neither quotes nor escapes them.
 pub(crate) fn parse_changes(diff: &str) -> Vec<Change> {
     let mut fields = diff.split('\0');
     let mut changes = Vec::new();
-    while let (Some(status), Some(path)) = (fields.next(), fields.next()) {
-        if let Some(status) = status.chars().next() {
-            changes.push(Change {
-                status,
-                path: path.to_string(),
-            });
+    while let (Some(meta), Some(path)) = (fields.next(), fields.next()) {
+        let meta: Vec<&str> = meta.split(' ').collect();
+        if let [_, head_mode, _, _, status] = meta[..] {
+            if let Some(status) = status.chars().next() {
+                changes.push(Change {
+                    status,
+                    head_mode: head_mode.to_string(),
+                    path: path.to_string(),
+                });
+            }
         }
     }
     changes
@@ -107,27 +122,30 @@ fn augment(
 }
 
 /// The offenders among `changes`. `base` holds the merge-base content of every
-/// modified or deleted snapshot, `head` the HEAD content of every modified or
-/// added snapshot.
+/// modified, type-changed or deleted snapshot, `head` the HEAD content of every
+/// modified, type-changed or added snapshot.
 ///
-/// Deleted snapshots are paired with added files by a maximum one-to-one
-/// matching, so the order of `changes` cannot strand a deletion that has a
-/// valid carrier.
+/// Only a regular file at HEAD can hold frozen bytes: a symlink whose target
+/// text matches them carries nothing. Deleted snapshots are paired with added
+/// files by a maximum one-to-one matching, so the order of `changes` cannot
+/// strand a deletion that has a valid carrier.
 pub(crate) fn find_offenders(
     changes: &[Change],
     root: &str,
     base: &BTreeMap<String, Vec<u8>>,
     head: &BTreeMap<String, Vec<u8>>,
 ) -> Vec<String> {
-    let starts_with = |file: &str, frozen: &str| match (head.get(file), base.get(frozen)) {
-        (Some(h), Some(b)) => h.starts_with(b),
-        _ => false,
+    let keeps = |file: &Change, frozen: &str| {
+        file.is_regular_at_head()
+            && match (head.get(&file.path), base.get(frozen)) {
+                (Some(h), Some(b)) => h.starts_with(b),
+                _ => false,
+            }
     };
-    let of = |status: char| -> Vec<&str> {
+    let of = |status: char| -> Vec<&Change> {
         changes
             .iter()
             .filter(|c| c.status == status && is_snapshot(&c.path, root))
-            .map(|c| c.path.as_str())
             .collect()
     };
     let deleted = of('D');
@@ -137,8 +155,8 @@ pub(crate) fn find_offenders(
         .map(|d| {
             (0..added.len())
                 .filter(|&a| {
-                    snapshot_tag(added[a], root) == snapshot_tag(d, root)
-                        && starts_with(added[a], d)
+                    snapshot_tag(&added[a].path, root) == snapshot_tag(&d.path, root)
+                        && keeps(added[a], &d.path)
                 })
                 .collect()
         })
@@ -147,7 +165,11 @@ pub(crate) fn find_offenders(
     for d in 0..deleted.len() {
         augment(d, &carries, &mut carrier, &mut vec![false; added.len()]);
     }
-    let renamed: BTreeSet<&str> = carrier.iter().flatten().map(|&d| deleted[d]).collect();
+    let renamed: BTreeSet<&str> = carrier
+        .iter()
+        .flatten()
+        .map(|&d| deleted[d].path.as_str())
+        .collect();
     let mut out = Vec::new();
     for change in changes {
         let path = change.path.as_str();
@@ -155,7 +177,7 @@ pub(crate) fn find_offenders(
             continue;
         }
         match change.status {
-            'M' if !starts_with(path, path) => out.push(offender("modified", path, root)),
+            'M' | 'T' if !keeps(change, path) => out.push(offender("modified", path, root)),
             'D' if !renamed.contains(path) => out.push(offender("deleted", path, root)),
             _ => {}
         }
@@ -191,9 +213,9 @@ pub(crate) fn check(dir: &Path, base: &str, root: &str) -> Result<Vec<String>, S
         &[
             "diff",
             "--no-renames",
-            "--name-status",
+            "--raw",
             "-z",
-            "--diff-filter=AMD",
+            "--diff-filter=AMDT",
             &range,
             "--",
             root,
@@ -206,11 +228,11 @@ pub(crate) fn check(dir: &Path, base: &str, root: &str) -> Result<Vec<String>, S
     let mut base_content = BTreeMap::new();
     let mut head_content = BTreeMap::new();
     for change in changes.iter().filter(|c| is_snapshot(&c.path, root)) {
-        if matches!(change.status, 'M' | 'D') {
+        if matches!(change.status, 'M' | 'T' | 'D') {
             let bytes = git(dir, &["show", &format!("{merge_base}:{}", change.path)])?;
             base_content.insert(change.path.clone(), bytes);
         }
-        if matches!(change.status, 'M' | 'A') {
+        if matches!(change.status, 'M' | 'T' | 'A') {
             let bytes = git(dir, &["show", &format!("HEAD:{}", change.path)])?;
             head_content.insert(change.path.clone(), bytes);
         }
@@ -225,15 +247,16 @@ mod tests {
     const ROOT: &str = "src/generated";
 
     /// `changes` from a readable `status\tpath` per line fixture, sent through
-    /// the NUL-delimited parser.
+    /// the NUL-delimited raw parser. Every file present at HEAD is a regular
+    /// file.
     fn changes(diff: &str) -> Vec<Change> {
         let z: String = diff
             .lines()
-            .flat_map(|line| {
+            .map(|line| {
                 let (status, path) = line.split_once('\t').unwrap();
-                [status, path]
+                let mode = if status == "D" { "000000" } else { "100644" };
+                format!(":100644 {mode} 0000000 0000000 {status}\0{path}\0")
             })
-            .map(|field| format!("{field}\0"))
             .collect();
         parse_changes(&z)
     }
@@ -508,6 +531,13 @@ mod tests {
             std::fs::write(p, bytes).unwrap();
         }
 
+        fn symlink(&self, path: &str, target: &str) {
+            let p = self.0.join(path);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            let _ = std::fs::remove_file(&p);
+            std::os::unix::fs::symlink(target, p).unwrap();
+        }
+
         fn commit_all(&self) {
             self.git(&["add", "-A"]);
             self.git(&["commit", "-q", "-m", "x"]);
@@ -532,16 +562,25 @@ mod tests {
     fn parses_nul_delimited_paths_verbatim() {
         assert_eq!(
             parse_changes(
-                "M\0src/generated/0_1_4/a\tb\nc .sol \0D\0src/generated/0_1_4/\"q\".sol\0"
+                ":100644 100755 9bda8c3 2000c07 M\0src/generated/0_1_4/a\tb\nc .sol \0\
+                 :100644 000000 9bda8c3 0000000 D\0src/generated/0_1_4/\"q\".sol\0\
+                 :100644 120000 9bda8c3 62d8fe9 T\0src/generated/0_1_4/s.sol\0"
             ),
             vec![
                 Change {
                     status: 'M',
+                    head_mode: "100755".to_string(),
                     path: "src/generated/0_1_4/a\tb\nc .sol ".to_string(),
                 },
                 Change {
                     status: 'D',
+                    head_mode: "000000".to_string(),
                     path: "src/generated/0_1_4/\"q\".sol".to_string(),
+                },
+                Change {
+                    status: 'T',
+                    head_mode: "120000".to_string(),
+                    path: "src/generated/0_1_4/s.sol".to_string(),
                 },
             ]
         );
@@ -586,6 +625,55 @@ mod tests {
             assert!(off.iter().any(|o| o.contains(&edited)), "{edited}");
             assert!(off.iter().any(|o| o.contains(&deleted)), "{deleted}");
         }
+    }
+
+    #[test]
+    fn a_snapshot_swapped_for_a_symlink_is_a_modification() {
+        // `git show` prints a symlink's target text, so a target equal to the
+        // frozen bytes would otherwise read as an unchanged snapshot.
+        let repo = Repo::new("symlink-swap");
+        repo.write(&format!("{ROOT}/0_1_4/A.sol"), "frozen\n");
+        repo.commit_all();
+        repo.branch();
+        repo.symlink(&format!("{ROOT}/0_1_4/A.sol"), "frozen\n");
+        repo.commit_all();
+        let off = repo.offenders();
+        assert_eq!(off.len(), 1, "{off:#?}");
+        assert!(off[0].contains(&format!("modified frozen snapshot {ROOT}/0_1_4/A.sol ")));
+    }
+
+    #[test]
+    fn a_symlink_cannot_carry_a_renamed_snapshot() {
+        let repo = Repo::new("symlink-rename");
+        repo.write(&format!("{ROOT}/0_1_4/A.pointers.sol"), "frozen\n");
+        repo.commit_all();
+        repo.branch();
+        std::fs::remove_file(repo.0.join(format!("{ROOT}/0_1_4/A.pointers.sol"))).unwrap();
+        repo.symlink(&format!("{ROOT}/0_1_4/A.sol"), "frozen\n");
+        repo.commit_all();
+        let off = repo.offenders();
+        assert_eq!(off.len(), 1, "{off:#?}");
+        assert!(off[0].contains(&format!(
+            "deleted frozen snapshot {ROOT}/0_1_4/A.pointers.sol "
+        )));
+    }
+
+    #[test]
+    fn an_executable_snapshot_keeping_its_bytes_passes() {
+        use std::os::unix::fs::PermissionsExt;
+        let repo = Repo::new("exec");
+        repo.write(&format!("{ROOT}/0_1_4/A.sol"), "frozen\n");
+        repo.write(&format!("{ROOT}/0_1_4/B.pointers.sol"), "frozen\n");
+        repo.commit_all();
+        repo.branch();
+        let a = repo.0.join(format!("{ROOT}/0_1_4/A.sol"));
+        std::fs::set_permissions(&a, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::remove_file(repo.0.join(format!("{ROOT}/0_1_4/B.pointers.sol"))).unwrap();
+        repo.write(&format!("{ROOT}/0_1_4/B.sol"), "frozen\n");
+        let b = repo.0.join(format!("{ROOT}/0_1_4/B.sol"));
+        std::fs::set_permissions(&b, std::fs::Permissions::from_mode(0o755)).unwrap();
+        repo.commit_all();
+        assert_eq!(repo.offenders(), Vec::<String>::new());
     }
 
     #[test]
