@@ -10,14 +10,15 @@
 //! What is frozen is the bytes, not the filename. Every snapshot on the base
 //! must survive at HEAD as the verbatim PREFIX of a regular file in the same
 //! tag dir: either at its own path, or at a path the branch added there (a
-//! rename).
-//! Anything after the prefix is an addition — a later top-level declaration
-//! cannot change the value of a constant before it — so appending is allowed;
-//! editing, truncating or moving a snapshot to another tag dir is not. Each
-//! added file carries at most one renamed snapshot, and deletions are paired
-//! with added files by a maximum one-to-one matching. Adding a new tag dir is
-//! allowed; regenerated non-tag files directly under `<root>/` (the current-pin
-//! deploy libs) are not snapshots and are ignored.
+//! rename). Anything after the prefix is an addition — a later top-level
+//! declaration cannot change the value of a constant before it — so appending
+//! is allowed; editing, truncating or moving a snapshot to another tag dir is
+//! not. A snapshot that is not a regular file on the base has no frozen bytes,
+//! so any change to it is flagged. Each added file carries at most one renamed
+//! snapshot, and deletions are paired with added files by a maximum one-to-one
+//! matching. Adding a new tag dir is allowed; regenerated non-tag files
+//! directly under `<root>/` (the current-pin deploy libs) are not snapshots and
+//! are ignored.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -51,31 +52,32 @@ pub(crate) fn is_snapshot(path: &str, root: &str) -> bool {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Change {
     pub(crate) status: char,
+    /// The file's mode at the merge base (`000000` for an addition).
+    pub(crate) base_mode: String,
     /// The file's mode at HEAD (`000000` for a deletion).
     pub(crate) head_mode: String,
     pub(crate) path: String,
 }
 
-impl Change {
-    /// True if the file at HEAD is a regular file. A symlink, submodule or
-    /// deletion holds no snapshot bytes, whatever `git show` prints for it.
-    fn is_regular_at_head(&self) -> bool {
-        matches!(self.head_mode.as_str(), "100644" | "100755")
-    }
+/// True if `mode` is a regular file's. A symlink, submodule or absent file
+/// holds no snapshot bytes, whatever `git show` prints for it.
+fn is_regular(mode: &str) -> bool {
+    matches!(mode, "100644" | "100755")
 }
 
 /// Parse `git diff --no-renames --raw -z` output: NUL-terminated
-/// `:old_mode head_mode old_sha head_sha status`, `path` fields in pairs.
+/// `:base_mode head_mode base_sha head_sha status`, `path` fields in pairs.
 /// Paths are taken verbatim; with `-z` git neither quotes nor escapes them.
 pub(crate) fn parse_changes(diff: &str) -> Vec<Change> {
     let mut fields = diff.split('\0');
     let mut changes = Vec::new();
     while let (Some(meta), Some(path)) = (fields.next(), fields.next()) {
         let meta: Vec<&str> = meta.split(' ').collect();
-        if let [_, head_mode, _, _, status] = meta[..] {
+        if let [base_mode, head_mode, _, _, status] = meta[..] {
             if let Some(status) = status.chars().next() {
                 changes.push(Change {
                     status,
+                    base_mode: base_mode.trim_start_matches(':').to_string(),
                     head_mode: head_mode.to_string(),
                     path: path.to_string(),
                 });
@@ -121,26 +123,24 @@ fn augment(
     false
 }
 
-/// The offenders among `changes`. `base` holds the merge-base content of every
-/// modified, type-changed or deleted snapshot, `head` the HEAD content of every
-/// modified, type-changed or added snapshot.
+/// The offenders among `changes`. `base` holds the merge-base bytes of every
+/// changed snapshot that is a regular file there, `head` the HEAD bytes of
+/// every changed snapshot that is a regular file at HEAD. A path missing from
+/// `base` has no frozen bytes to keep, and one missing from `head` cannot keep
+/// any, so a symlink whose target text matches a snapshot never passes as it.
 ///
-/// Only a regular file at HEAD can hold frozen bytes: a symlink whose target
-/// text matches them carries nothing. Deleted snapshots are paired with added
-/// files by a maximum one-to-one matching, so the order of `changes` cannot
-/// strand a deletion that has a valid carrier.
+/// Deleted snapshots are paired with added files by a maximum one-to-one
+/// matching, so the order of `changes` cannot strand a deletion that has a
+/// valid carrier.
 pub(crate) fn find_offenders(
     changes: &[Change],
     root: &str,
     base: &BTreeMap<String, Vec<u8>>,
     head: &BTreeMap<String, Vec<u8>>,
 ) -> Vec<String> {
-    let keeps = |file: &Change, frozen: &str| {
-        file.is_regular_at_head()
-            && match (head.get(&file.path), base.get(frozen)) {
-                (Some(h), Some(b)) => h.starts_with(b),
-                _ => false,
-            }
+    let keeps = |file: &Change, frozen: &str| match (head.get(&file.path), base.get(frozen)) {
+        (Some(h), Some(b)) => h.starts_with(b),
+        _ => false,
     };
     let of = |status: char| -> Vec<&Change> {
         changes
@@ -228,11 +228,11 @@ pub(crate) fn check(dir: &Path, base: &str, root: &str) -> Result<Vec<String>, S
     let mut base_content = BTreeMap::new();
     let mut head_content = BTreeMap::new();
     for change in changes.iter().filter(|c| is_snapshot(&c.path, root)) {
-        if matches!(change.status, 'M' | 'T' | 'D') {
+        if is_regular(&change.base_mode) {
             let bytes = git(dir, &["show", &format!("{merge_base}:{}", change.path)])?;
             base_content.insert(change.path.clone(), bytes);
         }
-        if matches!(change.status, 'M' | 'T' | 'A') {
+        if is_regular(&change.head_mode) {
             let bytes = git(dir, &["show", &format!("HEAD:{}", change.path)])?;
             head_content.insert(change.path.clone(), bytes);
         }
@@ -247,15 +247,16 @@ mod tests {
     const ROOT: &str = "src/generated";
 
     /// `changes` from a readable `status\tpath` per line fixture, sent through
-    /// the NUL-delimited raw parser. Every file present at HEAD is a regular
-    /// file.
+    /// the NUL-delimited raw parser. Every file present on either side is a
+    /// regular file.
     fn changes(diff: &str) -> Vec<Change> {
         let z: String = diff
             .lines()
             .map(|line| {
                 let (status, path) = line.split_once('\t').unwrap();
-                let mode = if status == "D" { "000000" } else { "100644" };
-                format!(":100644 {mode} 0000000 0000000 {status}\0{path}\0")
+                let base_mode = if status == "A" { "000000" } else { "100644" };
+                let head_mode = if status == "D" { "000000" } else { "100644" };
+                format!(":{base_mode} {head_mode} 0000000 0000000 {status}\0{path}\0")
             })
             .collect();
         parse_changes(&z)
@@ -569,16 +570,19 @@ mod tests {
             vec![
                 Change {
                     status: 'M',
+                    base_mode: "100644".to_string(),
                     head_mode: "100755".to_string(),
                     path: "src/generated/0_1_4/a\tb\nc .sol ".to_string(),
                 },
                 Change {
                     status: 'D',
+                    base_mode: "100644".to_string(),
                     head_mode: "000000".to_string(),
                     path: "src/generated/0_1_4/\"q\".sol".to_string(),
                 },
                 Change {
                     status: 'T',
+                    base_mode: "100644".to_string(),
                     head_mode: "120000".to_string(),
                     path: "src/generated/0_1_4/s.sol".to_string(),
                 },
@@ -650,6 +654,37 @@ mod tests {
         repo.branch();
         std::fs::remove_file(repo.0.join(format!("{ROOT}/0_1_4/A.pointers.sol"))).unwrap();
         repo.symlink(&format!("{ROOT}/0_1_4/A.sol"), "frozen\n");
+        repo.commit_all();
+        let off = repo.offenders();
+        assert_eq!(off.len(), 1, "{off:#?}");
+        assert!(off[0].contains(&format!(
+            "deleted frozen snapshot {ROOT}/0_1_4/A.pointers.sol "
+        )));
+    }
+
+    #[test]
+    fn a_symlink_snapshot_swapped_for_its_target_text_is_a_modification() {
+        // A symlink on the base has no frozen bytes; its target text is not
+        // what a consumer compiles, so a regular file holding it keeps nothing.
+        let repo = Repo::new("symlink-base-swap");
+        repo.symlink(&format!("{ROOT}/0_1_4/A.sol"), "frozen\n");
+        repo.commit_all();
+        repo.branch();
+        repo.write(&format!("{ROOT}/0_1_4/A.sol"), "frozen\n");
+        repo.commit_all();
+        let off = repo.offenders();
+        assert_eq!(off.len(), 1, "{off:#?}");
+        assert!(off[0].contains(&format!("modified frozen snapshot {ROOT}/0_1_4/A.sol ")));
+    }
+
+    #[test]
+    fn a_symlink_snapshot_cannot_be_renamed_into_its_target_text() {
+        let repo = Repo::new("symlink-base-rename");
+        repo.symlink(&format!("{ROOT}/0_1_4/A.pointers.sol"), "frozen\n");
+        repo.commit_all();
+        repo.branch();
+        std::fs::remove_file(repo.0.join(format!("{ROOT}/0_1_4/A.pointers.sol"))).unwrap();
+        repo.write(&format!("{ROOT}/0_1_4/A.sol"), "frozen\n");
         repo.commit_all();
         let off = repo.offenders();
         assert_eq!(off.len(), 1, "{off:#?}");
