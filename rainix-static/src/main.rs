@@ -50,10 +50,11 @@
 //       files are prompts and what they may weigh is per-repo, so both are an
 //       input, and a glob matching nothing is an error rather than a pass.
 //   snapshots-append-only [--base <ref>] [--root <dir>]
-//       fail if the branch modifies or deletes an existing per-tag deploy-pin
-//       snapshot under <root>/<tag>/ (default root src/generated, base
-//       origin/main). Snapshots are frozen once on the base branch; a release
-//       ADDS a new <tag>, never edits an existing one. Needs the base ref
+//       fail unless every existing per-tag deploy-pin snapshot under
+//       <root>/<tag>/ (default root src/generated, base origin/main) survives
+//       verbatim as the start of a HEAD file in the same tag dir, at its own
+//       path or a path the branch added (a rename). A release ADDS a new
+//       <tag>, never edits an existing one. Needs the base ref
 //       fetched with history (fetch-depth: 0 + `git fetch origin <base>`).
 //   mutation-ledger [--root <dir>] [--path <file>]
 //       fail if the adversarial-mutation-test skill's committed run record,
@@ -307,7 +308,7 @@ fn main() {
         "snapshots-append-only" => {
             let base = flag(&args, "--base").unwrap_or_else(|| "origin/main".to_string());
             let root = flag(&args, "--root").unwrap_or_else(|| "src/generated".to_string());
-            match frozen_snapshots::check(&base, &root) {
+            match frozen_snapshots::check(Path::new("."), &base, &root) {
                 Err(e) => fail(&e),
                 Ok(offenders) if offenders.is_empty() => println!("snapshots-append-only: clean"),
                 Ok(offenders) => {
