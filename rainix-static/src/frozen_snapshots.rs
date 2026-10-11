@@ -133,7 +133,7 @@ pub(crate) fn without_dependencies(src: &[u8]) -> Vec<u8> {
                 .windows(2)
                 .position(|w| w == b"*/")
                 .map_or(src.len(), |n| i + 2 + n + 2);
-            if !(rest.starts_with(b"/**") && !rest.starts_with(b"/**/")) {
+            if !rest.starts_with(b"/**") || rest.starts_with(b"/**/") {
                 run_from = end;
             }
             i = end;
