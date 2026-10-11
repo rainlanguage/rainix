@@ -15,6 +15,11 @@
 //!
 //! Only files `git ls-files` reports are read, so a vendored or generated tree
 //! that is not tracked never fails the check.
+//!
+//! A file under a directory named `deprecated` counts toward neither side.
+//! Deprecated code is kept for its existing consumers and is not edited, so
+//! the cap cannot ask it to change, and its lines would otherwise set the
+//! ratio the live tree is measured against.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -47,6 +52,14 @@ pub(crate) fn is_counted(path: &str) -> bool {
             | "yml"
             | "nix"
     )
+}
+
+/// Whether a path sits under a directory named exactly `deprecated`. A path
+/// segment, not a substring: `notdeprecated/` and `deprecated.sol` are
+/// ordinary paths.
+pub(crate) fn is_deprecated(path: &str) -> bool {
+    path.rsplit_once('/')
+        .is_some_and(|(dir, _)| dir.split('/').any(|segment| segment == "deprecated"))
 }
 
 /// Comment and code line counts of one file.
@@ -152,7 +165,7 @@ pub(crate) fn scan(root: &Path, paths: &[String]) -> Result<Vec<(String, Counts)
         .split(|&c| c == 0)
         .filter(|n| !n.is_empty())
         .map(|n| String::from_utf8_lossy(n).into_owned())
-        .filter(|n| is_counted(n))
+        .filter(|n| is_counted(n) && !is_deprecated(n))
         .collect();
     if names.is_empty() {
         return Err(ScanError::NoSourceFile(format!(
@@ -307,6 +320,18 @@ mod tests {
     }
 
     #[test]
+    fn deprecated_is_a_directory_segment_not_a_substring() {
+        assert!(is_deprecated("deprecated/A.sol"));
+        assert!(is_deprecated("src/deprecated/A.sol"));
+        assert!(is_deprecated("src/deprecated/v2/A.sol"));
+        assert!(!is_deprecated("src/notdeprecated/A.sol"));
+        assert!(!is_deprecated("src/deprecatedv2/A.sol"));
+        assert!(!is_deprecated("src/deprecated.sol"));
+        assert!(!is_deprecated("deprecated.sol"));
+        assert!(!is_deprecated("src/A.sol"));
+    }
+
+    #[test]
     fn scc_json_is_parsed_by_location() {
         let json = br#"[{"Name":"Rust","Files":[{"Location":"src/a.rs","Code":10,"Comment":3}]},
                         {"Name":"YAML","Files":[{"Location":"ci.yaml","Code":5,"Comment":1}]}]"#;
@@ -435,6 +460,88 @@ mod tests {
             .success());
         let files = scan(&d, &["src".into()]).unwrap();
         assert!(report("src", &files).is_empty());
+    }
+
+    fn add(d: &Path, files: &[(&str, &str)]) {
+        for (name, body) in files {
+            let path = d.join(name);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+            assert!(Command::new("git")
+                .arg("-C")
+                .arg(d)
+                .args(["add", name])
+                .status()
+                .unwrap()
+                .success());
+        }
+    }
+
+    fn untrack(d: &Path, name: &str) {
+        assert!(Command::new("git")
+            .arg("-C")
+            .arg(d)
+            .args(["rm", "-qf", name])
+            .status()
+            .unwrap()
+            .success());
+    }
+
+    const OVER: &str = "// a\n// b\n// c\n// d\n// e\n// f\n// g\nx;\n";
+
+    /// The deprecated files are over on their own and over in aggregate with
+    /// the rest of the bucket, so had they counted the bucket would fail: what
+    /// passes is the exemption, not dilution.
+    #[test]
+    fn a_deprecated_file_over_the_cap_does_not_trip_it() {
+        let d = repo();
+        untrack(&d, "src/Over.sol");
+        add(
+            &d,
+            &[
+                ("src/deprecated/Old.sol", OVER),
+                ("src/deprecated/v2/Older.sol", OVER),
+                ("deprecated/Root.sol", OVER),
+            ],
+        );
+        let files = scan(&d, &["src".into(), "deprecated".into()]).unwrap();
+        assert_eq!(
+            files,
+            vec![(
+                "src/Ok.sol".to_string(),
+                Counts {
+                    comment: 1,
+                    code: 1
+                }
+            )]
+        );
+        assert!(report("src", &files).is_empty());
+    }
+
+    /// A bucket whose only files are deprecated selects nothing, the same as
+    /// one with no files at all.
+    #[test]
+    fn a_bucket_of_only_deprecated_files_selects_nothing() {
+        let d = repo();
+        add(&d, &[("test/deprecated/Old.sol", OVER)]);
+        let e = scan(&d, &["test".into()]).unwrap_err();
+        assert!(matches!(e, ScanError::NoSourceFile(_)), "{e:?}");
+    }
+
+    #[test]
+    fn a_name_containing_deprecated_still_counts_and_trips_the_cap() {
+        for name in [
+            "src/notdeprecated/Over.sol",
+            "src/deprecatedv2/Over.sol",
+            "src/deprecated.sol",
+        ] {
+            let d = repo();
+            untrack(&d, "src/Over.sol");
+            add(&d, &[(name, OVER)]);
+            let files = scan(&d, &["src".into()]).unwrap();
+            assert!(files.iter().any(|(n, _)| n == name), "{name}: {files:?}");
+            assert!(!report("src", &files).is_empty(), "{name}: {files:?}");
+        }
     }
 
     #[test]

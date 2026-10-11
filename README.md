@@ -95,7 +95,9 @@ bucket's totals and every file's counts printed on failure). Two buckets by
 default, `src .github` and `test`, each capped on its own: test code is bulky
 and assertion-dense, so pooling it with `src` raises the cap src's prose is
 measured against until the ratio stops meaning anything. A default bucket a repo
-has no directory for is skipped. To scan other directories call
+has no directory for is skipped. A file under a directory named `deprecated`
+counts toward neither side, so deprecated code is never edited to satisfy the
+cap. To scan other directories call
 `rainlanguage/rainix/.github/actions/comment-loc-cap@main` directly with its
 `buckets` input, one bucket per line.
 
