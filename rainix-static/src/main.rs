@@ -308,7 +308,7 @@ fn main() {
         "snapshots-append-only" => {
             let base = flag(&args, "--base").unwrap_or_else(|| "origin/main".to_string());
             let root = flag(&args, "--root").unwrap_or_else(|| "src/generated".to_string());
-            match frozen_snapshots::check(&base, &root) {
+            match frozen_snapshots::check(Path::new("."), &base, &root) {
                 Err(e) => fail(&e),
                 Ok(offenders) if offenders.is_empty() => println!("snapshots-append-only: clean"),
                 Ok(offenders) => {

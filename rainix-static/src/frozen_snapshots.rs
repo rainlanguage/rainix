@@ -19,6 +19,7 @@
 //! deploy libs) are not snapshots and are ignored.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 use std::process::Command;
 
 /// True if `seg` is a release-tag dir name: three `_`-separated non-empty numeric
@@ -52,17 +53,21 @@ pub(crate) struct Change {
     pub(crate) path: String,
 }
 
-/// Parse `git diff --name-status` output (`A\tpath`, `M\tpath`, `D\tpath`).
+/// Parse `git diff --no-renames --name-status -z` output: NUL-terminated
+/// `status`, `path` fields in pairs. Paths are taken verbatim; with `-z` git
+/// neither quotes nor escapes them.
 pub(crate) fn parse_changes(diff: &str) -> Vec<Change> {
-    diff.lines()
-        .filter_map(|line| {
-            let (status, path) = line.split_once('\t')?;
-            Some(Change {
-                status: status.chars().next()?,
-                path: path.trim().to_string(),
-            })
-        })
-        .collect()
+    let mut fields = diff.split('\0');
+    let mut changes = Vec::new();
+    while let (Some(status), Some(path)) = (fields.next(), fields.next()) {
+        if let Some(status) = status.chars().next() {
+            changes.push(Change {
+                status,
+                path: path.to_string(),
+            });
+        }
+    }
+    changes
 }
 
 fn offender(verb: &str, path: &str, root: &str) -> String {
@@ -158,8 +163,9 @@ pub(crate) fn find_offenders(
     out
 }
 
-fn git(args: &[&str]) -> Result<Vec<u8>, String> {
+fn git(dir: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
     let out = Command::new("git")
+        .current_dir(dir)
         .args(args)
         .output()
         .map_err(|e| format!("failed to run git: {e}"))?;
@@ -173,34 +179,39 @@ fn git(args: &[&str]) -> Result<Vec<u8>, String> {
     Ok(out.stdout)
 }
 
-/// Diff `base...HEAD` and return the offenders. `base` must already be fetched
-/// (in CI, `git fetch origin <base>` first). Returns `Err` if git fails.
-pub(crate) fn check(base: &str, root: &str) -> Result<Vec<String>, String> {
+/// Diff `base...HEAD` in the repository at `dir` and return the offenders.
+/// `base` must already be fetched (in CI, `git fetch origin <base>` first).
+/// Returns `Err` if git fails.
+pub(crate) fn check(dir: &Path, base: &str, root: &str) -> Result<Vec<String>, String> {
     let range = format!("{base}...HEAD");
     // --no-renames so a rename shows as delete(old)+add(new) and the pairing is
     // decided here, by content, rather than by git's similarity heuristic.
-    let diff = git(&[
-        "diff",
-        "--no-renames",
-        "--name-status",
-        "--diff-filter=AMD",
-        &range,
-        "--",
-        root,
-    ])?;
+    let diff = git(
+        dir,
+        &[
+            "diff",
+            "--no-renames",
+            "--name-status",
+            "-z",
+            "--diff-filter=AMD",
+            &range,
+            "--",
+            root,
+        ],
+    )?;
     let changes = parse_changes(&String::from_utf8_lossy(&diff));
-    let merge_base = String::from_utf8_lossy(&git(&["merge-base", base, "HEAD"])?)
+    let merge_base = String::from_utf8_lossy(&git(dir, &["merge-base", base, "HEAD"])?)
         .trim()
         .to_string();
     let mut base_content = BTreeMap::new();
     let mut head_content = BTreeMap::new();
     for change in changes.iter().filter(|c| is_snapshot(&c.path, root)) {
         if matches!(change.status, 'M' | 'D') {
-            let bytes = git(&["show", &format!("{merge_base}:{}", change.path)])?;
+            let bytes = git(dir, &["show", &format!("{merge_base}:{}", change.path)])?;
             base_content.insert(change.path.clone(), bytes);
         }
         if matches!(change.status, 'M' | 'A') {
-            let bytes = git(&["show", &format!("HEAD:{}", change.path)])?;
+            let bytes = git(dir, &["show", &format!("HEAD:{}", change.path)])?;
             head_content.insert(change.path.clone(), bytes);
         }
     }
@@ -213,8 +224,18 @@ mod tests {
 
     const ROOT: &str = "src/generated";
 
+    /// `changes` from a readable `status\tpath` per line fixture, sent through
+    /// the NUL-delimited parser.
     fn changes(diff: &str) -> Vec<Change> {
-        parse_changes(diff)
+        let z: String = diff
+            .lines()
+            .flat_map(|line| {
+                let (status, path) = line.split_once('\t').unwrap();
+                [status, path]
+            })
+            .map(|field| format!("{field}\0"))
+            .collect();
+        parse_changes(&z)
     }
 
     fn content(entries: &[(&str, &str)]) -> BTreeMap<String, Vec<u8>> {
@@ -444,5 +465,139 @@ mod tests {
         ] {
             assert_eq!(find_offenders(&changes(diff), ROOT, &base, &head), Vec::<String>::new());
         }
+    }
+
+    /// A throwaway git repository with `main` holding the base snapshots and
+    /// HEAD on a branch off it.
+    struct Repo(std::path::PathBuf);
+
+    impl Repo {
+        fn new(name: &str) -> Repo {
+            let dir = std::env::temp_dir().join(format!(
+                "rainix-frozen-snapshots-{name}-{}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let repo = Repo(dir);
+            repo.git(&["init", "-q", "--initial-branch=main"]);
+            repo.git(&["config", "user.email", "test@example.invalid"]);
+            repo.git(&["config", "user.name", "test"]);
+            repo.git(&["config", "commit.gpgsign", "false"]);
+            repo.git(&["config", "core.symlinks", "true"]);
+            repo
+        }
+
+        fn git(&self, args: &[&str]) {
+            let out = Command::new("git")
+                .current_dir(&self.0)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+
+        fn write(&self, path: &str, bytes: &str) {
+            let p = self.0.join(path);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            let _ = std::fs::remove_file(&p);
+            std::fs::write(p, bytes).unwrap();
+        }
+
+        fn commit_all(&self) {
+            self.git(&["add", "-A"]);
+            self.git(&["commit", "-q", "-m", "x"]);
+        }
+
+        fn branch(&self) {
+            self.git(&["checkout", "-q", "-b", "head"]);
+        }
+
+        fn offenders(&self) -> Vec<String> {
+            check(&self.0, "main", ROOT).unwrap()
+        }
+    }
+
+    impl Drop for Repo {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn parses_nul_delimited_paths_verbatim() {
+        assert_eq!(
+            parse_changes(
+                "M\0src/generated/0_1_4/a\tb\nc .sol \0D\0src/generated/0_1_4/\"q\".sol\0"
+            ),
+            vec![
+                Change {
+                    status: 'M',
+                    path: "src/generated/0_1_4/a\tb\nc .sol ".to_string(),
+                },
+                Change {
+                    status: 'D',
+                    path: "src/generated/0_1_4/\"q\".sol".to_string(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn edits_and_deletions_of_snapshots_with_quoted_names_are_flagged() {
+        // git quotes a path holding a tab, newline, quote or backslash unless
+        // the diff is NUL-delimited; a quoted path is not under the root.
+        let repo = Repo::new("quoted");
+        for name in [
+            "tab\ted.sol",
+            "line\ned.sol",
+            "q\"uote.sol",
+            "back\\slash.sol",
+        ] {
+            repo.write(&format!("{ROOT}/0_1_4/edit-{name}"), "frozen\n");
+            repo.write(&format!("{ROOT}/0_1_4/del-{name}"), "frozen\n");
+        }
+        repo.commit_all();
+        repo.branch();
+        for name in [
+            "tab\ted.sol",
+            "line\ned.sol",
+            "q\"uote.sol",
+            "back\\slash.sol",
+        ] {
+            repo.write(&format!("{ROOT}/0_1_4/edit-{name}"), "edited\n");
+            std::fs::remove_file(repo.0.join(format!("{ROOT}/0_1_4/del-{name}"))).unwrap();
+        }
+        repo.commit_all();
+        let off = repo.offenders();
+        assert_eq!(off.len(), 8, "{off:#?}");
+        for name in [
+            "tab\ted.sol",
+            "line\ned.sol",
+            "q\"uote.sol",
+            "back\\slash.sol",
+        ] {
+            let edited = format!("modified frozen snapshot {ROOT}/0_1_4/edit-{name} ");
+            let deleted = format!("deleted frozen snapshot {ROOT}/0_1_4/del-{name} ");
+            assert!(off.iter().any(|o| o.contains(&edited)), "{edited}");
+            assert!(off.iter().any(|o| o.contains(&deleted)), "{deleted}");
+        }
+    }
+
+    #[test]
+    fn a_clean_branch_in_a_real_repo_passes() {
+        let repo = Repo::new("clean");
+        repo.write(&format!("{ROOT}/0_1_4/A.pointers.sol"), "frozen\n");
+        repo.commit_all();
+        repo.branch();
+        std::fs::remove_file(repo.0.join(format!("{ROOT}/0_1_4/A.pointers.sol"))).unwrap();
+        repo.write(&format!("{ROOT}/0_1_4/A.sol"), "frozen\nappended\n");
+        repo.write(&format!("{ROOT}/0_1_5/A.sol"), "new\n");
+        repo.commit_all();
+        assert_eq!(repo.offenders(), Vec::<String>::new());
     }
 }
