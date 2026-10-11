@@ -652,6 +652,18 @@ mod tests {
     }
 
     #[test]
+    fn re_encoding_dependencies_before_another_constant_passes() {
+        let creation = "\n/// @dev The creation bytecode of the contract.\n\
+                        bytes constant CREATION_CODE =\n    hex\"6080\";\n";
+        let [in_place, renamed] = in_place_and_renamed(
+            &format!("{}{creation}", snapshot("6080", DEPS_ADDRESSES)),
+            &format!("{}{creation}", snapshot("6080", DEPS_REENCODED)),
+        );
+        assert_eq!(in_place, Vec::<String>::new());
+        assert_eq!(renamed, Vec::<String>::new());
+    }
+
+    #[test]
     fn re_encoding_dependencies_does_not_unfreeze_another_constant() {
         let [in_place, renamed] = in_place_and_renamed(
             &snapshot("6080", DEPS_ADDRESSES),
