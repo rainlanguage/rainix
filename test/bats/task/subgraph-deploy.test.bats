@@ -24,8 +24,9 @@ setup() {
 echo "npm $* key=${ORMI_DEPLOY_KEY-unset}" >>"$CALLS_LOG"
 EOF
   # graph build writes "$BUILD_<NETWORK>" (default: one fixed text per network)
-  # as the build output, writes nothing for a network listed in $BUILD_EMPTY,
-  # and fails for one listed in $BUILD_FAILS. graph
+  # as the build output (plus an empty only-<network> file when $NETWORK_FILES
+  # is set), writes nothing for a network listed in $BUILD_EMPTY, and fails for
+  # one listed in $BUILD_FAILS. graph
   # deploy fails for a name listed in $DEPLOY_FAILS and otherwise records
   # <name>/<label> as hosted, as Ormi would.
   cat >"$work/bin/graph" <<'EOF'
@@ -47,6 +48,7 @@ build)
   mkdir -p "$out"
   case " ${BUILD_EMPTY:-} " in *" $network "*) exit 0 ;; esac
   printf '%s' "${!var:-build of $network}" >"$out/subgraph.yaml"
+  if [ -n "${NETWORK_FILES:-}" ]; then : >"$out/only-$network"; fi
   ;;
 deploy)
   case " ${DEPLOY_FAILS:-} " in *" $name "*) exit 1 ;; esac
@@ -107,11 +109,13 @@ deploy() {
   ' _ "$repo_root" "$work/bin"
 }
 
-# The label subgraph_deploy must use for a build whose output is $2.
+# The label subgraph_deploy must use for a build whose output is $2, plus an
+# empty file named $3 when given.
 label_for() {
   local dir
   dir="$(mktemp -d)"
   printf '%s' "$2" >"$dir/subgraph.yaml"
+  if [ -n "${3:-}" ]; then : >"$dir/$3"; fi
   echo "$1-$("$REAL_STATIC" subgraph-build-hash "$dir")"
   rm -rf "$dir"
 }
@@ -175,6 +179,14 @@ label_for() {
   [ "$status" -eq 0 ]
   grep -q "^graph deploy raindex-base .* --version-label $(label_for 0xbbb same) key=unset$" "$log"
   grep -q "^graph deploy raindex-mainnet .* --version-label $a key=unset$" "$log"
+}
+
+@test "each network is hashed from its own build alone" {
+  two_networks
+  NETWORK_FILES=1 PROBE_RC=10 deploy
+  [ "$status" -eq 0 ]
+  grep -q "^graph deploy raindex-base .* --version-label $(label_for 0xbbb "build of base" only-base) key=unset$" "$log"
+  grep -q "^graph deploy raindex-mainnet .* --version-label $(label_for 0xabc "build of mainnet" only-mainnet) key=unset$" "$log"
 }
 
 @test "a failed build fails the task, is never probed or deployed, and does not stop the others" {

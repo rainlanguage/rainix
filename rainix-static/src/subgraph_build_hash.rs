@@ -152,6 +152,23 @@ mod tests {
     }
 
     #[test]
+    fn directory_boundary_is_part_of_the_path() {
+        let a = tree(&[("a/bc", "w")]);
+        let b = tree(&[("ab/c", "w")]);
+        assert_ne!(digest(&a).unwrap(), digest(&b).unwrap());
+    }
+
+    #[test]
+    fn files_are_in_byte_order_of_their_paths_whatever_the_directory_order() {
+        let names: Vec<String> = (0..40).map(|i| format!("d{}/f{i}", i % 3)).collect();
+        let d = tree(&names.iter().map(|n| (n.as_str(), "x")).collect::<Vec<_>>());
+        let got: Vec<String> = files(&d).unwrap().into_iter().map(|(rel, _)| rel).collect();
+        let mut want = names.clone();
+        want.sort();
+        assert_eq!(got, want);
+    }
+
+    #[test]
     fn added_empty_file_changes_digest() {
         let a = tree(&[("m", "w")]);
         let b = tree(&[("m", "w"), ("n", "")]);
