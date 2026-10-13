@@ -117,6 +117,11 @@
 //       base, malformed argument) — so a failed probe can never read as "not
 //       deployed" and trigger a deploy. Needs no secret. Semantics:
 //       ormi_probe.rs module doc. Runs where curl is on PATH.
+//   subgraph-build-hash <build dir>
+//       subgraph-deploy's version label suffix: the first 16 hex digits of a
+//       SHA-256 over every file in one network's `graph build` output, so an
+//       unchanged build keeps its label and is skipped. Semantics:
+//       subgraph_build_hash.rs module doc.
 
 mod agent_context_cap;
 mod ci_gate;
@@ -130,6 +135,7 @@ mod prompt_cap;
 mod release_guard;
 mod rpc_preflight;
 mod soldeer_gate;
+mod subgraph_build_hash;
 
 use std::path::Path;
 
@@ -335,6 +341,12 @@ fn main() {
                 flag(&args, "--version").unwrap_or_else(|| fail("ormi-probe: --version required"));
             ormi_probe::run(&base, &name, &version);
         }
+        "subgraph-build-hash" => {
+            let dir = args
+                .get(2)
+                .unwrap_or_else(|| fail("subgraph-build-hash: <build dir> required"));
+            subgraph_build_hash::run(dir);
+        }
         "rpc-preflight" => {
             let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
             // There is no stdout fallback on purpose: the selected URL may be
@@ -375,7 +387,7 @@ fn main() {
                 "rainix-static: unknown subcommand {other:?} \
                  (available: no-submodules, agent-context-cap, prompt-cap, \
                  comment-loc-cap, snapshots-append-only, mutation-ledger, ci-gate, soldeer-gate, \
-                 rpc-preflight, release-guard, ormi-probe)"
+                 rpc-preflight, release-guard, ormi-probe, subgraph-build-hash)"
             );
             std::process::exit(2);
         }

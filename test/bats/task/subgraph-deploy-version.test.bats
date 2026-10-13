@@ -27,13 +27,13 @@ setup() {
   [ "$v1" != "$v2" ]
 }
 
-@test "subgraph_deploy_version should differ for different commits" {
+@test "subgraph_deploy_version should differ for different build hashes" {
   v1=$(subgraph_deploy_version "0xabc" "abc1234")
   v2=$(subgraph_deploy_version "0xabc" "def5678")
   [ "$v1" != "$v2" ]
 }
 
-@test "subgraph_deploy_version should contain address and commit" {
+@test "subgraph_deploy_version should be address-build hash" {
   v=$(subgraph_deploy_version "0xabc" "abc1234")
   [ "$v" = "0xabc-abc1234" ]
 }
