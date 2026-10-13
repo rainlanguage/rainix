@@ -132,8 +132,16 @@ mod tests {
 
     #[test]
     fn same_tree_in_different_places_and_orders_hashes_equal() {
-        let a = tree(&[("subgraph.yaml", "m"), ("C/C.wasm", "w"), ("schema.graphql", "s")]);
-        let b = tree(&[("schema.graphql", "s"), ("C/C.wasm", "w"), ("subgraph.yaml", "m")]);
+        let a = tree(&[
+            ("subgraph.yaml", "m"),
+            ("C/C.wasm", "w"),
+            ("schema.graphql", "s"),
+        ]);
+        let b = tree(&[
+            ("schema.graphql", "s"),
+            ("C/C.wasm", "w"),
+            ("subgraph.yaml", "m"),
+        ]);
         assert_eq!(digest(&a).unwrap(), digest(&b).unwrap());
     }
 
