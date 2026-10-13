@@ -55,7 +55,7 @@ enum Verdict {
 /// A name or version label that is safe to put in a URL path and a CLI
 /// argument: ASCII alphanumerics plus `.`, `_` and `-`, starting with an
 /// alphanumeric. Real values are `<SUBGRAPH_NAME>-<network>` and
-/// `<address>-<commit>`. This runs before any request is made, so a
+/// `<address>-<build hash>`. This runs before any request is made, so a
 /// networks.json key or address (repo content) can never reshape the URL.
 fn valid_label(s: &str) -> bool {
     !s.is_empty()

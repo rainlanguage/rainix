@@ -142,9 +142,22 @@
               sha256 = system-sha.${system};
             };
           buildInputs = [ ];
+          # graph-cli 0.69.2 reports a refused deploy with `this.exit(1)` inside
+          # the JSON-RPC callback. That throws asynchronously, the compiler's
+          # `uncaughtException` handler only prints it, and the process exits 0,
+          # so a failed deploy reads as a success. Backport of upstream's fix
+          # (graphprotocol/graph-tooling f2726cb, released in 0.92.0):
+          # `process.exit(1)` there instead.
           installPhase = ''
             mkdir -p $out
             cp -r $src/* $out
+            chmod u+w $out/dist/commands/deploy.js
+            indent=$'\n                    '
+            substituteInPlace $out/dist/commands/deploy.js \
+              --replace-fail "spinner.fail(errorMessage);''${indent}this.exit(1);" \
+                "spinner.fail(errorMessage);''${indent}process.exit(1);" \
+              --replace-fail "\''${requestError.code}\`);''${indent}this.exit(1);" \
+                "\''${requestError.code}\`);''${indent}process.exit(1);"
           '';
         };
 
@@ -408,7 +421,6 @@
             subgraph_deploy \
               ${the-graph}/bin/graph \
               ${pkgs.nodejs_22}/bin/npm \
-              ${pkgs.git}/bin/git \
               ${rainix-static}/bin/rainix-static
           '';
           additionalBuildInputs = node-build-inputs;
@@ -447,6 +459,7 @@
             bats test/bats/task/subgraph-build.test.bats
             bats test/bats/task/subgraph-deploy-version.test.bats
             bats test/bats/task/subgraph-deploy.test.bats
+            bats test/bats/task/graph-deploy-refused.test.bats
             bats test/bats/task/sol-single-contract.test.bats
             bats test/bats/task/no-custom-natspec.test.bats
             bats test/bats/workflow/rainix-sol-static.test.bats
