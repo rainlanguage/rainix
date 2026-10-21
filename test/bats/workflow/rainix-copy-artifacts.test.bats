@@ -87,3 +87,16 @@ setup() {
     return 1
   fi
 }
+
+@test "staged config is installed after Build.sol stages it and before anything reads it" {
+  local build install forge_build verify
+  build="$(yq -r '[.jobs.copy-artifacts.steps | to_entries[] | select(.value.run) | select(.value.run | contains("forge script ./script/Build.sol")) | .key] | .[0]' "$workflow")"
+  install="$(yq -r '[.jobs.copy-artifacts.steps | to_entries[] | select(.value.uses == "rainlanguage/rainix/.github/actions/install-staged-config@main") | .key] | .[0]' "$workflow")"
+  forge_build="$(yq -r '[.jobs.copy-artifacts.steps | to_entries[] | select(.value.run) | select(.value.run | test("-c forge build$")) | .key] | .[0]' "$workflow")"
+  verify="$(yq -r '[.jobs.copy-artifacts.steps | to_entries[] | select(.value.uses) | select(.value.uses | contains("codegen-declaration")) | select(.value.with.phase == "verify") | .key] | .[0]' "$workflow")"
+  [ "$install" != "null" ]
+  [ "$(yq -r ".jobs.copy-artifacts.steps[$install].if" "$workflow")" = "null" ]
+  [ "$build" -lt "$install" ]
+  [ "$install" -lt "$forge_build" ]
+  [ "$install" -lt "$verify" ]
+}
