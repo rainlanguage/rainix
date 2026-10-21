@@ -149,6 +149,18 @@ install() {
   [[ "$output" == *"script/build.sh present"* ]]
 }
 
+@test "a directory named script/build.sh is not a hook" {
+  mk_marked_consumer
+  mkdir -p "$work/script/build.sh" "$work/.staged-config"
+  printf 'NEW FOUNDRY\n' >"$work/.staged-config/foundry.toml"
+
+  install
+
+  [ "$status" -eq 0 ]
+  [ "$(cat "$work/foundry.toml")" = "NEW FOUNDRY" ]
+  [ ! -e "$work/.staged-config" ]
+}
+
 @test "a repo with other script hooks but no script/build.sh installs the staged config" {
   mk_marked_consumer
   mkdir "$work/script" "$work/.staged-config"
