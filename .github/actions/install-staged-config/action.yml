@@ -1,6 +1,6 @@
 name: install-staged-config
 description: >-
-  Installs what `forge script ./script/Build.sol` staged in `.staged-config/` onto the root files of the same names, then removes the dir. Foundry refuses a cheatcode write to the root `foundry.toml`, so a deploy repo's generated config reaches the root only through here. Fails when nothing was staged but `foundry.toml` carries `# rain-deploy:generated:` blocks, and when the dir is empty. A repo that stages nothing and has no such blocks is a no-op.
+  Installs what `forge script ./script/Build.sol` staged in `.staged-config/` onto the root files of the same names, then removes the dir. Foundry refuses a cheatcode write to the root `foundry.toml`, so a deploy repo's generated config reaches the root only through here. Fails when nothing was staged but `foundry.toml` carries `# rain-deploy:generated:` blocks, and when the dir is empty. A repo that stages nothing and has no such blocks is a no-op. A repo with `script/build.sh` is skipped: that hook installs the dir.
 runs:
   using: composite
   steps:
