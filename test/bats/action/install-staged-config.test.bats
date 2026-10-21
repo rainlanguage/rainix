@@ -42,7 +42,8 @@ install() {
   [ "$status" -eq 0 ]
   [ "$(cat "$work/foundry.toml")" = "NEW FOUNDRY" ]
   [ "$(cat "$work/.env.example")" = "NEW_RPC_URL=" ]
-  [[ "$output" == *"installed .env.example, foundry.toml"* ]]
+  [[ "$output" == *"installed "*".env.example"* ]]
+  [[ "$output" == *"installed "*"foundry.toml"* ]]
 }
 
 @test "the staging dir is removed once installed" {
@@ -111,4 +112,13 @@ install() {
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"nothing staged"* ]]
+}
+
+@test "a marker after other text on its line still requires staging" {
+  printf '[profile.default]\nx = 1 # rain-deploy:generated:rpc_endpoints:begin\n' >"$work/foundry.toml"
+
+  install
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"does not exist"* ]]
 }

@@ -8,16 +8,14 @@ pub(crate) const GENERATED_MARKER: &str = "# rain-deploy:generated:";
 
 pub(crate) fn stages_config(root: &Path) -> Result<bool, String> {
     match std::fs::read_to_string(root.join("foundry.toml")) {
-        Ok(text) => Ok(text
-            .lines()
-            .any(|line| line.trim_start().starts_with(GENERATED_MARKER))),
+        Ok(text) => Ok(text.contains(GENERATED_MARKER)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(e) => Err(format!("failed to read foundry.toml: {e}")),
     }
 }
 
 /// Copies every regular file in the staging dir onto the root file of the
-/// same name, then removes the dir. Returns the installed names, sorted.
+/// same name, then removes the dir. Returns the installed names.
 pub(crate) fn install(root: &Path) -> Result<Vec<String>, String> {
     let staged = root.join(STAGED_DIR);
     if !staged.is_dir() {
@@ -48,7 +46,6 @@ pub(crate) fn install(root: &Path) -> Result<Vec<String>, String> {
              generated config there; it wrote nothing."
         ));
     }
-    names.sort();
     for name in &names {
         std::fs::copy(staged.join(name), root.join(name))
             .map_err(|e| format!("failed to install {STAGED_DIR}/{name}: {e}"))?;
