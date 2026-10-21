@@ -178,10 +178,10 @@ single job it runs whichever of these the repo has:
   plus the alias and released-suites libs generated from the record). The same
   regeneration `rainix-tag-release` re-runs at publish time to prove the tagged
   commit's frozen snapshot is a fresh one.
-- `.staged-config/` → the root files of the same names, then the dir is
-  removed. `Build.sol` stages there because foundry refuses a cheatcode write to
-  the root `foundry.toml`. Fails if the dir is empty, or missing while
-  `foundry.toml` carries `# rain-deploy:generated:` blocks.
+- `.staged-config/` → the root files of the same names, then the dir is removed.
+  `Build.sol` stages there because foundry refuses a cheatcode write to the root
+  `foundry.toml`. Fails if the dir is empty, or missing while `foundry.toml`
+  carries `# rain-deploy:generated:` blocks.
 - `forge build` + `./script/CopyArtifacts.sol --ffi` → committed ABI JSON
 
 then `forge fmt` and the `git diff` assert.

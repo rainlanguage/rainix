@@ -53,8 +53,7 @@ pub(crate) fn install(root: &Path) -> Result<Vec<String>, String> {
         std::fs::copy(staged.join(name), root.join(name))
             .map_err(|e| format!("failed to install {STAGED_DIR}/{name}: {e}"))?;
     }
-    std::fs::remove_dir_all(&staged)
-        .map_err(|e| format!("failed to remove {STAGED_DIR}/: {e}"))?;
+    std::fs::remove_dir_all(&staged).map_err(|e| format!("failed to remove {STAGED_DIR}/: {e}"))?;
     Ok(names)
 }
 

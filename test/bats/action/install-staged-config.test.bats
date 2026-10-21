@@ -19,6 +19,7 @@ install() {
 }
 
 @test "the action runs the subcommand from its own checkout" {
+  # shellcheck disable=SC2016
   run env GITHUB_ACTION_PATH="$repo_root/.github/actions/install-staged-config" ACTION_SCRIPT="$action_script" bash -c '
     nix() { printf "nix"; printf " <%s>" "$@"; printf "\n"; }
     export -f nix
@@ -47,7 +48,7 @@ install() {
 @test "the staging dir is removed once installed" {
   mk_marked_consumer
   mkdir "$work/.staged-config"
-  printf 'NEW FOUNDRY\n' >"$work/.staged-config/foundry.toml"
+  printf "# rain-deploy:generated:env:begin\nNEW\n" >"$work/.staged-config/foundry.toml"
 
   install
   [ "$status" -eq 0 ]
@@ -55,7 +56,8 @@ install() {
 
   install
   [ "$status" -ne 0 ]
-  [ "$(cat "$work/foundry.toml")" = "NEW FOUNDRY" ]
+  [[ "$output" == *"does not exist"* ]]
+  [ "$(tail -1 "$work/foundry.toml")" = "NEW" ]
 }
 
 @test "a missing staging dir fails when foundry.toml has generated blocks" {
