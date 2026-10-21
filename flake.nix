@@ -142,39 +142,22 @@
               sha256 = system-sha.${system};
             };
           buildInputs = [ ];
+          # graph-cli 0.69.2 reports a refused deploy with `this.exit(1)` inside
+          # the JSON-RPC callback. That throws asynchronously, the compiler's
+          # `uncaughtException` handler only prints it, and the process exits 0,
+          # so a failed deploy reads as a success. Backport of upstream's fix
+          # (graphprotocol/graph-tooling f2726cb, released in 0.92.0):
+          # `process.exit(1)` there instead.
           installPhase = ''
             mkdir -p $out
             cp -r $src/* $out
-          '';
-        };
-
-        goldsky = pkgs.stdenv.mkDerivation rec {
-          pname = "goldsky";
-          version = "13.3.4";
-          src =
-            let
-              release-name = "13.3.4";
-              system-mapping = {
-                x86_64-linux = "linux";
-                x86_64-darwin = "macos";
-                aarch64-darwin = "macos";
-              };
-              system-sha = {
-                x86_64-linux = "sha256:1wg09vz652hv3hb0w7mx7hjxm00c857h2a8kd2vj11wnik8gh73m";
-                x86_64-darwin = "sha256:048w06x56lk84h9x8q2jf7mdxx8lyzd9nrkxsmfkj39rns1nr4yk";
-                aarch64-darwin = "sha256:048w06x56lk84h9x8q2jf7mdxx8lyzd9nrkxsmfkj39rns1nr4yk";
-              };
-            in
-            builtins.fetchurl {
-              url = "https://cli.goldsky.com/${release-name}/${system-mapping.${system}}/goldsky";
-              sha256 = system-sha.${system};
-            };
-          buildInputs = [ ];
-          phases = [ "installPhase" ];
-          installPhase = ''
-            mkdir -p $out/bin
-            cp $src $out/bin/goldsky
-            chmod +x $out/bin/goldsky
+            chmod u+w $out/dist/commands/deploy.js
+            indent=$'\n                    '
+            substituteInPlace $out/dist/commands/deploy.js \
+              --replace-fail "spinner.fail(errorMessage);''${indent}this.exit(1);" \
+                "spinner.fail(errorMessage);''${indent}process.exit(1);" \
+              --replace-fail "\''${requestError.code}\`);''${indent}this.exit(1);" \
+                "\''${requestError.code}\`);''${indent}process.exit(1);"
           '';
         };
 
@@ -229,10 +212,14 @@
             version = "0.1.0";
             hash = "sha256-2ZCPiTO11UhhWUAhn3C433VrLfOB+Dlld/B4wh14DXY=";
           };
-          nativeCheckInputs = [ pkgs.git ];
+          nativeCheckInputs = [
+            pkgs.git
+            pkgs.scc
+          ];
           nativeBuildInputs = [ pkgs.makeWrapper ];
-          # The subcommands shell out to git (`ls-files`, `diff`) and curl
-          # (`rpc-preflight`'s probes, `soldeer-gate`'s fetches). The composite
+          # The subcommands shell out to git (`ls-files`, `diff`), curl
+          # (`rpc-preflight`'s probes, `soldeer-gate`'s fetches) and scc
+          # (`comment-loc-cap`'s line counting). The composite
           # actions invoke this binary with `nix run`, i.e. OUTSIDE any devshell,
           # so ambient PATH is whatever the runner image happens to ship. Wrap it
           # with the pinned tools and a CA bundle so the checks are hermetic and
@@ -243,6 +230,7 @@
                 pkgs.lib.makeBinPath [
                   pkgs.curl
                   pkgs.git
+                  pkgs.scc
                 ]
               } \
               --set-default SSL_CERT_FILE ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
@@ -388,6 +376,9 @@
         common-shell-inputs = [
           pkgs.gh
           pkgs.pre-commit
+          # `comment-loc-cap` counts with it. The wrapped `rainix-static` below
+          # carries its own copy, but the crate's tests run unwrapped.
+          pkgs.scc
           # General rainix tooling on PATH in every shell; workflows call it
           # instead of inline bash/Python (rainlanguage/rainix#255).
           rainix-static
@@ -418,33 +409,19 @@
           '';
         };
 
+        # Tracing stays off for the whole task: ORMI_DEPLOY_KEY is a credential
+        # and `set -x` would print it. The logic lives in lib/subgraph-deploy.sh.
         subgraph-deploy = mkTask {
           name = "subgraph-deploy";
           body = ''
-            set -euxo pipefail
+            set -euo pipefail
             source ${./lib/subgraph.sh}
+            source ${./lib/subgraph-deploy.sh}
 
-            # subgraph/abis and subgraph/generated are committed, so the deploy
-            # builds the subgraph directly from them with just the graph +
-            # goldsky toolchain — the same committed-artifact path as
-            # subgraph-test, slim enough for the subgraph shell.
-            (cd ./subgraph && ${pkgs.nodejs_22}/bin/npm ci)
-
-            commit="$(${pkgs.git}/bin/git rev-parse --short HEAD)"
-            for network in $(subgraph_networks ./subgraph/networks.json); do
-              address=$(subgraph_network_address ./subgraph/networks.json "$network")
-              version=$(subgraph_deploy_version "$address" "$commit")
-              name_and_version="''${GOLDSKY_SUBGRAPH_NAME}-$network/$version"
-
-              if ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph list "$name_and_version" 2>/dev/null | grep -q "$name_and_version"; then
-                echo "Subgraph $name_and_version already deployed, skipping."
-              else
-                echo "Building subgraph for $network..."
-                (cd ./subgraph && ${the-graph}/bin/graph build --network "$network")
-                echo "Deploying subgraph $name_and_version..."
-                (cd ./subgraph && ${goldsky}/bin/goldsky --token ''${GOLDSKY_TOKEN} subgraph deploy "$name_and_version")
-              fi
-            done
+            subgraph_deploy \
+              ${the-graph}/bin/graph \
+              ${pkgs.nodejs_22}/bin/npm \
+              ${rainix-static}/bin/rainix-static
           '';
           additionalBuildInputs = node-build-inputs;
         };
@@ -465,19 +442,25 @@
 
         default-shell-test = mkTask {
           name = "default-shell-test";
+          # Without `set -e` a body's status is its LAST command's, so every
+          # bats file but the last one here could fail unnoticed.
           body = ''
+            set -euo pipefail
             bats test/bats/devshell/default/solc.test.bats
             bats test/bats/devshell/default/gh.test.bats
             bats test/bats/devshell/default/age.test.bats
             bats test/bats/devshell/default/prettier-bundle.test.bats
             bats test/bats/action/rpc-preflight.test.bats
             bats test/bats/action/prompt-cap.test.bats
+            bats test/bats/action/comment-loc-cap.test.bats
             bats test/bats/action/frozen-snapshots-append-only.test.bats
             bats test/bats/action/mutation-ledger.test.bats
             bats test/bats/action/codegen-declaration.test.bats
             bats test/bats/task/skip-simulation.test.bats
             bats test/bats/task/subgraph-build.test.bats
             bats test/bats/task/subgraph-deploy-version.test.bats
+            bats test/bats/task/subgraph-deploy.test.bats
+            bats test/bats/task/graph-deploy-refused.test.bats
             bats test/bats/task/sol-single-contract.test.bats
             bats test/bats/task/no-custom-natspec.test.bats
             bats test/bats/workflow/rainix-sol-static.test.bats
@@ -491,6 +474,7 @@
         sol-shell-test = mkTask {
           name = "sol-shell-test";
           body = ''
+            set -euo pipefail
             bats test/bats/devshell/sol-shell/forge.test.bats
             bats test/bats/devshell/sol-shell/slither.test.bats
             bats test/bats/devshell/sol-shell/solc.test.bats
@@ -510,6 +494,7 @@
         rust-shell-test = mkTask {
           name = "rust-shell-test";
           body = ''
+            set -euo pipefail
             bats test/bats/devshell/rust-shell/closure.test.bats
             bats test/bats/devshell/rust-shell/cargo-expand.test.bats
             bats test/bats/devshell/rust-shell/anvil.test.bats
@@ -776,10 +761,9 @@
             '';
           };
 
-          # Slim shell for subgraph repos: node + the-graph + goldsky +
-          # subgraph-tasks. No rust, no foundry, no sqlite/yq/age. Lets
-          # consumers avoid the heavy default closure when CI is just
-          # subgraph-test.
+          # Slim shell for subgraph repos: node + the-graph + subgraph-tasks. No
+          # rust, no foundry, no sqlite/yq/age. Lets consumers avoid the heavy
+          # default closure when CI is just subgraph-test.
           subgraph-shell = pkgs.mkShell {
             buildInputs =
               node-build-inputs
@@ -787,7 +771,6 @@
               ++ common-shell-inputs
               ++ [
                 the-graph
-                goldsky
               ];
             shellHook = ''
               ${pre-commit.shellHook}
@@ -805,7 +788,6 @@
               ++ common-shell-inputs
               ++ [
                 the-graph
-                goldsky
                 pkgs.sqlite
                 pkgs.yq-go
                 pkgs.age

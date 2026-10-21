@@ -23,6 +23,22 @@
 //       rules, subdirectory CLAUDE.md, CLAUDE.local.md. Prints the per-file
 //       breakdown on failure. The cap is a floor-only ratchet that may only
 //       ever be lowered. A repo with no agent context passes.
+//   comment-loc-cap [--root <dir>] [--paths <dirs> | --bucket <dirs>...]
+//       fail if, summed over every tracked source file in a BUCKET, comment
+//       lines exceed twice the code lines. Each bucket is capped on its own,
+//       so a code-heavy test tree cannot pay for prose in src. Buckets are
+//       `src .github` and `test` by default; `--bucket`, repeated, replaces
+//       them, and `--paths` is the one-bucket spelling. Paths within a bucket
+//       are whitespace or comma separated. A bucket the caller named must
+//       select a file; a default one that selects none is skipped unless no
+//       bucket counted anything. Strict: equal passes. Blank lines
+//       count as neither; a line with any code on it is code, even with a
+//       trailing comment. Syntax by extension: `//` and `/* */` for
+//       .sol/.rs/.ts/.js, `#` for .sh/.toml/.yaml, both for .nix; other
+//       extensions are not counted, nor is any file under a directory
+//       named `deprecated`. On failure prints the totals and every
+//       file with both counts. A path set that selects no counted file is
+//       an error, not a pass.
 //   prompt-cap --paths <globs> --cap <bytes> [--root <dir>]
 //       the same check as agent-context-cap, over the prompt files a repo
 //       points it at: a prompt is read whole at launch and re-read on every
@@ -43,10 +59,11 @@
 //       `rainix-codegen owns <path>` and `rainix-codegen wrote <path>`, which
 //       the workflow tees into <file>. A repo declaring nothing passes.
 //   snapshots-append-only [--base <ref>] [--root <dir>]
-//       fail if the branch modifies or deletes an existing per-tag deploy-pin
-//       snapshot under <root>/<tag>/ (default root src/generated, base
-//       origin/main). Snapshots are frozen once on the base branch; a release
-//       ADDS a new <tag>, never edits an existing one. Needs the base ref
+//       fail unless every existing per-tag deploy-pin snapshot under
+//       <root>/<tag>/ (default root src/generated, base origin/main) survives
+//       verbatim as the start of a HEAD file in the same tag dir, at its own
+//       path or a path the branch added (a rename). A release ADDS a new
+//       <tag>, never edits an existing one. Needs the base ref
 //       fetched with history (fetch-depth: 0 + `git fetch origin <base>`).
 //   mutation-ledger [--root <dir>] [--path <file>]
 //       fail if the adversarial-mutation-test skill's committed run record,
@@ -101,18 +118,33 @@
 //       removed — a deploy repo's generated released-suites lib imports it, so
 //       removing it makes the tree uncompilable (rainlanguage/rainix#341). Runs
 //       where git is on PATH.
+//   ormi-probe --base <ORMI_QUERY_BASE> --name <name> --version <version>
+//       subgraph-deploy's skip decision: is <name>/<version> already live on
+//       Ormi? Exit 0 = deployed, 10 = confirmed missing, 1 = anything else
+//       (transport/HTTP failure after retries, unrecognised body, wrong query
+//       base, malformed argument) — so a failed probe can never read as "not
+//       deployed" and trigger a deploy. Needs no secret. Semantics:
+//       ormi_probe.rs module doc. Runs where curl is on PATH.
+//   subgraph-build-hash <build dir>
+//       subgraph-deploy's version label suffix: the first 16 hex digits of a
+//       SHA-256 over every file in one network's `graph build` output, so an
+//       unchanged build keeps its label and is skipped. Semantics:
+//       subgraph_build_hash.rs module doc.
 
 mod agent_context_cap;
 mod ci_gate;
 mod codegen_declaration;
+mod comment_loc_cap;
 mod context_bytes;
 mod frozen_snapshots;
 mod mutation_ledger;
 mod no_submodules;
+mod ormi_probe;
 mod prompt_cap;
 mod release_guard;
 mod rpc_preflight;
 mod soldeer_gate;
+mod subgraph_build_hash;
 
 use std::path::Path;
 
@@ -136,6 +168,23 @@ fn flag(args: &[String], name: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Every value following a repeated `--name`, in order.
+fn flags(args: &[String], name: &str) -> Vec<String> {
+    let prefix = format!("{name}=");
+    let mut values = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if a == name {
+            if let Some(v) = it.next() {
+                values.push(v.clone());
+            }
+        } else if let Some(v) = a.strip_prefix(&prefix) {
+            values.push(v.to_string());
+        }
+    }
+    values
 }
 
 /// Numeric value following `--name`, or `default` when absent. A present but
@@ -204,6 +253,57 @@ fn main() {
                 }
             }
         }
+        "comment-loc-cap" => {
+            let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
+            // Each bucket is capped on its own. One aggregate over the repo
+            // lets a code-heavy test tree pay for prose in src, which is the
+            // one place the ratio is worth reading.
+            //
+            // A bucket the CALLER named must select files: it named them, so
+            // nothing there is a typo. The defaults are a guess that has to
+            // hold for every repo, and not every repo has a `test/`, so an
+            // empty default bucket is skipped — unless none counted anything,
+            // which `report_buckets` rejects.
+            let named = flags(&args, "--bucket");
+            let (specs, caller_named) = if !named.is_empty() {
+                (named, true)
+            } else if let Some(paths) = flag(&args, "--paths") {
+                (vec![paths], true)
+            } else {
+                (
+                    comment_loc_cap::DEFAULT_BUCKETS
+                        .iter()
+                        .map(|b| b.to_string())
+                        .collect(),
+                    false,
+                )
+            };
+            let mut buckets = Vec::new();
+            for spec in specs {
+                let paths = comment_loc_cap::parse_paths(&spec);
+                if paths.is_empty() {
+                    fail("comment-loc-cap: a bucket names no directory");
+                }
+                match comment_loc_cap::scan(Path::new(&root), &paths) {
+                    Err(comment_loc_cap::ScanError::NoSourceFile(_)) if !caller_named => {
+                        buckets.push((spec, Vec::new()))
+                    }
+                    Err(e) => fail(&format!("comment-loc-cap: {e}")),
+                    Ok(files) => buckets.push((spec, files)),
+                }
+            }
+            match comment_loc_cap::report_buckets(&buckets) {
+                Err(e) => fail(&format!("comment-loc-cap: {e}")),
+                Ok((lines, over)) => {
+                    for line in lines {
+                        println!("{line}");
+                    }
+                    if over {
+                        std::process::exit(1);
+                    }
+                }
+            }
+        }
         "mutation-ledger" => {
             let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
             let path =
@@ -230,7 +330,7 @@ fn main() {
         "snapshots-append-only" => {
             let base = flag(&args, "--base").unwrap_or_else(|| "origin/main".to_string());
             let root = flag(&args, "--root").unwrap_or_else(|| "src/generated".to_string());
-            match frozen_snapshots::check(&base, &root) {
+            match frozen_snapshots::check(Path::new("."), &base, &root) {
                 Err(e) => fail(&e),
                 Ok(offenders) if offenders.is_empty() => println!("snapshots-append-only: clean"),
                 Ok(offenders) => {
@@ -247,6 +347,20 @@ fn main() {
             let root = flag(&args, "--root").unwrap_or_else(|| "src/generated".to_string());
             let foundry = flag(&args, "--foundry").unwrap_or_else(|| "foundry.toml".to_string());
             release_guard::run(&version, &root, &foundry);
+        }
+        "ormi-probe" => {
+            let base = flag(&args, "--base")
+                .unwrap_or_else(|| fail("ormi-probe: --base <query base url> required"));
+            let name = flag(&args, "--name").unwrap_or_else(|| fail("ormi-probe: --name required"));
+            let version =
+                flag(&args, "--version").unwrap_or_else(|| fail("ormi-probe: --version required"));
+            ormi_probe::run(&base, &name, &version);
+        }
+        "subgraph-build-hash" => {
+            let dir = args
+                .get(2)
+                .unwrap_or_else(|| fail("subgraph-build-hash: <build dir> required"));
+            subgraph_build_hash::run(dir);
         }
         "rpc-preflight" => {
             let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
@@ -287,8 +401,9 @@ fn main() {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
                  (available: no-submodules, agent-context-cap, prompt-cap, \
-                 codegen-declaration, snapshots-append-only, mutation-ledger, \
-                 ci-gate, soldeer-gate, rpc-preflight, release-guard)"
+                 comment-loc-cap, codegen-declaration, snapshots-append-only, \
+                 mutation-ledger, ci-gate, soldeer-gate, rpc-preflight, release-guard, \
+                 ormi-probe, subgraph-build-hash)"
             );
             std::process::exit(2);
         }

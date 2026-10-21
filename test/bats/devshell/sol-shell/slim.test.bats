@@ -36,10 +36,6 @@ assert_not_from_nix_store() {
   assert_not_from_nix_store graph
 }
 
-@test "goldsky should NOT come from nix (sol-shell stays slim)" {
-  assert_not_from_nix_store goldsky
-}
-
 @test "age should NOT come from nix (sol-shell stays slim)" {
   assert_not_from_nix_store age
 }

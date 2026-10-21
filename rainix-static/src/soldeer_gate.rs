@@ -439,7 +439,7 @@ fn curl_status_body(url: &str) -> Result<(u16, String), String> {
 
 /// Split curl `-w '\n%{http_code}'` stdout into (status, body): everything
 /// after the LAST newline is the status code, everything before it the body.
-fn split_status_body(stdout: &str) -> Result<(u16, String), String> {
+pub(crate) fn split_status_body(stdout: &str) -> Result<(u16, String), String> {
     let (body, code) = stdout
         .rsplit_once('\n')
         .ok_or_else(|| format!("curl output has no status-code line: {stdout}"))?;

@@ -1,6 +1,9 @@
 setup() {
   pcc="$BATS_TEST_DIRNAME/../../../../.pre-commit-config.yaml"
-  prettier_entry="$(yq '.repos[0].hooks[] | select(.name == "prettier") | .entry' "$pcc")"
+  prettier_entry="$(yq '.repos[0].hooks[] | select(.name == "prettier-rainix") | .entry' "$pcc")"
+  # A selector matching nothing leaves the entry empty, and `bash -c "$entry f"`
+  # then runs `f` as a command: status 127, which reads as the hook failing.
+  [ -n "$prettier_entry" ]
   no_consumer_prettier_entry="$(yq '.repos[0].hooks[] | select(.name == "no-consumer-prettier") | .entry' "$pcc")"
   fixtures="$BATS_TEST_DIRNAME/../../../fixture/prettier-bundle"
 }

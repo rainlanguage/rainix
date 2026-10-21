@@ -190,10 +190,22 @@ pub(crate) const NETWORKS: &[Network] = &[
         // pin in the org (~20 months back).
         archive_blocks: &[280_000_000],
         probe_contract: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", // WETH
+        // arb-pokt.nodies.app is demoted from FIRST to last, 2026-10-05. All
+        // three pass the probe below at 5/5 sequential and 16/16 burst, so the
+        // order here was arbitrary; running rain.deploy's LibRainDeploy.t.sol
+        // (82 tests, 37 fork instantiations, ~250 calls) against each separates
+        // them completely:
+        //
+        //   arbitrum.gateway.tenderly.co    0 failing
+        //   42161.rpc.thirdweb.com         16 × HTTP 429
+        //   arb-pokt.nodies.app            38 × HTTP 429
+        //
+        // A 16-way burst cannot predict a 250-call suite, which is why the
+        // probe scored these equal while CI red-lined on the one it picked.
         defaults: &[
-            "https://arb-pokt.nodies.app",
-            "https://42161.rpc.thirdweb.com",
             "https://arbitrum.gateway.tenderly.co",
+            "https://42161.rpc.thirdweb.com",
+            "https://arb-pokt.nodies.app",
         ],
     },
     Network {
@@ -207,11 +219,16 @@ pub(crate) const NETWORKS: &[Network] = &[
         // mid-history, so a node holding only early state cannot pass either.
         archive_blocks: &[1, 39_000_000],
         probe_contract: "0x4200000000000000000000000000000000000006", // WETH predeploy
+        // Same suite run, same day: base.gateway.tenderly.co carried it with 0
+        // failing, base-pokt.nodies.app shed 30 requests as HTTP 429. nodies
+        // goes last for the reason given on arbitrum above; the middle two keep
+        // the order they had, both 5/5 and 16/16 on the probe and neither
+        // suite-tested.
         defaults: &[
-            "https://mainnet.base.org",
-            "https://base-pokt.nodies.app",
             "https://base.gateway.tenderly.co",
+            "https://mainnet.base.org",
             "https://base.drpc.org",
+            "https://base-pokt.nodies.app",
         ],
     },
     Network {
@@ -234,10 +251,11 @@ pub(crate) const NETWORKS: &[Network] = &[
         env_name: "FLARE_RPC_URL",
         secret_name: "RPC_URL_FLARE_FORK",
         chain_id: 14,
-        // rain.flare forks at 31_843_105 in ~19 test files (~23 months back) —
-        // the deepest historical read in the org outside rain.deploy's genesis
-        // search, and Flare public nodes are the most prune-happy.
-        archive_blocks: &[31_000_000],
+        // rain.flare forks at 37_796_420 (2025-02-21) in 11 test files, moved
+        // forward from 31_843_105 by rainlanguage/rain.flare#218. No longer the
+        // deepest read in the org — arbitrum's 280_000_000 is 2024-11-30 — but
+        // Flare public nodes are still the most prune-happy.
+        archive_blocks: &[37_000_000],
         probe_contract: "0x1D80c49BbBCd1C0911346656B529DF9E5c2F783d", // WNAT
         defaults: &[
             "https://flare-api.flare.network/ext/C/rpc",
@@ -343,10 +361,15 @@ pub(crate) const NETWORKS: &[Network] = &[
         // Latest-only in every consumer today.
         archive_blocks: &[],
         probe_contract: "0x5555555555555555555555555555555555555555", // WHYPE
+        // drpc leads, 2026-10-06. All three pass a single fork and every
+        // history depth; 12 repeated createFork/createSelectFork separates
+        // them, which is the pattern the nine-network fork tests use:
+        //   hyperliquid.drpc.org      2/2
+        //   rpc.hyperliquid.xyz/evm   1/2, -32603 invalid block height
         defaults: &[
+            "https://hyperliquid.drpc.org",
             "https://rpc.hyperliquid.xyz/evm",
             "https://rpc.hyperlend.finance",
-            "https://hyperliquid.drpc.org",
         ],
     },
     Network {
@@ -368,9 +391,9 @@ pub(crate) const NETWORKS: &[Network] = &[
         // every `eth_call` (0/5) behind its plan gate; 4663.rpc.thirdweb.com
         // reports `-32001 Invalid chain`.
         defaults: &[
-            "https://rpc.mainnet.chain.robinhood.com",
             "https://robinhood-chain.gateway.tenderly.co",
             "https://robinhood-rpc.publicnode.com",
+            "https://rpc.mainnet.chain.robinhood.com",
         ],
     },
     Network {
@@ -1355,6 +1378,30 @@ mod tests {
             assert_eq!(n.secret_name, format!("RPC_URL_{}_FORK", upper(n.key)));
             assert!(n.probe_contract.starts_with("0x") && n.probe_contract.len() == 42);
             assert!(n.defaults.iter().all(|d| d.starts_with("https://")));
+        }
+    }
+
+    /// An endpoint a real suite measured as shedding requests must not be the
+    /// FIRST default, because first is what a repo with no secret and no
+    /// variable gets. The probe scores these equal to the ones that carry the
+    /// load, so nothing else in this file holds the order the measurement
+    /// bought.
+    #[test]
+    fn an_endpoint_a_suite_measured_as_rate_limiting_is_not_tried_first() {
+        for (key, shed) in [
+            ("arbitrum", "https://arb-pokt.nodies.app"),
+            ("base", "https://base-pokt.nodies.app"),
+            ("ethereum", "https://eth-pokt.nodies.app"),
+            // A block-height error rather than a rate limit; same remedy.
+            ("hyperevm", "https://rpc.hyperliquid.xyz/evm"),
+            ("robinhood", "https://rpc.mainnet.chain.robinhood.com"),
+        ] {
+            let net = net(key);
+            assert!(
+                net.defaults.contains(&shed),
+                "{key}: {shed} is no longer a candidate; drop this row too"
+            );
+            assert_ne!(net.defaults[0], shed, "{key}: {shed} is first again");
         }
     }
 

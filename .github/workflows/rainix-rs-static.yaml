@@ -28,6 +28,10 @@ jobs:
       # the total. Floor-only ratchet — an over-cap repo cuts its context (or
       # scopes a rule with `paths:`), it never raises the number.
       - uses: rainlanguage/rainix/.github/actions/agent-context-cap@main
+      # Same gate `rainix-sol-static` runs. A Rust repo's prose is not exempt
+      # from a cap the counter already handles `.rs` for, and its `.github` is
+      # the same unread YAML as anyone else's.
+      - uses: rainlanguage/rainix/.github/actions/comment-loc-cap@main
       # audit/mutation-test-scans.json is appended by hand and read as evidence
       # by the audit skill's gate and by rain-org-health's scanner, neither of
       # which validates it — so a short, mistyped or rebased-away SHA merges

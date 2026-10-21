@@ -89,6 +89,18 @@ jobs:
 
 Runs `forge soldeer install` automatically when a `soldeer.lock` is present.
 
+Also fails when comment lines exceed twice the code lines summed over the
+tracked files in a bucket (`rainix-static comment-loc-cap`, strict; the over-cap
+bucket's totals and every file's counts printed on failure). Two buckets by
+default, `src .github` and `test`, each capped on its own: test code is bulky
+and assertion-dense, so pooling it with `src` raises the cap src's prose is
+measured against until the ratio stops meaning anything. A default bucket a repo
+has no directory for is skipped. A file under a directory named `deprecated`
+counts toward neither side, so deprecated code is never edited to satisfy the
+cap. To scan other directories call
+`rainlanguage/rainix/.github/actions/comment-loc-cap@main` directly with its
+`buckets` input, one bucket per line.
+
 #### rainix-sol-legal
 
 `.github/workflows/rainix-sol-legal.yaml` runs `rainix-sol-legal` (`reuse lint`)
@@ -556,7 +568,6 @@ candidates at all is left exactly as it is today.
 - Solidity: solc 0.8.25
 - Foundry: via foundry.nix
 - Graph CLI: 0.69.2
-- Goldsky CLI: 13.3.4
 
 ## License
 

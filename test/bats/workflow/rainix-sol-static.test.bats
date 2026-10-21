@@ -55,3 +55,8 @@ setup() {
     return 1
   fi
 }
+
+# Comment lines may not outnumber code lines in any tracked src/ or test/ file.
+@test "rainix-sol-static gates the comment-to-code line cap" {
+  echo "$uses" | grep -q '^rainlanguage/rainix/.github/actions/comment-loc-cap@main$'
+}

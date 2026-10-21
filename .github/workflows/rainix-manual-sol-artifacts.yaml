@@ -118,7 +118,10 @@ jobs:
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
+      # Best effort. Nothing the broadcast reads comes from this registry, so its
+      # outages must not stop a deploy. Still runs, still reports red.
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge selectors up --all
+        continue-on-error: true
       # archive: false — this is a broadcast, so it only ever reads head state.
       # Requiring historical state here would reject a perfectly good pruning
       # endpoint; the RPC_URL_<NET>_FORK name is a misnomer on this path.
