@@ -21,6 +21,10 @@ jobs:
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
+      - name: Mark tracked files before codegen
+        uses: rainlanguage/rainix/.github/actions/codegen-declaration@main
+        with:
+          phase: mark
       # Currency-check every committed generated artifact by re-running each
       # consumer-provided codegen step. The final git diff fails if any
       # committed file has drifted from its source. The build-meta.sh hook is
@@ -28,8 +32,9 @@ jobs:
       # filenames, meta type) varies per repo.
       #
       # Each hook's stdout is teed into one log: a hook may declare there which
-      # generated paths it owns and which it wrote, which is the half of the
-      # currency check the diff cannot do (codegen-declaration, below).
+      # generated paths it owns, and codegen-declaration fails any of them not
+      # written since the mark above — the half of the currency check the diff
+      # cannot do.
       # `pipefail` is set in every teed step — bash otherwise reports `tee`'s
       # exit status, so a failing generator would pass.
       - name: Regenerate meta artifacts
@@ -68,6 +73,8 @@ jobs:
           ./script/build.sh | tee -a "$RUNNER_TEMP/rainix-codegen.log"
       - name: Assert every declared generated path was written
         uses: rainlanguage/rainix/.github/actions/codegen-declaration@main
+        with:
+          phase: verify
       - name: Format (so generated artifacts match committed style)
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge fmt
       - name: Assert committed artifacts match freshly built

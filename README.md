@@ -184,16 +184,17 @@ snapshot deliberately frozen forever — so the generator says so, on stdout:
 
 ```
 rainix-codegen owns src/lib/LibReleasedSuites.sol
-rainix-codegen wrote src/lib/LibReleasedSuites.sol
 ```
 
-The job tees every hook's stdout into one log and fails, naming the path, on
-anything declared `owns` that no hook then `wrote` or that is absent after the
-run. Paths are repo-relative with no `.` or `..` segments; any other
-`rainix-codegen` line fails, other stdout is ignored. Nothing is declared by
-hand and no repo maintains a list: the same code that computes where to write
-emits these lines. A repo whose hooks print neither keeps exactly today's
-behaviour — green, with a note that a dead emitter there is still invisible.
+Whether it was written is observed, never declared: the job marks every tracked
+file's mtime before the first hook, tees every hook's stdout into one log, and
+after the last hook fails, naming the path, on anything declared `owns` whose
+mtime did not move or that is absent. Paths are repo-relative with no `.` or
+`..` segments; any other `rainix-codegen` line fails, other stdout is ignored.
+Nothing is declared by hand and no repo maintains a list: the same code that
+computes where to write emits these lines. A repo whose hooks print none keeps
+exactly today's behaviour — green, with a note that a dead emitter there is
+still invisible.
 
 ```yaml
 name: copy-artifacts

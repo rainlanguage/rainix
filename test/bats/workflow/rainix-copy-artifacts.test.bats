@@ -19,7 +19,17 @@ setup() {
 }
 
 @test "the codegen declaration is checked, at the ref the check ships from" {
-  echo "$uses" | grep -q '^rainlanguage/rainix/.github/actions/codegen-declaration@main$'
+  local n
+  n="$(echo "$uses" | grep -c '^rainlanguage/rainix/.github/actions/codegen-declaration@main$')"
+  [ "$n" -eq 2 ]
+}
+
+@test "tracked files are marked before the first codegen hook" {
+  local first_hook mark
+  first_hook="$(yq -r '[.jobs.copy-artifacts.steps | to_entries[] | select(.value.run) | select(.value.run | contains("tee -a")) | .key] | min' "$workflow")"
+  mark="$(yq -r '[.jobs.copy-artifacts.steps | to_entries[] | select(.value.uses) | select(.value.uses | contains("codegen-declaration")) | select(.value.with.phase == "mark") | .key] | .[0]' "$workflow")"
+  [ "$mark" != "null" ]
+  [ "$mark" -lt "$first_hook" ]
 }
 
 @test "the action reads a log under the runner temp dir, never the working tree" {
@@ -54,13 +64,16 @@ setup() {
   [ "$n_pipefail" -eq "$n_teed" ]
 }
 
-@test "the declaration is checked after the last codegen hook and before the diff" {
-  local last_hook check diff
+# Before fmt: fmt rewrites sources of its own, so a file it touched would look
+# like one a generator wrote.
+@test "the declaration is verified after the last codegen hook and before forge fmt" {
+  local last_hook check fmt
   last_hook="$(yq -r '[.jobs.copy-artifacts.steps | to_entries[] | select(.value.run) | select(.value.run | contains("tee -a")) | .key] | max' "$workflow")"
-  check="$(yq -r '[.jobs.copy-artifacts.steps | to_entries[] | select(.value.uses) | select(.value.uses | contains("codegen-declaration")) | .key] | .[0]' "$workflow")"
-  diff="$(yq -r '[.jobs.copy-artifacts.steps | to_entries[] | select(.value.run) | select(.value.run | contains("git diff --exit-code")) | .key] | .[0]' "$workflow")"
+  check="$(yq -r '[.jobs.copy-artifacts.steps | to_entries[] | select(.value.uses) | select(.value.uses | contains("codegen-declaration")) | select(.value.with.phase == "verify") | .key] | .[0]' "$workflow")"
+  fmt="$(yq -r '[.jobs.copy-artifacts.steps | to_entries[] | select(.value.run) | select(.value.run | contains("forge fmt")) | .key] | .[0]' "$workflow")"
+  [ "$check" != "null" ]
   [ "$last_hook" -lt "$check" ]
-  [ "$check" -lt "$diff" ]
+  [ "$check" -lt "$fmt" ]
 }
 
 @test "every rainix-copy-artifacts run step resolves rainix through the pinned sha" {
