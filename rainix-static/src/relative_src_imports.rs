@@ -319,6 +319,26 @@ mod tests {
     }
 
     #[test]
+    fn a_block_comment_opener_does_not_close_it() {
+        assert_eq!(import_paths("/*/ import \"src/a\"; */import \"b\";"), ["b"]);
+    }
+
+    #[test]
+    fn code_resumes_right_after_a_block_comment_closes() {
+        assert_eq!(import_paths("/* a *//* b */import \"a\";"), ["a"]);
+    }
+
+    #[test]
+    fn identifiers_containing_import_are_not_the_keyword() {
+        assert_eq!(
+            import_paths(
+                "uint256 reimport = \"src/a\";\nuint256 $import = \"src/b\";\nuint256 _import = \"src/c\";\n"
+            ),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
     fn a_comment_inside_a_directive_holds_no_path() {
         assert_eq!(
             import_paths("import /* \"src/x\" */ {A} // \"src/y\"\n from \"./a.sol\";"),
