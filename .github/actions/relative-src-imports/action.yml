@@ -1,0 +1,11 @@
+name: relative-src-imports
+description: >-
+  Fails when a tracked src/**/*.sol imports through a path rooted at the repo (src/, test/, dependencies/, ...). A soldeer package ships src/ without remappings.txt, so such an import resolves against the consumer's root and breaks every consumer while compiling here.
+runs:
+  using: composite
+  steps:
+    - name: Check src imports are relative
+      shell: bash
+      run: |
+        set -euo pipefail
+        nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- relative-src-imports .

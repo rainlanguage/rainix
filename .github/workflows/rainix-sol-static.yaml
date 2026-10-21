@@ -19,6 +19,9 @@ jobs:
       - uses: rainlanguage/rainix/.github/actions/no-ignored-tests@main
       # Git submodules are banned org-wide — deps come from soldeer/npm/nix.
       - uses: rainlanguage/rainix/.github/actions/no-submodules@main
+      # A src/ import rooted at the repo resolves against the consumer's root in
+      # the published package; src/ imports are relative.
+      - uses: rainlanguage/rainix/.github/actions/relative-src-imports@main
       # Agent context loaded at session START is capped org-wide: CLAUDE.md
       # plus its @path imports plus unscoped .claude/rules/**.md are in the
       # window on every turn, so their size taxes all work done in the repo.

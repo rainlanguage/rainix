@@ -13,6 +13,10 @@
 // Subcommands:
 //   no-submodules [dir]
 //       fail if the repo vendors git submodules.
+//   relative-src-imports [dir]
+//       fail if a tracked src/**/*.sol imports through a path whose first segment
+//       is an entry of the repo root (src/, test/, dependencies/, ...): the
+//       published package resolves it against the consumer's root.
 //   agent-context-cap [dir]
 //       fail if the agent context the repo loads at the START of every session
 //       exceeds the byte cap — it is in the window on every turn whether the
@@ -142,6 +146,7 @@ mod context_bytes;
 mod frozen_snapshots;
 mod mutation_ledger;
 mod no_submodules;
+mod relative_src_imports;
 mod ormi_probe;
 mod prompt_cap;
 mod release_guard;
@@ -210,6 +215,18 @@ fn main() {
             let offenders = no_submodules::check(dir);
             if offenders.is_empty() {
                 println!("no-submodules: clean");
+            } else {
+                for line in offenders {
+                    println!("{line}");
+                }
+                std::process::exit(1);
+            }
+        }
+        "relative-src-imports" => {
+            let dir = Path::new(args.get(2).map(String::as_str).unwrap_or("."));
+            let offenders = relative_src_imports::check(dir);
+            if offenders.is_empty() {
+                println!("relative-src-imports: clean");
             } else {
                 for line in offenders {
                     println!("{line}");
@@ -418,7 +435,7 @@ fn main() {
         other => {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
-                 (available: no-submodules, agent-context-cap, prompt-cap, \
+                 (available: no-submodules, relative-src-imports, agent-context-cap, prompt-cap, \
                  comment-loc-cap, codegen-declaration, snapshots-append-only, \
                  mutation-ledger, ci-gate, soldeer-gate, rpc-preflight, release-guard, \
                  ormi-probe, subgraph-build-hash)"
