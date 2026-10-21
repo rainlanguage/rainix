@@ -101,6 +101,13 @@ cap. To scan other directories call
 `rainlanguage/rainix/.github/actions/comment-loc-cap@main` directly with its
 `buckets` input, one bucket per line.
 
+Also fails when a tracked `src/**/*.sol` imports through a path whose first
+segment is an entry of the repo root (`src/…`, `test/…`, `dependencies/…`;
+`rainix-static relative-src-imports`). The published package ships `src/`
+without `remappings.txt`, so such an import resolves against the consumer's
+root. Import relatively (`./`, `../`) or through the versioned dependency name
+(`forge-std-1.17.0/…`).
+
 #### rainix-sol-legal
 
 `.github/workflows/rainix-sol-legal.yaml` runs `rainix-sol-legal` (`reuse lint`)

@@ -62,6 +62,10 @@ jobs:
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
+      # A src/ import rooted at the repo resolves against the consumer's root in
+      # the published package; src/ imports are relative. After the install:
+      # `dependencies/` is a root entry only once it exists.
+      - uses: rainlanguage/rainix/.github/actions/relative-src-imports@main
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c slither .
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge fmt --check
       # forge's own linter. `forge lint` alone ALWAYS exits 0 — it prints its
