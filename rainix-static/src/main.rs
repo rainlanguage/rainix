@@ -50,6 +50,17 @@
 //       Nothing is stripped: a shell script reads the bytes on disk. Which
 //       files are prompts and what they may weigh is per-repo, so both are an
 //       input, and a glob matching nothing is an error rather than a pass.
+//   codegen-declaration mark --state <file> [--root <dir>]
+//   codegen-declaration verify --state <file> --log <file> [--root <dir>]
+//       fail if a codegen hook declared a generated path that was then not
+//       written. Re-running the generators and diffing proves the committed
+//       CONTENT is current but is blind to a generator that has STOPPED
+//       emitting a file, and only the generator knows which paths it owns
+//       rather than deliberately leaves frozen. Hooks declare
+//       `rainix-codegen owns <path>` on stdout, teed into the log. Writes are
+//       observed, not declared: `mark` records tracked files' mtimes before
+//       the first hook and `verify` counts a moved mtime as written. A repo
+//       declaring nothing passes.
 //   snapshots-append-only [--base <ref>] [--root <dir>]
 //       fail unless every existing per-tag deploy-pin snapshot under
 //       <root>/<tag>/ (default root src/generated, base origin/main) survives
@@ -125,6 +136,7 @@
 
 mod agent_context_cap;
 mod ci_gate;
+mod codegen_declaration;
 mod comment_loc_cap;
 mod context_bytes;
 mod frozen_snapshots;
@@ -312,6 +324,27 @@ fn main() {
                 .unwrap_or_else(|| fail("soldeer-gate: --package <name> required"));
             soldeer_gate::run(&pkg, flag(&args, "--github-output").as_deref());
         }
+        "codegen-declaration" => {
+            let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
+            let state = flag(&args, "--state")
+                .unwrap_or_else(|| fail("codegen-declaration: --state <file> required"));
+            match args.get(2).map(String::as_str).unwrap_or("") {
+                "mark" => codegen_declaration::run_mark(Path::new(&root), Path::new(&state)),
+                "verify" => {
+                    let log = flag(&args, "--log").unwrap_or_else(|| {
+                        fail("codegen-declaration verify: --log <file> required")
+                    });
+                    codegen_declaration::run_verify(
+                        Path::new(&root),
+                        Path::new(&state),
+                        Path::new(&log),
+                    );
+                }
+                other => fail(&format!(
+                    "codegen-declaration: phase must be `mark` or `verify`, got {other:?}"
+                )),
+            }
+        }
         "snapshots-append-only" => {
             let base = flag(&args, "--base").unwrap_or_else(|| "origin/main".to_string());
             let root = flag(&args, "--root").unwrap_or_else(|| "src/generated".to_string());
@@ -386,8 +419,9 @@ fn main() {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
                  (available: no-submodules, agent-context-cap, prompt-cap, \
-                 comment-loc-cap, snapshots-append-only, mutation-ledger, ci-gate, soldeer-gate, \
-                 rpc-preflight, release-guard, ormi-probe, subgraph-build-hash)"
+                 comment-loc-cap, codegen-declaration, snapshots-append-only, \
+                 mutation-ledger, ci-gate, soldeer-gate, rpc-preflight, release-guard, \
+                 ormi-probe, subgraph-build-hash)"
             );
             std::process::exit(2);
         }
