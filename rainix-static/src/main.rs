@@ -67,6 +67,11 @@
 //       observed, not declared: `mark` records tracked files' mtimes before
 //       the first hook and `verify` counts a moved mtime as written. A repo
 //       declaring nothing passes.
+//   install-staged-config [--root <dir>]
+//       install what `forge script ./script/Build.sol` staged in .staged-config/
+//       onto the root files of the same names, then remove the dir. Missing
+//       fails when foundry.toml carries rain-deploy generated markers; empty
+//       always fails. Semantics: install_staged_config.rs.
 //   snapshots-append-only [--base <ref>] [--root <dir>]
 //       fail unless every existing per-tag deploy-pin snapshot under
 //       <root>/<tag>/ (default root src/generated, base origin/main) survives
@@ -146,6 +151,7 @@ mod codegen_declaration;
 mod comment_loc_cap;
 mod context_bytes;
 mod frozen_snapshots;
+mod install_staged_config;
 mod mutation_ledger;
 mod no_submodules;
 mod ormi_probe;
@@ -365,6 +371,10 @@ fn main() {
                 )),
             }
         }
+        "install-staged-config" => {
+            let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
+            install_staged_config::run(Path::new(&root));
+        }
         "snapshots-append-only" => {
             let base = flag(&args, "--base").unwrap_or_else(|| "origin/main".to_string());
             let root = flag(&args, "--root").unwrap_or_else(|| "src/generated".to_string());
@@ -439,7 +449,7 @@ fn main() {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
                  (available: no-submodules, relative-src-imports, agent-context-cap, prompt-cap, \
-                 comment-loc-cap, codegen-declaration, snapshots-append-only, \
+                 comment-loc-cap, codegen-declaration, install-staged-config, snapshots-append-only, \
                  mutation-ledger, ci-gate, soldeer-gate, rpc-preflight, release-guard, \
                  ormi-probe, subgraph-build-hash)"
             );

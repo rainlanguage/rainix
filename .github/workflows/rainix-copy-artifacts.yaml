@@ -56,6 +56,8 @@ jobs:
           if [ -f script/Build.sol ]; then
             nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ./script/Build.sol | tee -a "$RUNNER_TEMP/rainix-codegen.log"
           fi
+      - name: Install staged config
+        uses: rainlanguage/rainix/.github/actions/install-staged-config@main
       - name: Build Solidity
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge build
       - name: Copy forge artifacts into committed location

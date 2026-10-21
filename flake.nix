@@ -456,6 +456,7 @@
             bats test/bats/action/frozen-snapshots-append-only.test.bats
             bats test/bats/action/mutation-ledger.test.bats
             bats test/bats/action/codegen-declaration.test.bats
+            bats test/bats/action/install-staged-config.test.bats
             bats test/bats/action/relative-src-imports.test.bats
             bats test/bats/task/skip-simulation.test.bats
             bats test/bats/task/subgraph-build.test.bats
