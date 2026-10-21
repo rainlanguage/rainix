@@ -88,6 +88,13 @@ jobs:
       - name: Install soldeer dependencies
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
+      # `forge verify-contract` reads which compiler profile built the contract
+      # from the build cache, and has no config key for it. Without a cache, any
+      # `additional_compiler_profiles` makes it refuse every submission.
+      - name: Build contract
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge build "${VERIFY_CONTRACT%%:*}"
+        env:
+          VERIFY_CONTRACT: ${{ inputs.contract }}
       # Every network is attempted even after one fails, and the failures are
       # reported together at the end. `forge script --verify` stops at the first
       # explorer that rejects it, which is how a single bad API key on the first
