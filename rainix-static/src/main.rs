@@ -16,7 +16,9 @@
 //   relative-src-imports [dir]
 //       fail if a tracked src/**/*.sol imports through a path whose first segment
 //       is an entry of the repo root (src/, test/, dependencies/, ...): the
-//       published package resolves it against the consumer's root.
+//       published package resolves it against the consumer's root. Root
+//       entries are read from disk (dependencies/ is gitignored), so run it
+//       after `forge soldeer install`. Outside a git repo it is an error.
 //   agent-context-cap [dir]
 //       fail if the agent context the repo loads at the START of every session
 //       exceeds the byte cap — it is in the window on every turn whether the
@@ -146,9 +148,9 @@ mod context_bytes;
 mod frozen_snapshots;
 mod mutation_ledger;
 mod no_submodules;
-mod relative_src_imports;
 mod ormi_probe;
 mod prompt_cap;
+mod relative_src_imports;
 mod release_guard;
 mod rpc_preflight;
 mod soldeer_gate;
@@ -224,14 +226,15 @@ fn main() {
         }
         "relative-src-imports" => {
             let dir = Path::new(args.get(2).map(String::as_str).unwrap_or("."));
-            let offenders = relative_src_imports::check(dir);
-            if offenders.is_empty() {
-                println!("relative-src-imports: clean");
-            } else {
-                for line in offenders {
-                    println!("{line}");
+            match relative_src_imports::check(dir) {
+                Err(e) => fail(&format!("relative-src-imports: {e}")),
+                Ok(offenders) if offenders.is_empty() => println!("relative-src-imports: clean"),
+                Ok(offenders) => {
+                    for line in offenders {
+                        println!("{line}");
+                    }
+                    std::process::exit(1);
                 }
-                std::process::exit(1);
             }
         }
         "agent-context-cap" => {

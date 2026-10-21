@@ -60,3 +60,14 @@ setup() {
 @test "rainix-sol-static gates the comment-to-code line cap" {
   echo "$uses" | grep -q '^rainlanguage/rainix/.github/actions/comment-loc-cap@main$'
 }
+
+# A src/ import rooted at the repo resolves against the consumer's root once
+# published. `dependencies/` is a root entry only after the soldeer install.
+@test "rainix-sol-static gates repo-rooted src imports after the soldeer install" {
+  local install check
+  install="$(yq '[.jobs.static.steps[].name] | to_entries | map(select(.value == "Install soldeer dependencies")) | .[0].key' "$workflow")"
+  check="$(yq '[.jobs.static.steps[].uses] | to_entries | map(select(.value == "rainlanguage/rainix/.github/actions/relative-src-imports@main")) | .[0].key' "$workflow")"
+  [ "$install" != "null" ]
+  [ "$check" != "null" ]
+  [ "$check" -gt "$install" ]
+}
