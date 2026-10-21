@@ -188,10 +188,11 @@ rainix-codegen wrote src/lib/LibReleasedSuites.sol
 ```
 
 The job tees every hook's stdout into one log and fails, naming the path, on
-anything declared `owns` that no hook then `wrote`. Nothing is declared by hand
-and no repo maintains a list: the same code that computes where to write emits
-these lines. A repo whose hooks print neither keeps exactly today's behaviour —
-green, with a note that a dead emitter there is still invisible.
+anything declared `owns` that no hook then `wrote`. Paths are repo-relative with
+no `.` or `..` segments; any other line fails. Nothing is declared by hand and
+no repo maintains a list: the same code that computes where to write emits these
+lines. A repo whose hooks print neither keeps exactly today's behaviour — green,
+with a note that a dead emitter there is still invisible.
 
 ```yaml
 name: copy-artifacts

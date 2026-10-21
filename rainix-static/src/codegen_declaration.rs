@@ -19,10 +19,10 @@ pub(crate) fn parse(log: &str) -> Declaration {
             continue;
         };
         match rest.split_once(char::is_whitespace) {
-            Some(("owns", path)) if !path.trim().is_empty() => {
+            Some(("owns", path)) if is_repo_relative(path.trim()) => {
                 out.owns.insert(path.trim().to_string());
             }
-            Some(("wrote", path)) if !path.trim().is_empty() => {
+            Some(("wrote", path)) if is_repo_relative(path.trim()) => {
                 out.wrote.insert(path.trim().to_string());
             }
             // Fail-closed: a verb this check does not know is a declaration it
@@ -31,6 +31,13 @@ pub(crate) fn parse(log: &str) -> Declaration {
         }
     }
     out
+}
+
+// Absolute or `..` paths would let `root.join` check a file outside the repo;
+// `.` and empty segments would key one file under two spellings.
+fn is_repo_relative(path: &str) -> bool {
+    path.split('/')
+        .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
 }
 
 pub(crate) fn offences(
@@ -151,6 +158,25 @@ mod tests {
         assert_eq!(d.malformed.len(), 2);
         assert!(d.owns.is_empty());
         assert!(d.wrote.is_empty());
+    }
+
+    #[test]
+    fn a_path_that_is_not_plainly_inside_the_repo_is_malformed() {
+        for path in [
+            "/etc/passwd",
+            "../outside.sol",
+            "src/../../outside.sol",
+            "./src/a.sol",
+            "src/./a.sol",
+            "src//a.sol",
+            "src/generated/",
+        ] {
+            let d = parse(&format!(
+                "rainix-codegen owns {path}\nrainix-codegen wrote {path}\n"
+            ));
+            assert_eq!(d.malformed.len(), 2, "{path}");
+            assert!(d.owns.is_empty() && d.wrote.is_empty(), "{path}");
+        }
     }
 
     #[test]

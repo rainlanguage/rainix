@@ -140,3 +140,14 @@ generate() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"unreadable declaration"* ]]
 }
+
+@test "a declared path outside the repo fails even though the file exists" {
+  mk_consumer
+  outside="$(mktemp)"
+  printf 'rainix-codegen owns %s\nrainix-codegen wrote %s\n' "$outside" "$outside" >"$log"
+
+  run rainix-static codegen-declaration --root "$work" --log "$log"
+  rm -f "$outside"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"unreadable declaration"* ]]
+}
