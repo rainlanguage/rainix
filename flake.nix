@@ -59,6 +59,10 @@
             };
             target = targets.${system};
           in
+          # Fails evaluation once a lock bump brings a nixpkgs nodejs_22 at or
+          # past this release, so the pin is removed instead of holding back
+          # newer patches.
+          assert nixpkgsPkgs.lib.versionOlder nixpkgsPkgs.nodejs_22.version version;
           nixpkgsPkgs.stdenv.mkDerivation {
             pname = "nodejs";
             inherit version;
@@ -78,6 +82,16 @@
               mkdir -p "$out"
               cp -R bin include lib share "$out/"
             '';
+            # $out/bin is not on the build PATH, so the default fixup leaves
+            # npm, npx and corepack on `#!/usr/bin/env node`.
+            postFixup = ''
+              HOST_PATH=$out/bin patchShebangs --host \
+                $out/lib/node_modules/npm/bin \
+                $out/lib/node_modules/corepack/dist
+            '';
+            meta = nixpkgsPkgs.nodejs_22.meta // {
+              platforms = builtins.attrNames targets;
+            };
           };
 
         # Shallow override: shells and rainix.pkgs.nodejs_22 see 22.23.4.
