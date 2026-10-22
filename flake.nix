@@ -30,12 +30,26 @@
         ];
         nixpkgsPkgs = import nixpkgs { inherit system overlays; };
 
-        # 21 October 2026 Node.js security release. The locked nixpkgs still
-        # builds nodejs_22 22.22.2, which is missing the Brotli decoder fix
+        # 21 October 2026 Node.js security release. nixpkgs nodejs_22 22.22.2
+        # (the locked version) is missing the Brotli decoder fix
         # (CVE-2026-111497) and the DNS and TLS hostname fixes. Official
         # binaries carry the patched bundled Brotli, OpenSSL, c-ares and
-        # undici. Kept off the nixpkgs bump so rust, foundry and solc stay
-        # pinned. nodejs_20 in nixpkgs is end of life and is not patched.
+        # undici. A stopgap, used only while the locked nixpkgs is older than
+        # this release: once a lock bump brings a nixpkgs at or past it, this
+        # falls back to nixpkgs' own build, so a downstream flake that follows
+        # its own nixpkgs can never fail evaluation on this pin. Delete it once
+        # the lock reaches a cached revision that has the fix.
+        #
+        # This is the upstream binary, so unlike nixpkgs' source build:
+        #  - TLS roots are the compiled-in Mozilla set. It does not enable
+        #    --openssl-use-def-ca-store, so NIX_SSL_CERT_FILE / SSL_CERT_FILE
+        #    are not read; private CAs need NODE_EXTRA_CA_CERTS.
+        #  - It is runtime-only: no `python`, `npm` or `corepack` passthru and
+        #    none of nixpkgs' npm patches, so do not hand it to nixpkgs npm
+        #    builders.
+        #  - Only pkgs.nodejs_22 is replaced. nodejs / nodejs_24, pnpm, the
+        #    default buildNpmPackage, callPackage and nodejs_20 (end of life)
+        #    are not patched here.
         nodejs_22 =
           let
             version = "22.23.4";
@@ -59,40 +73,50 @@
             };
             target = targets.${system};
           in
-          # Fails evaluation once a lock bump brings a nixpkgs nodejs_22 at or
-          # past this release, so the pin is removed instead of holding back
-          # newer patches.
-          assert nixpkgsPkgs.lib.versionOlder nixpkgsPkgs.nodejs_22.version version;
-          nixpkgsPkgs.stdenv.mkDerivation {
-            pname = "nodejs";
-            inherit version;
-            src = nixpkgsPkgs.fetchurl {
-              url = "https://nodejs.org/dist/v${version}/node-v${version}-${target.platform}.tar.gz";
-              inherit (target) sha256;
-            };
-            nativeBuildInputs = nixpkgsPkgs.lib.optionals nixpkgsPkgs.stdenv.isLinux [
-              nixpkgsPkgs.autoPatchelfHook
-            ];
-            buildInputs = nixpkgsPkgs.lib.optionals nixpkgsPkgs.stdenv.isLinux [
-              nixpkgsPkgs.stdenv.cc.cc.lib
-            ];
-            dontBuild = true;
-            dontStrip = true;
-            installPhase = ''
-              mkdir -p "$out"
-              cp -R bin include lib share "$out/"
-            '';
-            # $out/bin is not on the build PATH, so the default fixup leaves
-            # npm, npx and corepack on `#!/usr/bin/env node`.
-            postFixup = ''
-              HOST_PATH=$out/bin patchShebangs --host \
-                $out/lib/node_modules/npm/bin \
-                $out/lib/node_modules/corepack/dist
-            '';
-            meta = nixpkgsPkgs.nodejs_22.meta // {
-              platforms = builtins.attrNames targets;
-            };
-          };
+          if nixpkgsPkgs.lib.versionOlder nixpkgsPkgs.nodejs_22.version version then
+            nixpkgsPkgs.stdenv.mkDerivation {
+              pname = "nodejs";
+              inherit version;
+              src = nixpkgsPkgs.fetchurl {
+                url = "https://nodejs.org/dist/v${version}/node-v${version}-${target.platform}.tar.gz";
+                inherit (target) sha256;
+              };
+              nativeBuildInputs = nixpkgsPkgs.lib.optionals nixpkgsPkgs.stdenv.hostPlatform.isLinux [
+                nixpkgsPkgs.autoPatchelfHook
+              ];
+              buildInputs = nixpkgsPkgs.lib.optionals nixpkgsPkgs.stdenv.hostPlatform.isLinux [
+                nixpkgsPkgs.stdenv.cc.cc.lib
+              ];
+              dontBuild = true;
+              dontStrip = true;
+              installPhase = ''
+                mkdir -p "$out"
+                cp -R bin include lib share "$out/"
+              '';
+              # $out/bin is not on the build PATH, so the default fixup leaves
+              # npm, npx and corepack on `#!/usr/bin/env node`.
+              postFixup = ''
+                HOST_PATH=$out/bin patchShebangs --host \
+                  $out/lib/node_modules/npm/bin \
+                  $out/lib/node_modules/corepack/dist
+              '';
+              # Descriptive fields only: copying the whole nixpkgs meta would
+              # keep the 22.22.2 identity (meta.name) and its policy gates.
+              meta = {
+                inherit (nixpkgsPkgs.nodejs_22.meta)
+                  description
+                  homepage
+                  license
+                  maintainers
+                  mainProgram
+                  ;
+                changelog = "https://github.com/nodejs/node/releases/tag/v${version}";
+                platforms = builtins.attrNames targets;
+                sourceProvenance = [ nixpkgsPkgs.lib.sourceTypes.binaryNativeCode ];
+              };
+            }
+          else
+            nixpkgsPkgs.nodejs_22;
 
         # Shallow override: shells and rainix.pkgs.nodejs_22 see 22.23.4.
         # Packages already closed over the nixpkgs Node build, including
@@ -219,9 +243,17 @@
           # so a failed deploy reads as a success. Backport of upstream's fix
           # (graphprotocol/graph-tooling f2726cb, released in 0.92.0):
           # `process.exit(1)` there instead.
+          #
+          # The tarball also bundles its own Node (20.12.1, end of life), and
+          # `bin/graph` runs `$DIR/node` before it ever looks at `node` on PATH,
+          # so graph codegen/build/deploy would keep running on it. Point it at
+          # the Node the shells ship, so the patched runtime is the one that
+          # compiles the subgraph and handles the deploy key.
           installPhase = ''
             mkdir -p $out
             cp -r $src/* $out
+            chmod u+w $out/bin
+            ln -sf ${pkgs.nodejs_22}/bin/node $out/bin/node
             chmod u+w $out/dist/commands/deploy.js
             indent=$'\n                    '
             substituteInPlace $out/dist/commands/deploy.js \
