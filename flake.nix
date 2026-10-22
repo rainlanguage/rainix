@@ -28,7 +28,64 @@
           foundry.overlay
           solc.overlay
         ];
-        pkgs = import nixpkgs { inherit system overlays; };
+        nixpkgsPkgs = import nixpkgs { inherit system overlays; };
+
+        # 21 October 2026 Node.js security release. The locked nixpkgs still
+        # builds nodejs_22 22.22.2, which is missing the Brotli decoder fix
+        # (CVE-2026-111497) and the DNS and TLS hostname fixes. Official
+        # binaries carry the patched bundled Brotli, OpenSSL, c-ares and
+        # undici. Kept off the nixpkgs bump so rust, foundry and solc stay
+        # pinned. nodejs_20 in nixpkgs is end of life and is not patched.
+        nodejs_22 =
+          let
+            version = "22.23.4";
+            targets = {
+              aarch64-darwin = {
+                platform = "darwin-arm64";
+                sha256 = "c9e1dbc748b33ed2d14f42445191ecaf14c56259c7a9a26d0042c49ec2b66428";
+              };
+              x86_64-darwin = {
+                platform = "darwin-x64";
+                sha256 = "efcc2b0db6f94bf53eddb038fe2b370277a042bd29e4f19b8f8e23598795b819";
+              };
+              aarch64-linux = {
+                platform = "linux-arm64";
+                sha256 = "f7a1e486dbc8b286847815b477d4fb5e9fb963ed4489c3e1588853d685f589f9";
+              };
+              x86_64-linux = {
+                platform = "linux-x64";
+                sha256 = "b8492284c76a54baf58d61668dd0e41ee0fc98adabf9503d30f05d08f55b4406";
+              };
+            };
+            target = targets.${system};
+          in
+          nixpkgsPkgs.stdenv.mkDerivation {
+            pname = "nodejs";
+            inherit version;
+            src = nixpkgsPkgs.fetchurl {
+              url = "https://nodejs.org/dist/v${version}/node-v${version}-${target.platform}.tar.gz";
+              inherit (target) sha256;
+            };
+            nativeBuildInputs = nixpkgsPkgs.lib.optionals nixpkgsPkgs.stdenv.isLinux [
+              nixpkgsPkgs.autoPatchelfHook
+            ];
+            buildInputs = nixpkgsPkgs.lib.optionals nixpkgsPkgs.stdenv.isLinux [
+              nixpkgsPkgs.stdenv.cc.cc.lib
+            ];
+            dontBuild = true;
+            dontStrip = true;
+            installPhase = ''
+              mkdir -p "$out"
+              cp -R bin include lib share "$out/"
+            '';
+          };
+
+        # Shallow override: shells and rainix.pkgs.nodejs_22 see 22.23.4.
+        # Packages already closed over the nixpkgs Node build, including
+        # prettier-bundle, keep that toolchain.
+        pkgs = nixpkgsPkgs // {
+          inherit nodejs_22;
+        };
 
         rust-version = "1.94.0";
         rust-toolchain = pkgs.rust-bin.stable.${rust-version}.default.override (previous: {
@@ -446,6 +503,7 @@
           # bats file but the last one here could fail unnoticed.
           body = ''
             set -euo pipefail
+            bats test/bats/devshell/default/node.test.bats
             bats test/bats/devshell/default/solc.test.bats
             bats test/bats/devshell/default/gh.test.bats
             bats test/bats/devshell/default/age.test.bats
