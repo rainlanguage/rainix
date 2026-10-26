@@ -143,8 +143,8 @@ org's `RPC_URL_<NETWORK>_FORK` secrets/vars, plus `ETHERSCAN_API_KEY` and
 `DEPLOYMENT_KEY`. Repos that do no fork tests can ignore — empty values are
 harmless.
 
-`ETH_RPC_URL` is not set, so `forge test` never runs against an implicit
-default fork. Fork tests name the network they mean (`ETHEREUM_RPC_URL`,
+`ETH_RPC_URL` is not set, so `forge test` never runs against an implicit default
+fork. Fork tests name the network they mean (`ETHEREUM_RPC_URL`,
 `SEPOLIA_RPC_URL`, ...), each health-checked by the preflight before binding.
 
 #### rainix-sol (composite)
