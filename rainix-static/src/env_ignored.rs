@@ -29,10 +29,9 @@ fn git(dir: &Path, args: &[&str], stdin: &[u8], ok: &[i32]) -> Result<Vec<u8>, S
     }
 }
 
-/// The global excludes file is disabled and a match from `.git/info/exclude`
-/// does not count, so only patterns the repo itself carries can pass. The
-/// deciding `.gitignore` must be in the index: an untracked one does not reach
-/// a fresh clone.
+/// The global excludes file is disabled, and the deciding pattern's file must
+/// be tracked: `.git/info/exclude` and an untracked `.gitignore` never reach a
+/// fresh clone.
 fn ignored_by_committed_gitignore(dir: &Path) -> Result<bool, String> {
     let out = git(
         dir,
@@ -54,9 +53,7 @@ fn ignored_by_committed_gitignore(dir: &Path) -> Result<bool, String> {
         _ => return Ok(false),
     };
     let source = String::from_utf8_lossy(source);
-    if pattern.starts_with(b"!")
-        || Path::new(source.as_ref()).file_name() != Some(".gitignore".as_ref())
-    {
+    if pattern.starts_with(b"!") {
         return Ok(false);
     }
     let tracked = git(dir, &["ls-files", "-z", "--", source.as_ref()], b"", &[])?;
@@ -75,7 +72,6 @@ fn tracked_env_files(dir: &Path) -> Result<Vec<String>, String> {
 
 /// Returns the offender report lines; empty means clean.
 pub(crate) fn check(dir: &Path) -> Result<Vec<String>, String> {
-    git(dir, &["rev-parse", "--git-dir"], b"", &[])?;
     let mut offenders = Vec::new();
     if !ignored_by_committed_gitignore(dir)? {
         offenders.push(
@@ -188,7 +184,9 @@ mod tests {
     #[test]
     fn global_excludes_only_fails() {
         let d = tmp_repo();
-        let global = d.join("global-ignore");
+        let home = d.with_extension("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let global = home.join(".gitignore");
         std::fs::write(&global, ".env\n").unwrap();
         run(
             &d,
