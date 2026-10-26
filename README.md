@@ -240,8 +240,7 @@ regardless of the consumer's default devShell.
 
 #### rainix-rs-test
 
-`.github/workflows/rainix-rs-test.yaml` runs `cargo test` on Linux and macOS.
-Wrapper:
+`.github/workflows/rainix-rs-test.yaml` runs `cargo test` on Linux. Wrapper:
 
 ```yaml
 name: rainix-rs-test
