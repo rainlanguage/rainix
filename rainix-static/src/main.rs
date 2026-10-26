@@ -13,6 +13,10 @@
 // Subcommands:
 //   no-submodules [dir]
 //       fail if the repo vendors git submodules.
+//   env-ignored [dir]
+//       fail unless the repo's own committed .gitignore ignores .env (per
+//       `git check-ignore`; global excludes and .git/info/exclude do not
+//       count) and no file named .env is tracked.
 //   relative-src-imports [dir]
 //       fail if a tracked src/**/*.sol imports through a path whose first segment
 //       is an entry of the repo root (src/, test/, dependencies/, ...): the
@@ -151,6 +155,7 @@ mod ci_gate;
 mod codegen_declaration;
 mod comment_loc_cap;
 mod context_bytes;
+mod env_ignored;
 mod frozen_snapshots;
 mod install_staged_config;
 mod mutation_ledger;
@@ -219,6 +224,19 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let sub = args.get(1).map(String::as_str).unwrap_or("");
     match sub {
+        "env-ignored" => {
+            let dir = Path::new(args.get(2).map(String::as_str).unwrap_or("."));
+            let offenders =
+                env_ignored::check(dir).unwrap_or_else(|e| fail(&format!("env-ignored: {e}")));
+            if offenders.is_empty() {
+                println!("env-ignored: clean");
+            } else {
+                for line in offenders {
+                    println!("{line}");
+                }
+                std::process::exit(1);
+            }
+        }
         "no-submodules" => {
             let dir = Path::new(args.get(2).map(String::as_str).unwrap_or("."));
             let offenders = no_submodules::check(dir);
