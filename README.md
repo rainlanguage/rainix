@@ -138,17 +138,14 @@ jobs:
 `secrets: inherit` is required because the reusable wires the standard fork RPC
 env vars (`ARBITRUM_RPC_URL`, `BASE_RPC_URL`, `BASE_SEPOLIA_RPC_URL`,
 `BSC_RPC_URL`, `ETHEREUM_RPC_URL`, `FLARE_RPC_URL`, `HYPEREVM_RPC_URL`,
-`POLYGON_RPC_URL`, `ROBINHOOD_RPC_URL`, `SEPOLIA_RPC_URL`,
-`CI_DEPLOY_SEPOLIA_RPC_URL`) plus `ETHERSCAN_API_KEY` and `DEPLOYMENT_KEY` from
-the consumer org's secrets/vars. Repos that do no fork tests can ignore — empty
-values are harmless.
+`POLYGON_RPC_URL`, `ROBINHOOD_RPC_URL`, `SEPOLIA_RPC_URL`) from the consumer
+org's `RPC_URL_<NETWORK>_FORK` secrets/vars, plus `ETHERSCAN_API_KEY` and
+`DEPLOYMENT_KEY`. Repos that do no fork tests can ignore — empty values are
+harmless.
 
-`CI_DEPLOY_SEPOLIA_RPC_URL` and the `ETH_RPC_URL` it is bound to are LEGACY and
-scheduled for removal (rainlanguage/rainix#340). `ETH_RPC_URL` reads as though
-it means Ethereum mainnet but resolves to the Sepolia-era deploy secret, so a
-test trusting the name forks the wrong network. New code wants
-`ETHEREUM_RPC_URL` or `SEPOLIA_RPC_URL` — whichever it actually means — both of
-which the preflight health-checks before binding.
+`ETH_RPC_URL` is not set, so `forge test` never runs against an implicit
+default fork. Fork tests name the network they mean (`ETHEREUM_RPC_URL`,
+`SEPOLIA_RPC_URL`, ...), each health-checked by the preflight before binding.
 
 #### rainix-sol (composite)
 

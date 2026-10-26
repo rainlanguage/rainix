@@ -6,8 +6,6 @@ on:
         required: false
       EXPLORER_VERIFICATION_KEY:
         required: false
-      CI_DEPLOY_SEPOLIA_RPC_URL:
-        required: false
       RPC_URL_ARBITRUM_FORK:
         required: false
       RPC_URL_BASE_FORK:
@@ -35,9 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DEPLOYMENT_KEY: ${{ secrets.PRIVATE_KEY }}
-      ETH_RPC_URL: ${{ secrets.CI_DEPLOY_SEPOLIA_RPC_URL || vars.CI_DEPLOY_SEPOLIA_RPC_URL }}
       ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY }}
-      CI_DEPLOY_SEPOLIA_RPC_URL: ${{ secrets.CI_DEPLOY_SEPOLIA_RPC_URL || vars.CI_DEPLOY_SEPOLIA_RPC_URL }}
       CI_FORK_SEPOLIA_BLOCK_NUMBER: ${{ vars.CI_FORK_SEPOLIA_BLOCK_NUMBER }}
       CI_FORK_SEPOLIA_DEPLOYER_ADDRESS: ${{ vars.CI_FORK_SEPOLIA_DEPLOYER_ADDRESS }}
       # <NETWORK>_RPC_URL is NOT set here. foundry.toml's [rpc_endpoints] still

@@ -6,8 +6,6 @@ on:
         required: false
       EXPLORER_VERIFICATION_KEY:
         required: false
-      CI_DEPLOY_SEPOLIA_RPC_URL:
-        required: false
       RPC_URL_ARBITRUM_FORK:
         required: false
       RPC_URL_BASE_FORK:
@@ -38,7 +36,6 @@ jobs:
     secrets:
       PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
       EXPLORER_VERIFICATION_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY }}
-      CI_DEPLOY_SEPOLIA_RPC_URL: ${{ secrets.CI_DEPLOY_SEPOLIA_RPC_URL }}
       RPC_URL_ARBITRUM_FORK: ${{ secrets.RPC_URL_ARBITRUM_FORK }}
       RPC_URL_BASE_FORK: ${{ secrets.RPC_URL_BASE_FORK }}
       RPC_URL_BASE_SEPOLIA_FORK: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK }}
