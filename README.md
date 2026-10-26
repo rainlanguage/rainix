@@ -178,9 +178,11 @@ single job it runs whichever of these the repo has:
 - `.staged-config/` → the root files of the same names, then the dir is removed.
   `Build.sol` stages there because foundry refuses a cheatcode write to the root
   `foundry.toml`. Fails if the dir is empty, or missing while `foundry.toml`
-  carries `# rain-deploy:generated:` blocks. Skipped when the repo has
-  `script/build.sh`, which then owns the install.
+  carries `# rain-deploy:generated:` blocks. rainix is the only installer.
 - `forge build` + `./script/CopyArtifacts.sol --ffi` → committed ABI JSON
+- the `regenerate-command` input, when set → whatever else the repo commits
+  (bindings ABIs, subgraph codegen). Runs after the copy, outside any devshell,
+  so it picks its own shells.
 
 then `forge fmt` and the `git diff` assert.
 
@@ -212,6 +214,8 @@ jobs:
   copy-artifacts:
     uses: rainlanguage/rainix/.github/workflows/rainix-copy-artifacts.yaml@main
     secrets: inherit
+    with:
+      regenerate-command: ./script/regenerate-bindings.sh
 ```
 
 This replaces the former `rainix-build-pointers` reusable — a pointer-only repo
