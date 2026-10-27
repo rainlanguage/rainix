@@ -44,10 +44,11 @@ jobs:
       # RPC_URL_<NETWORK>_FORK secrets. True on the default branch, tags,
       # schedules and dispatches. False on every other branch push and on
       # pull requests, `pull_request_target` included (its `github.ref` is the
-      # base branch, so the default-branch test alone would pass): those runs fork at latest, so no run can reuse another
-      # run's reads, and they are most of the runs. They use the variables and
-      # the hardcoded public archive defaults instead, which the preflight
-      # health-checks exactly as it does the secret.
+      # base branch, so the default-branch test alone would pass): those runs
+      # fork at latest, so no run can reuse another run's reads, and they are
+      # most of the runs. They use the variables and the hardcoded public
+      # archive defaults instead, which the preflight health-checks exactly as
+      # it does the secret.
       RAINIX_PAID_FORK_RPC: ${{ github.event_name != 'pull_request_target' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}
       DEPLOYMENT_KEY: ${{ secrets.PRIVATE_KEY }}
       ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY }}
