@@ -4,7 +4,7 @@ on:
     inputs:
       paid-fork-rpc-networks:
         description: >-
-          Networks whose RPC_URL_<NETWORK>_FORK secret is passed on every run, branches and pull requests included, as a space-separated list of preflight keys (for example `bsc`). For a fork suite that needs a call no public endpoint serves, such as eth_getLogs at an old BSC block. Every other network uses the paid secret only on the default branch, tags, schedules and dispatches.
+          Networks whose RPC_URL_<NETWORK>_FORK secret is passed on every run, branches and pull requests included, as a space-separated list of preflight keys (for example `bsc`). For a fork suite that needs a call no public endpoint serves, such as eth_getLogs at an old BSC block. Every other network uses the paid secret only on the default branch, tags, schedules and dispatches. Not on `pull_request_target`, and GitHub withholds secrets from pull requests opened from forks, so a fork PR that needs the paid endpoint is checked by a workflow_dispatch run from a trusted branch.
         type: string
         required: false
         default: ''
@@ -43,8 +43,10 @@ jobs:
     # for every fork read. Default branch, tags, schedules and dispatches get
     # their own group per event, ref and commit, and never cancel, so each of
     # those runs to completion (a tag and a main push of one commit included).
+    # Pull request runs group by PR number: on `pull_request_target` the ref
+    # is the base branch, so two PRs would otherwise cancel each other.
     concurrency:
-      group: rainix-sol-test-${{ github.repository }}-${{ github.workflow }}-${{ (github.event_name != 'pull_request_target' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))) && format('{0}-{1}-{2}', github.event_name, github.ref, github.sha) || github.ref }}
+      group: rainix-sol-test-${{ github.repository }}-${{ github.workflow }}-${{ (github.event_name != 'pull_request_target' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))) && format('{0}-{1}-{2}', github.event_name, github.ref, github.sha) || (github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref) }}
       cancel-in-progress: ${{ !(github.event_name != 'pull_request_target' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))) }}
     env:
       # Whether this run may use the paid fork RPCs in the
@@ -57,6 +59,10 @@ jobs:
       # archive defaults instead, which the preflight health-checks exactly as
       # it does the secret.
       RAINIX_PAID_FORK_RPC: ${{ github.event_name != 'pull_request_target' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}
+      # The caller's `paid-fork-rpc-networks`, padded for a whole-word match.
+      # Empty on `pull_request_target`: that event runs with secrets, so the
+      # opt-in never hands a paid URL to it.
+      RAINIX_PAID_FORK_RPC_NETWORKS: ${{ github.event_name != 'pull_request_target' && format(' {0} ', inputs.paid-fork-rpc-networks) || '' }}
       DEPLOYMENT_KEY: ${{ secrets.PRIVATE_KEY }}
       ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY }}
       CI_FORK_SEPOLIA_BLOCK_NUMBER: ${{ vars.CI_FORK_SEPOLIA_BLOCK_NUMBER }}
@@ -97,24 +103,24 @@ jobs:
       - name: RPC preflight
         uses: rainlanguage/rainix/.github/actions/rpc-preflight@main
         env:
-          RAINIX_RPC_SECRET_ARBITRUM: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(format(' {0} ', inputs.paid-fork-rpc-networks), ' arbitrum ')) && secrets.RPC_URL_ARBITRUM_FORK || '' }}
+          RAINIX_RPC_SECRET_ARBITRUM: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(env.RAINIX_PAID_FORK_RPC_NETWORKS, ' arbitrum ')) && secrets.RPC_URL_ARBITRUM_FORK || '' }}
           RAINIX_RPC_VARS_ARBITRUM: ${{ vars.RPC_URL_ARBITRUM_FORK }}
-          RAINIX_RPC_SECRET_BASE: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(format(' {0} ', inputs.paid-fork-rpc-networks), ' base ')) && secrets.RPC_URL_BASE_FORK || '' }}
+          RAINIX_RPC_SECRET_BASE: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(env.RAINIX_PAID_FORK_RPC_NETWORKS, ' base ')) && secrets.RPC_URL_BASE_FORK || '' }}
           RAINIX_RPC_VARS_BASE: ${{ vars.RPC_URL_BASE_FORK }}
-          RAINIX_RPC_SECRET_BASE_SEPOLIA: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(format(' {0} ', inputs.paid-fork-rpc-networks), ' base_sepolia ')) && secrets.RPC_URL_BASE_SEPOLIA_FORK || '' }}
+          RAINIX_RPC_SECRET_BASE_SEPOLIA: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(env.RAINIX_PAID_FORK_RPC_NETWORKS, ' base_sepolia ')) && secrets.RPC_URL_BASE_SEPOLIA_FORK || '' }}
           RAINIX_RPC_VARS_BASE_SEPOLIA: ${{ vars.RPC_URL_BASE_SEPOLIA_FORK }}
-          RAINIX_RPC_SECRET_ETHEREUM: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(format(' {0} ', inputs.paid-fork-rpc-networks), ' ethereum ')) && secrets.RPC_URL_ETHEREUM_FORK || '' }}
+          RAINIX_RPC_SECRET_ETHEREUM: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(env.RAINIX_PAID_FORK_RPC_NETWORKS, ' ethereum ')) && secrets.RPC_URL_ETHEREUM_FORK || '' }}
           RAINIX_RPC_VARS_ETHEREUM: ${{ vars.RPC_URL_ETHEREUM_FORK }}
-          RAINIX_RPC_SECRET_FLARE: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(format(' {0} ', inputs.paid-fork-rpc-networks), ' flare ')) && secrets.RPC_URL_FLARE_FORK || '' }}
+          RAINIX_RPC_SECRET_FLARE: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(env.RAINIX_PAID_FORK_RPC_NETWORKS, ' flare ')) && secrets.RPC_URL_FLARE_FORK || '' }}
           RAINIX_RPC_VARS_FLARE: ${{ vars.RPC_URL_FLARE_FORK }}
-          RAINIX_RPC_SECRET_HYPEREVM: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(format(' {0} ', inputs.paid-fork-rpc-networks), ' hyperevm ')) && secrets.RPC_URL_HYPEREVM_FORK || '' }}
+          RAINIX_RPC_SECRET_HYPEREVM: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(env.RAINIX_PAID_FORK_RPC_NETWORKS, ' hyperevm ')) && secrets.RPC_URL_HYPEREVM_FORK || '' }}
           RAINIX_RPC_VARS_HYPEREVM: ${{ vars.RPC_URL_HYPEREVM_FORK }}
-          RAINIX_RPC_SECRET_POLYGON: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(format(' {0} ', inputs.paid-fork-rpc-networks), ' polygon ')) && secrets.RPC_URL_POLYGON_FORK || '' }}
+          RAINIX_RPC_SECRET_POLYGON: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(env.RAINIX_PAID_FORK_RPC_NETWORKS, ' polygon ')) && secrets.RPC_URL_POLYGON_FORK || '' }}
           RAINIX_RPC_VARS_POLYGON: ${{ vars.RPC_URL_POLYGON_FORK }}
-          RAINIX_RPC_SECRET_ROBINHOOD: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(format(' {0} ', inputs.paid-fork-rpc-networks), ' robinhood ')) && secrets.RPC_URL_ROBINHOOD_FORK || '' }}
+          RAINIX_RPC_SECRET_ROBINHOOD: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(env.RAINIX_PAID_FORK_RPC_NETWORKS, ' robinhood ')) && secrets.RPC_URL_ROBINHOOD_FORK || '' }}
           RAINIX_RPC_VARS_ROBINHOOD: ${{ vars.RPC_URL_ROBINHOOD_FORK }}
-          RAINIX_RPC_SECRET_BSC: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(format(' {0} ', inputs.paid-fork-rpc-networks), ' bsc ')) && secrets.RPC_URL_BSC_FORK || '' }}
+          RAINIX_RPC_SECRET_BSC: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(env.RAINIX_PAID_FORK_RPC_NETWORKS, ' bsc ')) && secrets.RPC_URL_BSC_FORK || '' }}
           RAINIX_RPC_VARS_BSC: ${{ vars.RPC_URL_BSC_FORK }}
-          RAINIX_RPC_SECRET_SEPOLIA: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(format(' {0} ', inputs.paid-fork-rpc-networks), ' sepolia ')) && secrets.RPC_URL_SEPOLIA_FORK || '' }}
+          RAINIX_RPC_SECRET_SEPOLIA: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(env.RAINIX_PAID_FORK_RPC_NETWORKS, ' sepolia ')) && secrets.RPC_URL_SEPOLIA_FORK || '' }}
           RAINIX_RPC_VARS_SEPOLIA: ${{ vars.RPC_URL_SEPOLIA_FORK }}
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge test -vvv
