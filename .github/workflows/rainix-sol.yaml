@@ -4,12 +4,7 @@ on:
     inputs:
       paid-fork-rpc-networks:
         description: >-
-          Networks whose RPC_URL_<NETWORK>_FORK secret is passed on every run,
-          branches and pull requests included, as a space-separated list of
-          preflight keys (for example `bsc`). For a fork suite that needs a call
-          no public endpoint serves, such as eth_getLogs at an old BSC block.
-          Every other network uses the paid secret only on the default branch,
-          tags, schedules and dispatches.
+          Networks whose RPC_URL_<NETWORK>_FORK secret is passed on every run, branches and pull requests included, as a space-separated list of preflight keys (for example `bsc`). For a fork suite that needs a call no public endpoint serves, such as eth_getLogs at an old BSC block. Every other network uses the paid secret only on the default branch, tags, schedules and dispatches.
         type: string
         required: false
         default: ''
