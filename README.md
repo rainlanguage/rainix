@@ -540,6 +540,11 @@ they were most of the RPC bill. A newer push to the same branch also cancels the
 stale run on that branch. The default branch keeps one concurrency group per
 commit, so every merge still runs on the paid endpoints.
 
+A suite that needs a call no public endpoint serves (for example `eth_getLogs`
+at an old BSC block) keeps the paid secret for that network on every run by
+naming it: `with: { paid-fork-rpc-networks: bsc }` on the `rainix-sol` or
+`rainix-sol-test` call, a space-separated list of preflight keys.
+
 **Health is archive-aware.** A candidate must report the right chain id, then
 serve historical account state and a historical `eth_call` at the deepest block
 any repo in the org pins for that network, three times consecutively. An
