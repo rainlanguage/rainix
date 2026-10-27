@@ -531,8 +531,8 @@ security benefit). `#` starts a comment, so a candidate can be parked with a
 note.
 
 **The paid secret is for the default branch.** `rainix-sol-test` passes the
-`RPC_URL_<NETWORK>_FORK` secrets to the preflight only on the default branch,
-on tags, and on `schedule` and `workflow_dispatch` runs. Every other branch push
+`RPC_URL_<NETWORK>_FORK` secrets to the preflight only on the default branch, on
+tags, and on `schedule` and `workflow_dispatch` runs. Every other branch push
 and every pull request passes them as empty strings, so the pool for those runs
 starts at the variable. Fork suites mostly fork at `latest`, so no run can reuse
 another run's reads; branch pushes are most of the runs, and on the paid key
