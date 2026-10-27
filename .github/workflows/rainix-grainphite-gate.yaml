@@ -1,0 +1,37 @@
+name: rainix-grainphite-gate
+on:
+  workflow_call:
+    inputs:
+      url:
+        description: grainphite server origin; defaults to the GRAINPHITE_URL variable.
+        type: string
+        default: ''
+    outputs:
+      skip:
+        description: "'true' to skip the gated jobs; anything else, including a failed gate, means run."
+        value: ${{ jobs.gate.outputs.skip }}
+      group:
+        description: Concurrency group for the gated jobs. Never empty.
+        value: ${{ jobs.gate.outputs.group || format('grainphite-{0}-{1}', github.workflow, github.ref) }}
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      skip: ${{ steps.ask.outputs.skip }}
+      group: ${{ steps.ask.outputs.group }}
+    steps:
+      # Every step may fail without failing the job: the gated jobs then see
+      # an empty skip and run in full.
+      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
+        continue-on-error: true
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - id: ask
+        continue-on-error: true
+        uses: rainlanguage/rainix/.github/actions/grainphite-gate@main
+        with:
+          url: ${{ inputs.url || vars.GRAINPHITE_URL }}

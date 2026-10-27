@@ -1,0 +1,22 @@
+name: grainphite-report
+description: >-
+  Tells grainphite how a full CI run went: success only when every job in `needs` succeeded. A later restack of the same change skips only after a reported success. Authenticates with the job's OIDC token, so the job needs `id-token: write`. A failed report warns and does not fail the job.
+inputs:
+  needs:
+    description: toJSON(needs) of the jobs the gate governed.
+    required: true
+  url:
+    description: The grainphite server origin. Empty means nothing is reported.
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GRAINPHITE_URL: ${{ inputs.url }}
+        GRAINPHITE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        GRAINPHITE_NEEDS: ${{ inputs.needs }}
+      run: |
+        set -euo pipefail
+        nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- grainphite-report

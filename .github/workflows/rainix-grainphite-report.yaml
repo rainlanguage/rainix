@@ -1,0 +1,29 @@
+name: rainix-grainphite-report
+on:
+  workflow_call:
+    inputs:
+      needs:
+        description: toJSON(needs) of the jobs the gate governed.
+        type: string
+        required: true
+      url:
+        description: grainphite server origin; defaults to the GRAINPHITE_URL variable.
+        type: string
+        default: ''
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
+        continue-on-error: true
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - continue-on-error: true
+        uses: rainlanguage/rainix/.github/actions/grainphite-report@main
+        with:
+          needs: ${{ inputs.needs }}
+          url: ${{ inputs.url || vars.GRAINPHITE_URL }}

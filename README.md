@@ -286,6 +286,65 @@ jobs:
 Consumers needing only one of the three should call the individual reusable
 directly rather than this composite.
 
+#### rainix-grainphite-gate and rainix-grainphite-report
+
+For repos that stack PRs with [grainphite](https://github.com/rainlanguage/grainphite).
+A restack of N stacked PRs pushes N branches and would start N full CI runs.
+The gate asks grainphite whether this push needs a full run. The bottom PR of a
+stack, the merge queue, plain pushes and PRs labelled `ci:full` always run. An
+upstack PR whose own diff is the one that last passed is skipped. The report
+tells grainphite how a full run went, since only a pass earns a later skip.
+
+Both authenticate with the job's GitHub OIDC token, so no secret is involved.
+The server URL comes from the `url` input or the `GRAINPHITE_URL` variable. The
+gate fails open: no URL, a fork PR, or a server that is down means a full run.
+
+```yaml
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+jobs:
+  gate:
+    uses: rainlanguage/rainix/.github/workflows/rainix-grainphite-gate.yaml@main
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write
+  test:
+    needs: gate
+    if: ${{ !cancelled() }}
+    # Caps full runs per stack: a newer push in the same slot cancels this.
+    concurrency:
+      group: ${{ needs.gate.outputs.group }}-test
+      cancel-in-progress: true
+    uses: rainlanguage/rainix/.github/workflows/rainix-rs-test.yaml@main
+    with:
+      skip: ${{ needs.gate.outputs.skip == 'true' }}
+    secrets: inherit
+  report:
+    needs: [gate, test]
+    if: ${{ !cancelled() && needs.gate.outputs.skip == 'false' }}
+    uses: rainlanguage/rainix/.github/workflows/rainix-grainphite-report.yaml@main
+    with:
+      needs: ${{ toJSON(needs) }}
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write
+```
+
+The gated job skips inside the reusable workflow (its `skip` input), not with an
+`if:` on the caller job, so the required check keeps its name (`test / rs-test`)
+and shows as skipped, which GitHub counts as passing. `rainix-rs-test` and
+`rainix-rs-static` take `skip`. Give each gated job its own suffix on the group,
+or two gated jobs of one run cancel each other.
+
 #### rainix-autopublish
 
 `.github/workflows/rainix-autopublish.yaml` is the LIBRARY repo release

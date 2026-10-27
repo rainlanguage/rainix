@@ -1,0 +1,28 @@
+name: grainphite-gate
+description: >-
+  Asks grainphite whether this push needs full CI. Outputs skip (true only when grainphite says this is a restack of a change that already passed) and group (the concurrency group for the gated jobs). Authenticates with the job's OIDC token, so the job needs `id-token: write`. Fails open: any problem means skip=false.
+inputs:
+  url:
+    description: The grainphite server origin, for example https://grainphite-hooks.rainlang.xyz. Empty means run in full.
+    required: false
+    default: ''
+outputs:
+  skip:
+    description: "'true' to skip the gated jobs; anything else means run them."
+    value: ${{ steps.ask.outputs.skip }}
+  group:
+    description: Concurrency group for the gated jobs, empty when grainphite gave none.
+    value: ${{ steps.ask.outputs.group }}
+runs:
+  using: composite
+  steps:
+    - id: ask
+      shell: bash
+      env:
+        GRAINPHITE_URL: ${{ inputs.url }}
+        # A PR run checks out a merge commit; grainphite judges the PR head.
+        GRAINPHITE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      run: |
+        set -euo pipefail
+        nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- \
+          grainphite-gate --github-output "$GITHUB_OUTPUT"

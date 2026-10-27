@@ -106,6 +106,15 @@
 //       7200, poll 30 (minimum 1), grace 120. Needs GITHUB_REPOSITORY /
 //       GITHUB_SHA / GITHUB_RUN_ID / GITHUB_TOKEN (`actions: read`) and
 //       curl on PATH.
+//   grainphite-gate [--github-output <file>]
+//       Ask the grainphite server (GRAINPHITE_URL) whether this push of
+//       GRAINPHITE_HEAD_SHA needs full CI, authenticated by the job's OIDC
+//       token. Emits skip / group. Fails open: any problem means skip=false,
+//       exit 0. Semantics: grainphite.rs module doc.
+//   grainphite-report
+//       Tell the grainphite server how a full run went: success only when
+//       every job in GRAINPHITE_NEEDS (toJSON(needs)) succeeded. A failed
+//       report warns and exits 0.
 //   soldeer-gate --package <name> [--github-output <file>]
 //       Soldeer content gate: compare the normalized content of what
 //       `forge soldeer push --dry-run` would upload against the newest published
@@ -157,6 +166,7 @@ mod comment_loc_cap;
 mod context_bytes;
 mod env_ignored;
 mod frozen_snapshots;
+mod grainphite;
 mod install_staged_config;
 mod mutation_ledger;
 mod no_submodules;
@@ -364,6 +374,8 @@ fn main() {
             let grace = num(&args, "--grace-secs", 120);
             ci_gate::run(u64::from(timeout), u64::from(poll), u64::from(grace));
         }
+        "grainphite-gate" => grainphite::gate(flag(&args, "--github-output").as_deref()),
+        "grainphite-report" => grainphite::report(),
         "soldeer-gate" => {
             let pkg = flag(&args, "--package")
                 .unwrap_or_else(|| fail("soldeer-gate: --package <name> required"));
