@@ -298,8 +298,9 @@ run went, since only a pass earns a later skip. A `push` run on a PR's branch is
 judged as that PR, so `on: [push]` workflows skip too.
 
 Both authenticate with the job's GitHub OIDC token, so no secret is involved.
-The server URL comes from the `url` input or the `GRAINPHITE_URL` variable. The
-gate fails open: no URL, a fork PR, or a server that is down means a full run.
+The server URL comes from the `url` input, else the `GRAINPHITE_URL` variable,
+else `https://hooks.grainphite.rainlang.xyz`. The gate fails open: a fork PR or
+a server that is down means a full run.
 
 ```yaml
 name: CI

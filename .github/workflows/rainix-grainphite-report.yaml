@@ -7,7 +7,7 @@ on:
         type: string
         required: true
       url:
-        description: grainphite server origin; defaults to the GRAINPHITE_URL variable.
+        description: grainphite server origin. Defaults to the GRAINPHITE_URL variable, then https://hooks.grainphite.rainlang.xyz.
         type: string
         default: ''
 jobs:
@@ -26,4 +26,4 @@ jobs:
         uses: rainlanguage/rainix/.github/actions/grainphite-report@main
         with:
           needs: ${{ inputs.needs }}
-          url: ${{ inputs.url || vars.GRAINPHITE_URL }}
+          url: ${{ inputs.url || vars.GRAINPHITE_URL || 'https://hooks.grainphite.rainlang.xyz' }}
