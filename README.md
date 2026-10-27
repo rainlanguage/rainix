@@ -288,12 +288,14 @@ directly rather than this composite.
 
 #### rainix-grainphite-gate and rainix-grainphite-report
 
-For repos that stack PRs with [grainphite](https://github.com/rainlanguage/grainphite).
-A restack of N stacked PRs pushes N branches and would start N full CI runs.
-The gate asks grainphite whether this push needs a full run. The bottom PR of a
-stack, the merge queue, plain pushes and PRs labelled `ci:full` always run. An
-upstack PR whose own diff is the one that last passed is skipped. The report
-tells grainphite how a full run went, since only a pass earns a later skip.
+For repos that stack PRs with
+[grainphite](https://github.com/rainlanguage/grainphite). A restack of N stacked
+PRs pushes N branches and would start N full CI runs. The gate asks grainphite
+whether this push needs a full run. The bottom PR of a stack, the merge queue,
+trunk pushes and PRs labelled `ci:full` always run. An upstack PR whose own diff
+is the one that last passed is skipped. The report tells grainphite how a full
+run went, since only a pass earns a later skip. A `push` run on a PR's branch is
+judged as that PR, so `on: [push]` workflows skip too.
 
 Both authenticate with the job's GitHub OIDC token, so no secret is involved.
 The server URL comes from the `url` input or the `GRAINPHITE_URL` variable. The
