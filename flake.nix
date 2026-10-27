@@ -774,6 +774,14 @@
               pass_filenames = false;
             };
 
+            env-ignored = {
+              enable = true;
+              name = "env-ignored";
+              entry = "${rainix-static}/bin/rainix-static env-ignored";
+              always_run = true;
+              pass_filenames = false;
+            };
+
             # Misc
             denofmt = {
               enable = true;
