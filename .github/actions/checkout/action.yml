@@ -4,7 +4,7 @@ description: >-
 inputs:
   ssh-key:
     description: >-
-      Optional deploy key (e.g. `secrets.PUBLISH_PRIVATE_KEY`) for a checkout whose pushes should trigger downstream workflows. A composite action cannot read `secrets.*`, so the caller must plumb the secret through here. Empty (the default) falls back to the standard GITHUB_TOKEN checkout.
+      Optional GitHub SSH deploy key with write access to the caller repo (e.g. `secrets.AUTOPUBLISH_SSH_DEPLOY_KEY`; not an EVM key) for a checkout whose pushes should trigger downstream workflows. A composite action cannot read `secrets.*`, so the caller must plumb the secret through here. Empty (the default) falls back to the standard GITHUB_TOKEN checkout.
     required: false
     default: ''
   fetch-depth:
