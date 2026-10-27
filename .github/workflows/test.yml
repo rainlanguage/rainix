@@ -139,7 +139,18 @@ jobs:
   # Same BOOTSTRAP CAVEAT as the composites above: `@main` resolves against the
   # tip of main, so the PR that first adds this action is red on this job until
   # it merges.
+  #
+  # Two legs. `paid` passes the secrets, as default-branch runs do. `public`
+  # passes them empty, as every branch push and pull request in
+  # rainix-sol-test does, so the variables and hardcoded defaults that
+  # branch CI depends on are checked even while the paid key is healthy (the
+  # preflight stops at the first healthy candidate, so `paid` alone never
+  # reaches them).
   rpc-preflight:
+    strategy:
+      matrix:
+        source: [paid, public]
+      fail-fast: false
     runs-on: ubuntu-latest
     steps:
       - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
@@ -147,19 +158,19 @@ jobs:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - uses: rainlanguage/rainix/.github/actions/rpc-preflight@main
         env:
-          RAINIX_RPC_SECRET_ARBITRUM: ${{ secrets.RPC_URL_ARBITRUM_FORK }}
+          RAINIX_RPC_SECRET_ARBITRUM: ${{ matrix.source == 'paid' && secrets.RPC_URL_ARBITRUM_FORK || '' }}
           RAINIX_RPC_VARS_ARBITRUM: ${{ vars.RPC_URL_ARBITRUM_FORK }}
-          RAINIX_RPC_SECRET_BASE: ${{ secrets.RPC_URL_BASE_FORK }}
+          RAINIX_RPC_SECRET_BASE: ${{ matrix.source == 'paid' && secrets.RPC_URL_BASE_FORK || '' }}
           RAINIX_RPC_VARS_BASE: ${{ vars.RPC_URL_BASE_FORK }}
-          RAINIX_RPC_SECRET_BASE_SEPOLIA: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK }}
+          RAINIX_RPC_SECRET_BASE_SEPOLIA: ${{ matrix.source == 'paid' && secrets.RPC_URL_BASE_SEPOLIA_FORK || '' }}
           RAINIX_RPC_VARS_BASE_SEPOLIA: ${{ vars.RPC_URL_BASE_SEPOLIA_FORK }}
-          RAINIX_RPC_SECRET_ETHEREUM: ${{ secrets.RPC_URL_ETHEREUM_FORK }}
+          RAINIX_RPC_SECRET_ETHEREUM: ${{ matrix.source == 'paid' && secrets.RPC_URL_ETHEREUM_FORK || '' }}
           RAINIX_RPC_VARS_ETHEREUM: ${{ vars.RPC_URL_ETHEREUM_FORK }}
-          RAINIX_RPC_SECRET_FLARE: ${{ secrets.RPC_URL_FLARE_FORK }}
+          RAINIX_RPC_SECRET_FLARE: ${{ matrix.source == 'paid' && secrets.RPC_URL_FLARE_FORK || '' }}
           RAINIX_RPC_VARS_FLARE: ${{ vars.RPC_URL_FLARE_FORK }}
-          RAINIX_RPC_SECRET_POLYGON: ${{ secrets.RPC_URL_POLYGON_FORK }}
+          RAINIX_RPC_SECRET_POLYGON: ${{ matrix.source == 'paid' && secrets.RPC_URL_POLYGON_FORK || '' }}
           RAINIX_RPC_VARS_POLYGON: ${{ vars.RPC_URL_POLYGON_FORK }}
-          RAINIX_RPC_SECRET_SEPOLIA: ${{ secrets.RPC_URL_SEPOLIA_FORK }}
+          RAINIX_RPC_SECRET_SEPOLIA: ${{ matrix.source == 'paid' && secrets.RPC_URL_SEPOLIA_FORK || '' }}
           RAINIX_RPC_VARS_SEPOLIA: ${{ vars.RPC_URL_SEPOLIA_FORK }}
       - name: Assert the preflight bound every archive network
         # Presence only — never echo the values, they may be secret-derived.
