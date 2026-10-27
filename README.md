@@ -530,6 +530,16 @@ putting a non-secret into a secret (where masking makes logs unreadable for no
 security benefit). `#` starts a comment, so a candidate can be parked with a
 note.
 
+**The paid secret is for the default branch.** `rainix-sol-test` passes the
+`RPC_URL_<NETWORK>_FORK` secrets to the preflight only on the default branch,
+on tags, and on `schedule` and `workflow_dispatch` runs. Every other branch push
+and every pull request passes them as empty strings, so the pool for those runs
+starts at the variable. Fork suites mostly fork at `latest`, so no run can reuse
+another run's reads; branch pushes are most of the runs, and on the paid key
+they were most of the RPC bill. A newer push to the same branch also cancels the
+stale run on that branch. The default branch keeps one concurrency group per
+commit, so every merge still runs on the paid endpoints.
+
 **Health is archive-aware.** A candidate must report the right chain id, then
 serve historical account state and a historical `eth_call` at the deepest block
 any repo in the org pins for that network, three times consecutively. An
