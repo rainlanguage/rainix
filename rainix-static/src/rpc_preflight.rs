@@ -1168,9 +1168,9 @@ const PROXY_POLICY: &[&str] = &[
 ///   for an old block included, so it is twice the upstream count: two full
 ///   sweeps, matching `maxAttempts`. A cap of 2 stopped an old-block BSC
 ///   `eth_getLogs` at the second recent-only public, before the paid key.
-///   `emptyResultAccept` names the state reads whose empty answer is final,
-///   taken from the first upstream; `eth_getLogs` is left out so an empty
-///   old-block answer still walks to the paid key.
+///   Real empty answers
+///   (`0x` code, zero balance) stay accepted by eRPC's default
+///   `emptyResultAccept`, so they do not walk the list.
 /// - no hedge (it would race a second upstream, possibly the paid one).
 /// - `enforceHighestBlock` off: a public a few blocks behind is not retried.
 /// - paid upstreams get no shadow probes and a slow state poller.
@@ -1203,7 +1203,7 @@ fn proxy_yaml(port: u16, nets: &[(&Network, Vec<Upstream>)]) -> String {
         ));
         y.push_str("        directiveDefaults: { retryEmpty: true, enforceHighestBlock: false }\n");
         y.push_str(&format!(
-            "        failsafe:\n          - matchMethod: \"*\"\n            timeout: {{ duration: 120s }}\n            retry: {{ maxAttempts: 2, delay: 1s, emptyResultMaxAttempts: {cap}, emptyResultDelay: 0s, emptyResultAccept: [eth_getCode, eth_getBalance, eth_getStorageAt, eth_getTransactionCount, eth_call] }}\n"
+            "        failsafe:\n          - matchMethod: \"*\"\n            timeout: {{ duration: 120s }}\n            retry: {{ maxAttempts: 2, delay: 1s, emptyResultMaxAttempts: {cap}, emptyResultDelay: 0s }}\n"
         ));
         y.push_str("        selectionPolicy:\n          evalFunc: |\n");
         for line in PROXY_POLICY {
@@ -1446,7 +1446,7 @@ mod tests {
         let p = y.find("id: arbitrum-paid-0").unwrap();
         assert!(a < b && b < p, "registry order is public first, paid last");
         assert!(y.contains(
-            "retry: { maxAttempts: 2, delay: 1s, emptyResultMaxAttempts: 6, emptyResultDelay: 0s, emptyResultAccept: [eth_getCode, eth_getBalance, eth_getStorageAt, eth_getTransactionCount, eth_call] }"
+            "retry: { maxAttempts: 2, delay: 1s, emptyResultMaxAttempts: 6, emptyResultDelay: 0s }"
         ));
         assert!(y.contains("directiveDefaults: { retryEmpty: true, enforceHighestBlock: false }"));
         assert!(y.contains(".concat(upstreams.byTag('tier:paid'))"));
