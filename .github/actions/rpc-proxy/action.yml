@@ -1,0 +1,100 @@
+name: rpc-proxy
+description: >-
+  Runs eRPC (github.com/erpc/erpc) on the runner as a per-request failover proxy for fork tests, and points every <NETWORK>_RPC_URL the repo uses at it on 127.0.0.1. Per network the upstreams are the public candidates (RPC_URL_<NETWORK>_FORK variable, then the hardcoded public archive defaults, each probed once) followed by the RPC_URL_<NETWORK>_FORK secret as the last resort. A request that fails on one upstream (429, 5xx, timeout, missing trie node, unknown block) is retried on the next, so a public endpoint that throttles mid-suite no longer fails the suite, and the paid key is only spent on requests every public one failed. Candidates travel as env, exactly as for rpc-preflight. Call it again with mode report after the tests to print the calls each upstream served.
+inputs:
+  mode:
+    description: >-
+      'start' writes the config, starts the proxy and exports the local URLs. 'report' prints requests and errors per upstream from the proxy's metrics, and writes them to the job summary.
+    required: false
+    default: start
+  archive:
+    description: >-
+      Whether a public candidate must serve historical state at the network's archive probe block to join. Same meaning as rpc-preflight's input.
+    required: false
+    default: 'true'
+runs:
+  using: composite
+  steps:
+    - name: Start eRPC
+      if: inputs.mode == 'start'
+      shell: bash
+      env:
+        RAINIX_RPC_ARCHIVE: ${{ inputs.archive }}
+        # eRPC 0.4.0 (2026-10-11), linux x86_64, sha256 from its checksums.txt.
+        ERPC_VERSION: 0.4.0
+        ERPC_SHA256: bb4658b11bb1333e943b4e6f8819da26e1ed7e84b8c72305cbdc1a30cc4ea5f1
+      run: |
+        set -euo pipefail
+        if [[ "$RUNNER_OS" != Linux || "$RUNNER_ARCH" != X64 ]]; then
+          echo "::error::rpc-proxy: only linux x64 runners are supported" >&2
+          exit 1
+        fi
+        dir="$RUNNER_TEMP/rpc-proxy"
+        mkdir -p "$dir"
+        curl -fsSL --retry 3 -o "$dir/erpc" \
+          "https://github.com/erpc/erpc/releases/download/${ERPC_VERSION}/erpc_linux_x86_64"
+        echo "${ERPC_SHA256}  $dir/erpc" | sha256sum -c --quiet
+        chmod +x "$dir/erpc"
+
+        args=(rpc-preflight --proxy-config "$dir/erpc.yaml")
+        if [[ "$RAINIX_RPC_ARCHIVE" != "true" ]]; then
+          args+=(--no-archive)
+        fi
+        nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- "${args[@]}"
+        if [[ ! -s "$dir/erpc.yaml" ]] || ! grep -q '^      - id: ' "$dir/erpc.yaml"; then
+          echo "rpc-proxy: no network to serve; proxy not started"
+          exit 0
+        fi
+
+        # The config holds the paid URLs: it is never printed, and eRPC's own
+        # log is shown only if it fails to come up (the runner masks secrets).
+        "$dir/erpc" validate --config "$dir/erpc.yaml" > "$dir/validate.log" 2>&1 || {
+          tail -n 40 "$dir/validate.log" >&2
+          exit 1
+        }
+        nohup "$dir/erpc" start --config "$dir/erpc.yaml" > "$dir/erpc.log" 2>&1 &
+        echo $! > "$dir/erpc.pid"
+        for _ in $(seq 1 60); do
+          if curl -fs -o /dev/null http://127.0.0.1:4000/healthcheck; then
+            echo "rpc-proxy: eRPC ${ERPC_VERSION} up on 127.0.0.1:4000"
+            exit 0
+          fi
+          sleep 1
+        done
+        echo "::error::rpc-proxy: eRPC did not become healthy in 60s" >&2
+        tail -n 40 "$dir/erpc.log" >&2
+        exit 1
+    - name: Report upstream calls
+      if: inputs.mode == 'report'
+      shell: bash
+      run: |
+        set -euo pipefail
+        if ! metrics=$(curl -fs http://127.0.0.1:4001/metrics); then
+          echo "rpc-proxy: no proxy metrics (proxy not running)"
+          exit 0
+        fi
+        # Sum each counter by its `upstream` label. Upstream ids are
+        # <network>-<source>-<n> and never contain a URL.
+        sum_by_upstream() {
+          awk -v m="$1" '
+            index($0, m "{") == 1 && match($0, /upstream="[^"]*"/) {
+              u = substr($0, RSTART + 10, RLENGTH - 11); s[u] += $NF
+            }
+            END { for (u in s) printf "%s %d\n", u, s[u] }' <<< "$metrics" | sort
+        }
+        requests=$(sum_by_upstream erpc_upstream_request_total)
+        errors=$(sum_by_upstream erpc_upstream_request_errors_total)
+        {
+          echo "### Fork RPC calls per upstream"
+          echo
+          echo "| upstream | requests | errors |"
+          echo "|---|---:|---:|"
+          while read -r u n; do
+            [[ -n "$u" ]] || continue
+            e=$(awk -v u="$u" '$1 == u { print $2 }' <<< "$errors")
+            echo "| $u | $n | ${e:-0} |"
+          done <<< "$requests"
+          paid=$(awk '$1 ~ /-paid-/ { s += $2 } END { print s + 0 }' <<< "$requests")
+          echo
+          echo "Paid key requests this run: **$paid**"
+        } | tee -a "$GITHUB_STEP_SUMMARY"

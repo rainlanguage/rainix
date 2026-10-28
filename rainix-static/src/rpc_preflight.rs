@@ -76,6 +76,11 @@ impl fmt::Display for Source {
 }
 
 impl Source {
+    /// `default[0]` as an eRPC upstream id fragment: `default-0`.
+    fn slug(&self) -> String {
+        self.to_string().replace('[', "-").replace(']', "")
+    }
+
     /// True for candidates that came from a GitHub secret, i.e. the ones whose
     /// URL may embed an API key and must be masked before it reaches GITHUB_ENV.
     fn is_secret(&self) -> bool {
@@ -1080,6 +1085,209 @@ pub(crate) fn run(
     println!("rpc-preflight: clean");
 }
 
+/// One eRPC upstream: its id (what metrics and logs show), URL and tier.
+struct Upstream {
+    id: String,
+    url: Url,
+    paid: bool,
+}
+
+/// Selection policy for every network: healthy public upstreams ranked by
+/// latency, then every paid upstream at the TAIL. eRPC's retry walks this list
+/// in order, so a request reaches the paid key only after every public one has
+/// failed it. The stock policy would rank the paid key first (it is fastest)
+/// or drop it from the list while any public survives.
+const PROXY_POLICY: &[&str] = &[
+    "(upstreams, ctx) => upstreams",
+    "  .excludeTag('tier:paid')",
+    "  .removeCordoned()",
+    "  .excludeIf(all(samplesAbove(10), errorRateAbove(0.7)))",
+    "  .excludeIf(all(samplesAbove(10), throttleRateAbove(0.4)))",
+    "  .whenEmpty(() => upstreams.excludeTag('tier:paid'))",
+    "  .sortByScore(PREFER_FASTEST)",
+    "  .concat(upstreams.byTag('tier:paid'))",
+];
+
+/// Render the eRPC config. Pure, so the ordering and the knobs that keep
+/// traffic off the paid key are unit tested.
+///
+/// - retry `maxAttempts` = upstream count: one try per upstream, paid last.
+/// - `retryEmpty` on, with `emptyResultMaxAttempts` = upstream count and no
+///   block-time delay: "missing trie node" and friends are missing-data
+///   errors, which eRPC only fails over when this is on. Real empty answers
+///   (`0x` code, zero balance) stay accepted by eRPC's default
+///   `emptyResultAccept`, so they do not walk the list.
+/// - no hedge (it would race a second upstream, possibly the paid one).
+/// - `enforceHighestBlock` off: a public a few blocks behind is not retried.
+/// - paid upstreams get no shadow probes and a slow state poller.
+fn proxy_yaml(port: u16, nets: &[(&Network, Vec<Upstream>)]) -> String {
+    let q = |s: &str| serde_json::to_string(s).expect("string encodes");
+    let mut y = String::new();
+    y.push_str("logLevel: warn\n");
+    y.push_str(&format!(
+        "server:\n  httpHostV4: 127.0.0.1\n  httpPortV4: {port}\n  listenV6: false\n  maxTimeout: 300s\n"
+    ));
+    y.push_str(&format!(
+        "metrics:\n  enabled: true\n  hostV4: 127.0.0.1\n  port: {}\n  listenV6: false\n",
+        port + 1
+    ));
+    // In-run cache: a fork suite re-reads the same state from many forks.
+    y.push_str("database:\n  evmJsonRpcCache:\n    connectors:\n      - id: run\n        driver: memory\n        memory: { maxItems: 2000000, maxTotalSize: 4GB }\n    policies:\n");
+    for (finality, ttl) in [("finalized", "0"), ("unfinalized", "0"), ("realtime", "2s")] {
+        y.push_str(&format!(
+            "      - {{ network: \"*\", method: \"*\", finality: {finality}, empty: allow, connector: run, ttl: {ttl} }}\n"
+        ));
+    }
+    y.push_str("projects:\n  - id: main\n");
+    y.push_str("    upstreamDefaults:\n      failsafe:\n        - matchMethod: \"*\"\n          timeout: { duration: 10s }\n          retry: { maxAttempts: 1 }\n");
+    y.push_str("    networks:\n");
+    for (net, ups) in nets {
+        let n = ups.len().max(1);
+        y.push_str(&format!(
+            "      - architecture: evm\n        evm: {{ chainId: {}, blockUnavailableDelayMultiplier: 0 }}\n",
+            net.chain_id
+        ));
+        y.push_str("        directiveDefaults: { retryEmpty: true, enforceHighestBlock: false }\n");
+        y.push_str(&format!(
+            "        failsafe:\n          - matchMethod: \"*\"\n            timeout: {{ duration: 120s }}\n            retry: {{ maxAttempts: {n}, delay: 0s, emptyResultMaxAttempts: {n}, emptyResultDelay: 0s }}\n"
+        ));
+        y.push_str("        selectionPolicy:\n          evalFunc: |\n");
+        for line in PROXY_POLICY {
+            y.push_str(&format!("            {line}\n"));
+        }
+    }
+    y.push_str("    upstreams:\n");
+    for (net, ups) in nets {
+        for u in ups {
+            y.push_str(&format!(
+                "      - id: {}\n        endpoint: {}\n",
+                u.id,
+                q(u.url.expose())
+            ));
+            if u.paid {
+                y.push_str(&format!(
+                    "        tags: [\"tier:paid\"]\n        routing: {{ probe: \"off\" }}\n        evm: {{ chainId: {}, statePollerInterval: 300s }}\n",
+                    net.chain_id
+                ));
+            } else {
+                y.push_str(&format!(
+                    "        tags: [\"tier:public\"]\n        evm: {{ chainId: {} }}\n",
+                    net.chain_id
+                ));
+            }
+        }
+    }
+    y
+}
+
+/// Proxy mode: instead of exporting one chosen URL per network, write an eRPC
+/// config that serves every demanded network from 127.0.0.1 with per-request
+/// failover, and export the local URL. Public candidates (variable, then
+/// defaults) are probed once, without the load burst, so a node that answers
+/// archive reads wrongly never joins; the secret's entries are appended last
+/// and never probed, so the probe spends nothing on the paid key.
+pub(crate) fn run_proxy(
+    root: &Path,
+    github_env: &Path,
+    config: &Path,
+    timeout: u32,
+    archive: bool,
+    port: u16,
+) {
+    let want = demanded(root);
+    let mut nets: Vec<(&Network, Vec<Upstream>)> = Vec::new();
+    for net in NETWORKS {
+        if !want.contains(net.key) {
+            continue;
+        }
+        let secret_raw =
+            std::env::var(format!("RAINIX_RPC_SECRET_{}", upper(net.key))).unwrap_or_default();
+        let vars_raw =
+            std::env::var(format!("RAINIX_RPC_VARS_{}", upper(net.key))).unwrap_or_default();
+        let paid = parse_list(&secret_raw);
+        let publics: Vec<(Source, Url)> = pool(net, "", &vars_raw)
+            .into_iter()
+            .filter(|(_, u)| !paid.iter().any(|p| p == u.expose()))
+            .collect();
+        let mut ups = Vec::new();
+        let mut rejected = Vec::new();
+        for (src, url) in &publics {
+            match probe(url, net, 1, timeout, archive, 0) {
+                Ok(()) => ups.push(Upstream {
+                    id: format!("{}-{}", net.key, src.slug()),
+                    url: Url(url.expose().to_string()),
+                    paid: false,
+                }),
+                Err(reason) => {
+                    println!("rpc-proxy: {}: {src} left out: {reason}", net.key);
+                    rejected.push((*src, Url(url.expose().to_string())));
+                }
+            }
+        }
+        if ups.is_empty() {
+            // Every public failed its one probe: keep them all rather than
+            // none, so a passing upstream is still tried before the paid key.
+            println!(
+                "::warning::rpc-proxy: {}: no public candidate passed the probe; keeping all",
+                net.key
+            );
+            for (src, url) in rejected {
+                ups.push(Upstream {
+                    id: format!("{}-{}", net.key, src.slug()),
+                    url,
+                    paid: false,
+                });
+            }
+        }
+        for (i, u) in paid.into_iter().enumerate() {
+            let url = Url(u);
+            // Defence in depth, as in `run`: the runner masks the secret, and
+            // this also covers a keyed URL that arrived through a variable.
+            println!("::add-mask::{}", url.expose());
+            ups.push(Upstream {
+                id: format!("{}-paid-{i}", net.key),
+                url,
+                paid: true,
+            });
+        }
+        if ups.is_empty() {
+            println!(
+                "rpc-proxy: {}: no candidates configured; leaving {} unset",
+                net.key, net.env_name
+            );
+            continue;
+        }
+        let order: Vec<&str> = ups.iter().map(|u| u.id.as_str()).collect();
+        println!(
+            "rpc-proxy: {}: chain {} via {}",
+            net.key,
+            net.chain_id,
+            order.join(" > ")
+        );
+        nets.push((net, ups));
+    }
+
+    let yaml = proxy_yaml(port, &nets);
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(config)
+            .unwrap_or_else(|e| fail(&format!("rpc-proxy: open {}: {e}", config.display())));
+        f.write_all(yaml.as_bytes())
+            .unwrap_or_else(|e| fail(&format!("rpc-proxy: write {}: {e}", config.display())));
+    }
+    for (net, _) in &nets {
+        let local = Url(format!("http://127.0.0.1:{port}/main/evm/{}", net.chain_id));
+        export(github_env, net.env_name, &local);
+        export(github_env, net.secret_name, &local);
+    }
+    println!("rpc-proxy: config written for {} network(s)", nets.len());
+}
+
 fn upper(key: &str) -> String {
     key.to_ascii_uppercase()
 }
@@ -1088,6 +1296,69 @@ fn upper(key: &str) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn proxy_net() -> &'static Network {
+        NETWORKS.iter().find(|n| n.key == "arbitrum").unwrap()
+    }
+
+    fn up(id: &str, url: &str, paid: bool) -> Upstream {
+        Upstream {
+            id: id.to_string(),
+            url: Url(url.to_string()),
+            paid,
+        }
+    }
+
+    #[test]
+    fn proxy_yaml_puts_paid_last_and_tries_every_upstream() {
+        let ups = vec![
+            up("arbitrum-default-0", "https://a.example", false),
+            up("arbitrum-default-1", "https://b.example", false),
+            up("arbitrum-paid-0", "https://paid.example/KEY", true),
+        ];
+        let y = proxy_yaml(4000, &[(proxy_net(), ups)]);
+        let a = y.find("id: arbitrum-default-0").unwrap();
+        let b = y.find("id: arbitrum-default-1").unwrap();
+        let p = y.find("id: arbitrum-paid-0").unwrap();
+        assert!(a < b && b < p, "registry order is public first, paid last");
+        assert!(y.contains(
+            "retry: { maxAttempts: 3, delay: 0s, emptyResultMaxAttempts: 3, emptyResultDelay: 0s }"
+        ));
+        assert!(y.contains("directiveDefaults: { retryEmpty: true, enforceHighestBlock: false }"));
+        assert!(y.contains(".concat(upstreams.byTag('tier:paid'))"));
+        assert!(!y.contains("hedge"), "no hedge: it could race the paid key");
+        assert!(y.contains("endpoint: \"https://paid.example/KEY\"\n        tags: [\"tier:paid\"]\n        routing: { probe: \"off\" }"));
+        assert!(y.contains("httpHostV4: 127.0.0.1\n  httpPortV4: 4000"));
+        assert!(y.contains("port: 4001"));
+    }
+
+    #[test]
+    fn proxy_yaml_without_paid_has_no_paid_tier_upstream() {
+        let y = proxy_yaml(
+            4000,
+            &[(
+                proxy_net(),
+                vec![up("arbitrum-default-0", "https://a.example", false)],
+            )],
+        );
+        assert!(!y.contains("tags: [\"tier:paid\"]"));
+        assert!(y.contains("maxAttempts: 1, delay: 0s, emptyResultMaxAttempts: 1"));
+    }
+
+    #[test]
+    fn proxy_yaml_quotes_urls() {
+        let y = proxy_yaml(
+            4000,
+            &[(proxy_net(), vec![up("x", "https://a.example/#: y", false)])],
+        );
+        assert!(y.contains("endpoint: \"https://a.example/#: y\""));
+    }
+
+    #[test]
+    fn source_slug_is_an_id_fragment() {
+        assert_eq!(Source::Default(2).slug(), "default-2");
+        assert_eq!(Source::Variable(0).slug(), "variable-0");
+    }
 
     #[test]
     fn url_never_formats_its_value() {

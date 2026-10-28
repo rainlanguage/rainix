@@ -184,6 +184,44 @@ jobs:
             fi
           done
           exit "$fail"
+  # The fork-test proxy, from THIS checkout (`./`): the PR that changes it
+  # tests its own version. Both legs check that Arbitrum is served, archive
+  # reads included, and that an empty answer (an EOA's `0x` code) is accepted
+  # from the first public upstream instead of walking down to the paid key.
+  rpc-proxy:
+    strategy:
+      matrix:
+        source: [paid, public]
+      fail-fast: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: ./.github/actions/rpc-proxy
+        env:
+          RAINIX_RPC_SECRET_ARBITRUM: ${{ matrix.source == 'paid' && secrets.RPC_URL_ARBITRUM_FORK || '' }}
+          RAINIX_RPC_VARS_ARBITRUM: ${{ vars.RPC_URL_ARBITRUM_FORK }}
+      - name: Requests through the proxy
+        run: |
+          set -euo pipefail
+          rpc() {
+            curl -fsS "$ARBITRUM_RPC_URL" -H 'content-type: application/json' \
+              -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$1\",\"params\":$2}"
+          }
+          rpc eth_chainId '[]' | grep -q '"result":"0xa4b1"'
+          # WETH balance at the deepest Arbitrum block the org pins.
+          rpc eth_getBalance '["0x82aF49447D8a07e3bd95BD0d56f35241523fBab1","0x10b07600"]' | grep -q '"result":"0x'
+          rpc eth_getCode '["0x000000000000000000000000000000000000dEaD","latest"]' | grep -q '"result":"0x"'
+          paid_code=$(curl -fs http://127.0.0.1:4001/metrics \
+            | grep '^erpc_upstream_request_total{' | grep 'category="eth_getCode"' \
+            | grep 'upstream="arbitrum-paid-' | awk '{ s += $NF } END { print s + 0 }')
+          echo "paid eth_getCode calls: $paid_code"
+          [ "$paid_code" -eq 0 ]
+      - if: always()
+        uses: ./.github/actions/rpc-proxy
+        with:
+          mode: report
   # rainix eats the caps it hands consumers, like the sol gates above. Neither
   # ran against rainix itself: both are composite actions, and the matrix jobs
   # here run devshell TASKS. So the repo that sets the org's limits was the one

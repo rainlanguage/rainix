@@ -530,20 +530,25 @@ putting a non-secret into a secret (where masking makes logs unreadable for no
 security benefit). `#` starts a comment, so a candidate can be parked with a
 note.
 
-**The paid secret is for the default branch.** `rainix-sol-test` passes the
-`RPC_URL_<NETWORK>_FORK` secrets to the preflight only on the default branch, on
-tags, and on `schedule` and `workflow_dispatch` runs. Every other branch push
-and every pull request passes them as empty strings, so the pool for those runs
-starts at the variable. Fork suites mostly fork at `latest`, so no run can reuse
-another run's reads; branch pushes are most of the runs, and on the paid key
-they were most of the RPC bill. A newer push to the same branch also cancels the
-stale run on that branch. The default branch keeps one concurrency group per
-commit, so every merge still runs on the paid endpoints.
+**Fork tests go through a local failover proxy.** `rainix-sol-test` does not
+pick one URL per network. The `rpc-proxy` composite action starts
+[eRPC](https://github.com/erpc/erpc) (0.4.0, pinned by sha256) on the runner and
+points every `<NETWORK>_RPC_URL` the repo uses at `127.0.0.1:4000`. Per network
+its upstreams are the public candidates (the variable, then the defaults, each
+probed once without the load burst) and then the secret, last. Every request
+fails over on its own: a 429, a 5xx, a timeout or a "missing trie node" on one
+upstream is retried on the next, so a public endpoint that throttles halfway
+through the suite no longer fails it, and the paid key only serves requests
+every public upstream failed. An empty answer (an EOA's `0x` code, a zero
+balance) is accepted where it lands and is not retried. Repeated reads are
+served from an in-run cache. The job summary lists the requests each upstream
+served, paid ones included.
 
-A suite that needs a call no public endpoint serves (for example `eth_getLogs`
-at an old BSC block) keeps the paid secret for that network on every run by
-naming it: `with: { paid-fork-rpc-networks: bsc }` on the `rainix-sol` or
-`rainix-sol-test` call, a space-separated list of preflight keys.
+The secret reaches the proxy on every run except `pull_request_target`, which
+runs on public upstreams only. A newer push to the same branch cancels the stale
+run on that branch; the default branch keeps one concurrency group per commit,
+so every merge still runs to completion. Deploy and broadcast paths keep the
+single-URL preflight below.
 
 **Health is archive-aware.** A candidate must report the right chain id, then
 serve historical account state and a historical `eth_call` at the deepest block

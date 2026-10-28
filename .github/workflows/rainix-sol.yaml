@@ -1,13 +1,6 @@
 name: rainix-sol
 on:
   workflow_call:
-    inputs:
-      paid-fork-rpc-networks:
-        description: >-
-          Networks whose RPC_URL_<NETWORK>_FORK secret is passed on every run, branches and pull requests included, as a space-separated list of preflight keys (for example `bsc`). For a fork suite that needs a call no public endpoint serves, such as eth_getLogs at an old BSC block. Every other network uses the paid secret only on the default branch, tags, schedules and dispatches. Not on `pull_request_target`, and GitHub withholds secrets from pull requests opened from forks, so a fork PR that needs the paid endpoint is checked by a workflow_dispatch run from a trusted branch.
-        type: string
-        required: false
-        default: ''
     secrets:
       PRIVATE_KEY:
         required: false
@@ -40,8 +33,6 @@ jobs:
     uses: ./.github/workflows/rainix-sol-legal.yaml
   test:
     uses: ./.github/workflows/rainix-sol-test.yaml
-    with:
-      paid-fork-rpc-networks: ${{ inputs.paid-fork-rpc-networks }}
     secrets:
       PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
       EXPLORER_VERIFICATION_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY }}
