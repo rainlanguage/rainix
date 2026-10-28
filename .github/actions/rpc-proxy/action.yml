@@ -54,6 +54,15 @@ runs:
         for _ in $(seq 1 60); do
           if curl -fs -o /dev/null http://127.0.0.1:4000/healthcheck; then
             echo "rpc-proxy: eRPC ${ERPC_VERSION} up on 127.0.0.1:4000"
+            # Upstreams join the selection policy as they initialize; wait so the first fork reads see them.
+            for _ in $(seq 1 60); do
+              if curl -fs -o /dev/null 'http://127.0.0.1:4000/healthcheck?eval=all:activeUpstreams'; then
+                sleep 2
+                exit 0
+              fi
+              sleep 1
+            done
+            echo "::warning::rpc-proxy: not every upstream came up in 60s; serving with those that did"
             exit 0
           fi
           sleep 1
