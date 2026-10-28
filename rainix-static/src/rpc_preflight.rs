@@ -1255,6 +1255,7 @@ pub(crate) fn run_proxy(
 ) {
     let want = demanded(root);
     let mut nets: Vec<(&Network, Vec<Upstream>)> = Vec::new();
+    let mut failed: Vec<&'static str> = Vec::new();
     for net in NETWORKS {
         if !want.contains(net.key) {
             continue;
@@ -1268,6 +1269,7 @@ pub(crate) fn run_proxy(
             .into_iter()
             .filter(|(_, u)| !paid.iter().any(|p| p == u.expose()))
             .collect();
+        let configured = !publics.is_empty() || !paid.is_empty();
         let mut ups = Vec::new();
         let mut rejected = Vec::new();
         for (src, url) in &publics {
@@ -1351,10 +1353,19 @@ pub(crate) fn run_proxy(
             });
         }
         if ups.is_empty() {
-            println!(
-                "rpc-proxy: {}: no candidates configured; leaving {} unset",
-                net.key, net.env_name
+            if !configured {
+                println!(
+                    "rpc-proxy: {}: no candidates configured; leaving {} unset",
+                    net.key, net.env_name
+                );
+                continue;
+            }
+            eprintln!(
+                "::error::rpc-proxy: {}: every candidate was rejected (reasons above); \
+                 add a working URL to the {} secret (keyed) or variable (public, newline-separated).",
+                net.key, net.secret_name
             );
+            failed.push(net.key);
             continue;
         }
         let order: Vec<&str> = ups.iter().map(|u| u.id.as_str()).collect();
@@ -1367,6 +1378,12 @@ pub(crate) fn run_proxy(
         nets.push((net, ups));
     }
 
+    if !failed.is_empty() {
+        fail(&format!(
+            "rpc-proxy: no usable RPC endpoint for: {}",
+            failed.join(", ")
+        ));
+    }
     if nets.is_empty() {
         // No config at all: the action then skips downloading eRPC.
         let _ = std::fs::remove_file(config);
