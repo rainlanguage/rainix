@@ -1171,7 +1171,7 @@ fn proxy_yaml(port: u16, nets: &[(&Network, Vec<Upstream>)]) -> String {
     y.push_str("projects:\n  - id: main\n");
     y.push_str("    upstreamDefaults:\n      failsafe:\n        - matchMethod: \"*\"\n          timeout: { duration: 10s }\n          retry: { maxAttempts: 1 }\n");
     y.push_str("    networks:\n");
-    for (net, ups) in nets {
+    for (net, _) in nets {
         y.push_str(&format!(
             "      - architecture: evm\n        evm: {{ chainId: {}, blockUnavailableDelayMultiplier: 0 }}\n",
             net.chain_id
