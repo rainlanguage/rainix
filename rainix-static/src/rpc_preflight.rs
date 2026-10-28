@@ -1090,6 +1090,33 @@ struct Upstream {
     id: String,
     url: Url,
     paid: bool,
+    /// False for a public node that refused state 1M blocks below its head.
+    /// eRPC is told it holds only recent blocks, so an old-block read skips
+    /// it rather than taking its refusal (often a 403 that eRPC treats as
+    /// final) as the answer.
+    archive: bool,
+}
+
+/// How far below its head a public node must serve state to count as archive.
+const OLD_STATE_DEPTH: u64 = 1_000_000;
+
+fn serves_old_state(url: &Url, net: &Network, timeout: u32) -> bool {
+    let head_body = r#"{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}"#;
+    let Some(head) = rpc(url, timeout, head_body, None)
+        .ok()
+        .and_then(|v| hex_result(&v).and_then(|h| u64::from_str_radix(&h[2..], 16).ok()))
+    else {
+        return false;
+    };
+    let old = head.saturating_sub(OLD_STATE_DEPTH).max(1);
+    let body = format!(
+        r#"{{"jsonrpc":"2.0","id":1,"method":"eth_getBalance","params":["{}","{}"]}}"#,
+        net.probe_contract,
+        block_tag(Some(old))
+    );
+    rpc(url, timeout, &body, Some(old))
+        .ok()
+        .is_some_and(|v| hex_result(&v).is_some())
 }
 
 /// Selection policy for every network: healthy public upstreams ranked by
@@ -1169,9 +1196,14 @@ fn proxy_yaml(port: u16, nets: &[(&Network, Vec<Upstream>)]) -> String {
                     "        tags: [\"tier:paid\"]\n        routing: {{ probe: \"off\" }}\n        evm: {{ chainId: {}, statePollerInterval: 300s }}\n",
                     net.chain_id
                 ));
-            } else {
+            } else if u.archive {
                 y.push_str(&format!(
                     "        tags: [\"tier:public\"]\n        evm: {{ chainId: {} }}\n",
+                    net.chain_id
+                ));
+            } else {
+                y.push_str(&format!(
+                    "        tags: [\"tier:public\"]\n        evm: {{ chainId: {}, blockAvailability: {{ lower: {{ latestBlockMinus: 128 }} }} }}\n",
                     net.chain_id
                 ));
             }
@@ -1213,11 +1245,22 @@ pub(crate) fn run_proxy(
         let mut rejected = Vec::new();
         for (src, url) in &publics {
             match probe(url, net, 1, timeout, archive, 0) {
-                Ok(()) => ups.push(Upstream {
-                    id: format!("{}-{}", net.key, src.slug()),
-                    url: Url(url.expose().to_string()),
-                    paid: false,
-                }),
+                Ok(()) => {
+                    // `probe` already read state at the network's archive
+                    // pin; a network with none gets the depth check here.
+                    let deep = !archive
+                        || !net.archive_blocks.is_empty()
+                        || serves_old_state(url, net, timeout);
+                    if !deep {
+                        println!("rpc-proxy: {}: {src} serves recent blocks only", net.key);
+                    }
+                    ups.push(Upstream {
+                        id: format!("{}-{}", net.key, src.slug()),
+                        url: Url(url.expose().to_string()),
+                        paid: false,
+                        archive: deep,
+                    })
+                }
                 Err(reason) => {
                     println!("rpc-proxy: {}: {src} left out: {reason}", net.key);
                     rejected.push((*src, Url(url.expose().to_string())));
@@ -1236,6 +1279,7 @@ pub(crate) fn run_proxy(
                     id: format!("{}-{}", net.key, src.slug()),
                     url,
                     paid: false,
+                    archive: true,
                 });
             }
         }
@@ -1248,6 +1292,7 @@ pub(crate) fn run_proxy(
                 id: format!("{}-paid-{i}", net.key),
                 url,
                 paid: true,
+                archive: true,
             });
         }
         if ups.is_empty() {
@@ -1306,6 +1351,7 @@ mod tests {
             id: id.to_string(),
             url: Url(url.to_string()),
             paid,
+            archive: true,
         }
     }
 
@@ -1343,6 +1389,14 @@ mod tests {
         );
         assert!(!y.contains("tags: [\"tier:paid\"]"));
         assert!(y.contains("maxAttempts: 1, delay: 0s, emptyResultMaxAttempts: 1"));
+    }
+
+    #[test]
+    fn proxy_yaml_marks_recent_only_publics() {
+        let mut recent = up("arbitrum-variable-0", "https://r.example", false);
+        recent.archive = false;
+        let y = proxy_yaml(4000, &[(proxy_net(), vec![recent])]);
+        assert!(y.contains("blockAvailability: { lower: { latestBlockMinus: 128 } }"));
     }
 
     #[test]
