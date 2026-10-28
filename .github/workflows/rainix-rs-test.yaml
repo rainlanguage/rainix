@@ -1,10 +1,16 @@
 name: rainix-rs-test
 on:
   workflow_call:
+    inputs:
+      skip:
+        description: Skip the job, keeping its check name. Set from rainix-grainphite-gate's skip output.
+        type: boolean
+        default: false
 env:
   RAINIX_SHA: 2aea60e5c4004cfaeb6168f26e71b3ed695fd349
 jobs:
   rs-test:
+    if: ${{ !inputs.skip }}
     runs-on: ubuntu-latest
     steps:
       # Shared nix + cachix CI preamble (checkout, nix-quick-install, Cachix,
