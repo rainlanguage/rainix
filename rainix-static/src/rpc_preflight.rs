@@ -1205,7 +1205,7 @@ fn proxy_yaml(port: u16, nets: &[(&Network, Vec<Upstream>)]) -> String {
         y.push_str(&format!(
             "        failsafe:\n          - matchMethod: \"*\"\n            timeout: {{ duration: 120s }}\n            retry: {{ maxAttempts: 2, delay: 1s, emptyResultMaxAttempts: {cap}, emptyResultDelay: 0s }}\n"
         ));
-        y.push_str("        selectionPolicy:\n          evalFunc: |\n");
+        y.push_str("        selectionPolicy:\n          evalInterval: 1s\n          evalFunc: |\n");
         for line in PROXY_POLICY {
             y.push_str(&format!("            {line}\n"));
         }
@@ -1449,6 +1449,7 @@ mod tests {
             "retry: { maxAttempts: 2, delay: 1s, emptyResultMaxAttempts: 6, emptyResultDelay: 0s }"
         ));
         assert!(y.contains("directiveDefaults: { retryEmpty: true, enforceHighestBlock: false }"));
+        assert!(y.contains("selectionPolicy:\n          evalInterval: 1s\n          evalFunc: |\n"));
         assert!(y.contains(".concat(upstreams.byTag('tier:paid'))"));
         assert!(!y.contains("hedge"), "no hedge: it could race the paid key");
         assert!(y.contains("endpoint: \"https://paid.example/KEY\"\n        tags: [\"tier:paid\"]\n        routing: { probe: \"off\" }"));
