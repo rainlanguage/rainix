@@ -1158,9 +1158,12 @@ const PROXY_POLICY: &[&str] = &[
 ///   last. `maxAttempts: 2` allows one more sweep, 1s later, for a moment
 ///   when every upstream failed at once; each sweep reaches the paid key at
 ///   most once.
-/// - `retryEmpty` on, capped at the same two sweeps with no block-time
-///   delay, so a missing-data error ("missing trie node") everywhere also
-///   gets the second sweep. Real empty answers
+/// - `retryEmpty` on, with no block-time delay. Its cap counts every
+///   missing-data or block-unavailable answer, each upstream a sweep skips
+///   for an old block included, so it is twice the upstream count: two full
+///   sweeps, matching `maxAttempts`. A cap of 2 stopped an old-block BSC
+///   `eth_getLogs` at the second recent-only public, before the paid key.
+///   Real empty answers
 ///   (`0x` code, zero balance) stay accepted by eRPC's default
 ///   `emptyResultAccept`, so they do not walk the list.
 /// - no hedge (it would race a second upstream, possibly the paid one).
@@ -1187,15 +1190,16 @@ fn proxy_yaml(port: u16, nets: &[(&Network, Vec<Upstream>)]) -> String {
     y.push_str("projects:\n  - id: main\n");
     y.push_str("    upstreamDefaults:\n      failsafe:\n        - matchMethod: \"*\"\n          timeout: { duration: 10s }\n          retry: { maxAttempts: 1 }\n");
     y.push_str("    networks:\n");
-    for (net, _) in nets {
+    for (net, ups) in nets {
+        let cap = 2 * ups.len().max(1);
         y.push_str(&format!(
             "      - architecture: evm\n        evm: {{ chainId: {}, blockUnavailableDelayMultiplier: 0 }}\n",
             net.chain_id
         ));
         y.push_str("        directiveDefaults: { retryEmpty: true, enforceHighestBlock: false }\n");
-        y.push_str(
-            "        failsafe:\n          - matchMethod: \"*\"\n            timeout: { duration: 120s }\n            retry: { maxAttempts: 2, delay: 1s, emptyResultMaxAttempts: 2, emptyResultDelay: 0s }\n",
-        );
+        y.push_str(&format!(
+            "        failsafe:\n          - matchMethod: \"*\"\n            timeout: {{ duration: 120s }}\n            retry: {{ maxAttempts: 2, delay: 1s, emptyResultMaxAttempts: {cap}, emptyResultDelay: 0s }}\n"
+        ));
         y.push_str("        selectionPolicy:\n          evalFunc: |\n");
         for line in PROXY_POLICY {
             y.push_str(&format!("            {line}\n"));
@@ -1420,7 +1424,7 @@ mod tests {
         let p = y.find("id: arbitrum-paid-0").unwrap();
         assert!(a < b && b < p, "registry order is public first, paid last");
         assert!(y.contains(
-            "retry: { maxAttempts: 2, delay: 1s, emptyResultMaxAttempts: 2, emptyResultDelay: 0s }"
+            "retry: { maxAttempts: 2, delay: 1s, emptyResultMaxAttempts: 6, emptyResultDelay: 0s }"
         ));
         assert!(y.contains("directiveDefaults: { retryEmpty: true, enforceHighestBlock: false }"));
         assert!(y.contains(".concat(upstreams.byTag('tier:paid'))"));
