@@ -2123,4 +2123,21 @@ mod tests {
             Reason::Quota { code: 30 }
         );
     }
+
+    #[test]
+    fn served_code_is_true_for_nonempty_hex_bytecode() {
+        assert!(served_code(&json!("0x60806040")));
+    }
+
+    #[test]
+    fn served_code_is_false_for_empty_bytecode() {
+        assert!(!served_code(&json!("0x")));
+    }
+
+    #[test]
+    fn served_code_is_false_for_non_hex_results() {
+        assert!(!served_code(&json!(null)));
+        assert!(!served_code(&json!(123)));
+        assert!(!served_code(&json!("6080")));
+    }
 }
