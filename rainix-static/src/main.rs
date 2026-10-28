@@ -73,10 +73,9 @@
 //       declaring nothing passes.
 //   install-staged-config [--root <dir>]
 //       install what `forge script ./script/Build.sol` staged in .staged-config/
-//       onto the root files of the same names, then remove the dir. Skipped
-//       when script/build.sh exists. Missing fails when foundry.toml carries
-//       rain-deploy generated markers; empty always fails. Semantics:
-//       install_staged_config.rs.
+//       onto the root files of the same names, then remove the dir. Missing
+//       fails when foundry.toml carries rain-deploy generated markers; empty
+//       always fails. Semantics: install_staged_config.rs.
 //   snapshots-append-only [--base <ref>] [--root <dir>]
 //       fail unless every existing per-tag deploy-pin snapshot under
 //       <root>/<tag>/ (default root src/generated, base origin/main) survives
