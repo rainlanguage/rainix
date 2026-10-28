@@ -205,17 +205,20 @@ jobs:
       - name: Requests through the proxy
         run: |
           set -euo pipefail
+          # Prints the JSON-RPC result (or the error) and checks it.
           rpc() {
-            curl -fsS "$ARBITRUM_RPC_URL" -H 'content-type: application/json' \
-              -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$1\",\"params\":$2}"
+            out=$(curl -sS "$ARBITRUM_RPC_URL" -H 'content-type: application/json' \
+              -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$1\",\"params\":$2}")
+            python3 -c 'import json,sys; r=json.loads(sys.argv[1]); print(sys.argv[2], json.dumps(r.get("result", r.get("error")))[:120]); sys.exit(0 if eval(sys.argv[3]) else 1)' "$out" "$1" "$3"
           }
-          rpc eth_chainId '[]' | grep -q '"result":"0xa4b1"'
+          rpc eth_chainId '[]' 'r.get("result") == "0xa4b1"'
           # WETH balance at the deepest Arbitrum block the org pins.
-          rpc eth_getBalance '["0x82aF49447D8a07e3bd95BD0d56f35241523fBab1","0x10b07600"]' | grep -q '"result":"0x'
-          rpc eth_getCode '["0x000000000000000000000000000000000000dEaD","latest"]' | grep -q '"result":"0x"'
-          paid_code=$(curl -fs http://127.0.0.1:4001/metrics \
-            | grep '^erpc_upstream_request_total{' | grep 'category="eth_getCode"' \
-            | grep 'upstream="arbitrum-paid-' | awk '{ s += $NF } END { print s + 0 }')
+          rpc eth_getBalance '["0x82aF49447D8a07e3bd95BD0d56f35241523fBab1","0x10b07600"]' 'str(r.get("result", "")).startswith("0x")'
+          rpc eth_getCode '["0x000000000000000000000000000000000000dEaD","latest"]' 'r.get("result") == "0x"'
+          # awk, not grep: zero matching lines is the passing case.
+          paid_code=$(curl -fs http://127.0.0.1:4001/metrics | awk '
+            /^erpc_upstream_request_total\{/ && /category="eth_getCode"/ && /upstream="arbitrum-paid-/ { s += $NF }
+            END { print s + 0 }')
           echo "paid eth_getCode calls: $paid_code"
           [ "$paid_code" -eq 0 ]
       - if: always()
