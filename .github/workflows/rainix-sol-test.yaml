@@ -34,12 +34,13 @@ jobs:
     # A newer push to the same branch cancels the run it makes stale: only
     # the newest commit's result matters there, and a stale run still pays
     # for every fork read. Default branch, tags, schedules and dispatches get
-    # their own group per event, ref and commit, and never cancel, so each of
-    # those runs to completion (a tag and a main push of one commit included).
-    # Pull request runs group by PR number: on `pull_request_target` the ref
-    # is the base branch, so two PRs would otherwise cancel each other.
+    # their own group per run, and never cancel, so each of those runs to
+    # completion (a queued dispatch is not replaced by a newer one either).
+    # Pull request runs group by event and PR number: on `pull_request_target`
+    # the ref is the base branch, so two PRs would otherwise cancel each other,
+    # and a caller on both PR events keeps one run of each.
     concurrency:
-      group: rainix-sol-test-${{ github.repository }}-${{ github.workflow }}-${{ (github.event_name != 'pull_request_target' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))) && format('{0}-{1}-{2}', github.event_name, github.ref, github.sha) || (github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref) }}
+      group: rainix-sol-test-${{ github.repository }}-${{ github.workflow }}-${{ (github.event_name != 'pull_request_target' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))) && format('{0}-{1}-{2}-{3}', github.event_name, github.ref, github.sha, github.run_id) || (github.event.pull_request.number && format('pr-{0}-{1}', github.event_name, github.event.pull_request.number) || github.ref) }}
       cancel-in-progress: ${{ !(github.event_name != 'pull_request_target' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))) }}
     env:
       # Whether the RPC_URL_<NETWORK>_FORK secrets reach the proxy, as the last

@@ -1090,33 +1090,49 @@ struct Upstream {
     id: String,
     url: Url,
     paid: bool,
-    /// False for a public node that refused state 1M blocks below its head.
-    /// eRPC is told it holds only recent blocks, so an old-block read skips
-    /// it rather than taking its refusal (often a 403 that eRPC treats as
-    /// final) as the answer.
-    archive: bool,
+    /// `Some(n)` for a public node that refused state further back than `n`
+    /// blocks below its head. eRPC is told it holds only that window, so an
+    /// older read skips it: a refusal does not always fail over (publicnode's
+    /// 403 on an old Robinhood block failed st0x.deploy run 40673454956).
+    window: Option<u64>,
 }
 
-/// How far below its head a public node must serve state to count as archive.
-const OLD_STATE_DEPTH: u64 = 1_000_000;
+/// Depths probed, deepest first, on networks with no archive pin.
+const STATE_DEPTHS: [u64; 4] = [1_000_000, 100_000, 10_000, 1_000];
 
-fn serves_old_state(url: &Url, net: &Network, timeout: u32) -> bool {
+/// The state window to declare for a public node: `None` (no bound) when it
+/// serves the deepest probe or when the answer is unclear (a 429 or timeout is
+/// not a refusal), else the deepest depth it served, else 128 blocks.
+fn state_window(url: &Url, net: &Network, timeout: u32) -> Option<u64> {
     let head_body = r#"{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}"#;
-    let Some(head) = rpc(url, timeout, head_body, None)
+    let head = rpc(url, timeout, head_body, None)
         .ok()
-        .and_then(|v| hex_result(&v).and_then(|h| u64::from_str_radix(&h[2..], 16).ok()))
-    else {
-        return false;
-    };
-    let old = head.saturating_sub(OLD_STATE_DEPTH).max(1);
-    let body = format!(
-        r#"{{"jsonrpc":"2.0","id":1,"method":"eth_getBalance","params":["{}","{}"]}}"#,
-        net.probe_contract,
-        block_tag(Some(old))
-    );
-    rpc(url, timeout, &body, Some(old))
-        .ok()
-        .is_some_and(|v| hex_result(&v).is_some())
+        .and_then(|v| hex_result(&v).and_then(|h| u64::from_str_radix(&h[2..], 16).ok()))?;
+    for depth in STATE_DEPTHS {
+        let old = head.saturating_sub(depth).max(1);
+        let body = format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"eth_getBalance","params":["{}","{}"]}}"#,
+            net.probe_contract,
+            block_tag(Some(old))
+        );
+        match rpc(url, timeout, &body, Some(old)) {
+            Ok(v) if hex_result(&v).is_some() => {
+                return (depth != STATE_DEPTHS[0]).then_some(depth);
+            }
+            Err(Reason::NotArchive { .. } | Reason::Auth { .. }) => continue,
+            _ => return None,
+        }
+    }
+    Some(128)
+}
+
+/// Rejections worth a second chance when no public candidate passed: the node
+/// may recover. A wrong chain or wrong state never joins.
+fn transient(reason: &Reason) -> bool {
+    matches!(
+        reason,
+        Reason::Quota { .. } | Reason::Unreachable { .. } | Reason::Http { .. }
+    )
 }
 
 /// Selection policy for every network: healthy public upstreams ranked by
@@ -1198,14 +1214,14 @@ fn proxy_yaml(port: u16, nets: &[(&Network, Vec<Upstream>)]) -> String {
                     "        tags: [\"tier:paid\"]\n        routing: {{ probe: \"off\" }}\n        evm: {{ chainId: {}, statePollerInterval: 300s }}\n",
                     net.chain_id
                 ));
-            } else if u.archive {
+            } else if let Some(window) = u.window {
                 y.push_str(&format!(
-                    "        tags: [\"tier:public\"]\n        evm: {{ chainId: {} }}\n",
+                    "        tags: [\"tier:public\"]\n        evm: {{ chainId: {}, blockAvailability: {{ lower: {{ latestBlockMinus: {window} }} }} }}\n",
                     net.chain_id
                 ));
             } else {
                 y.push_str(&format!(
-                    "        tags: [\"tier:public\"]\n        evm: {{ chainId: {}, blockAvailability: {{ lower: {{ latestBlockMinus: 128 }} }} }}\n",
+                    "        tags: [\"tier:public\"]\n        evm: {{ chainId: {} }}\n",
                     net.chain_id
                 ));
             }
@@ -1250,38 +1266,47 @@ pub(crate) fn run_proxy(
                 Ok(()) => {
                     // `probe` already read state at the network's archive
                     // pin; a network with none gets the depth check here.
-                    let deep = !archive
-                        || !net.archive_blocks.is_empty()
-                        || serves_old_state(url, net, timeout);
-                    if !deep {
-                        println!("rpc-proxy: {}: {src} serves recent blocks only", net.key);
+                    let window = if archive && net.archive_blocks.is_empty() {
+                        state_window(url, net, timeout)
+                    } else {
+                        None
+                    };
+                    if let Some(w) = window {
+                        println!(
+                            "rpc-proxy: {}: {src} serves the last {w} blocks only",
+                            net.key
+                        );
                     }
                     ups.push(Upstream {
                         id: format!("{}-{}", net.key, src.slug()),
                         url: Url(url.expose().to_string()),
                         paid: false,
-                        archive: deep,
+                        window,
                     })
                 }
                 Err(reason) => {
                     println!("rpc-proxy: {}: {src} left out: {reason}", net.key);
-                    rejected.push((*src, Url(url.expose().to_string())));
+                    if transient(&reason) {
+                        rejected.push((*src, Url(url.expose().to_string())));
+                    }
                 }
             }
         }
         if ups.is_empty() {
-            // Every public failed its one probe: keep them all rather than
-            // none, so a passing upstream is still tried before the paid key.
+            // Every public failed its one probe: keep the ones that failed
+            // for a reason that can pass (throttled, unreachable) rather than
+            // none, so they are still tried before the paid key.
             println!(
-                "::warning::rpc-proxy: {}: no public candidate passed the probe; keeping all",
-                net.key
+                "::warning::rpc-proxy: {}: no public candidate passed the probe; keeping {} transient failure(s)",
+                net.key,
+                rejected.len()
             );
             for (src, url) in rejected {
                 ups.push(Upstream {
                     id: format!("{}-{}", net.key, src.slug()),
                     url,
                     paid: false,
-                    archive: true,
+                    window: None,
                 });
             }
         }
@@ -1290,11 +1315,30 @@ pub(crate) fn run_proxy(
             // Defence in depth, as in `run`: the runner masks the secret, and
             // this also covers a keyed URL that arrived through a variable.
             println!("::add-mask::{}", url.expose());
+            // One eth_chainId per paid URL: a wrong-chain one is dropped, where
+            // eRPC would refuse to start. An error keeps it (it may recover).
+            let chain = r#"{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}"#;
+            if let Some(got) = rpc(&url, timeout, chain, None)
+                .ok()
+                .and_then(|v| parse_chain_id(&v))
+            {
+                if got != net.chain_id {
+                    println!(
+                        "::warning::rpc-proxy: {}: secret[{i}] dropped: {}",
+                        net.key,
+                        Reason::WrongChain {
+                            expected: net.chain_id,
+                            got
+                        }
+                    );
+                    continue;
+                }
+            }
             ups.push(Upstream {
                 id: format!("{}-paid-{i}", net.key),
                 url,
                 paid: true,
-                archive: true,
+                window: None,
             });
         }
         if ups.is_empty() {
@@ -1314,6 +1358,12 @@ pub(crate) fn run_proxy(
         nets.push((net, ups));
     }
 
+    if nets.is_empty() {
+        // No config at all: the action then skips downloading eRPC.
+        let _ = std::fs::remove_file(config);
+        println!("rpc-proxy: repo references no fork RPC env vars; nothing to serve");
+        return;
+    }
     let yaml = proxy_yaml(port, &nets);
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -1353,7 +1403,7 @@ mod tests {
             id: id.to_string(),
             url: Url(url.to_string()),
             paid,
-            archive: true,
+            window: None,
         }
     }
 
@@ -1395,9 +1445,25 @@ mod tests {
     #[test]
     fn proxy_yaml_marks_recent_only_publics() {
         let mut recent = up("arbitrum-variable-0", "https://r.example", false);
-        recent.archive = false;
+        recent.window = Some(10_000);
         let y = proxy_yaml(4000, &[(proxy_net(), vec![recent])]);
-        assert!(y.contains("blockAvailability: { lower: { latestBlockMinus: 128 } }"));
+        assert!(y.contains("blockAvailability: { lower: { latestBlockMinus: 10000 } }"));
+    }
+
+    #[test]
+    fn only_transient_rejections_get_a_second_chance() {
+        assert!(transient(&Reason::Quota { code: 429 }));
+        assert!(transient(&Reason::Unreachable { curl_exit: 28 }));
+        assert!(transient(&Reason::Http { status: 503 }));
+        assert!(!transient(&Reason::WrongChain {
+            expected: 1,
+            got: 2
+        }));
+        assert!(!transient(&Reason::NotArchive {
+            code: -32000,
+            block: 1
+        }));
+        assert!(!transient(&Reason::BadResponse));
     }
 
     #[test]
