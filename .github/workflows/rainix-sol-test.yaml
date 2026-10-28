@@ -63,9 +63,6 @@ jobs:
       # Empty on `pull_request_target`: that event runs with secrets, so the
       # opt-in never hands a paid URL to it.
       RAINIX_PAID_FORK_RPC_NETWORKS: ${{ github.event_name != 'pull_request_target' && format(' {0} ', inputs.paid-fork-rpc-networks) || '' }}
-      # Whether a failed public run gets one retry on the paid secrets: every
-      # run that is not already paid, except `pull_request_target`.
-      RAINIX_PUBLIC_RETRY: ${{ github.event_name != 'pull_request_target' && !(github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}
       DEPLOYMENT_KEY: ${{ secrets.PRIVATE_KEY }}
       ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY }}
       CI_FORK_SEPOLIA_BLOCK_NUMBER: ${{ vars.CI_FORK_SEPOLIA_BLOCK_NUMBER }}
@@ -103,17 +100,7 @@ jobs:
       # A secret is passed only when RAINIX_PAID_FORK_RPC allows it or the
       # caller lists that network in `paid-fork-rpc-networks`; an empty secret
       # is an empty candidate list, so the pool starts at the variable.
-      #
-      # On a public run (RAINIX_PUBLIC_RETRY) the preflight and the tests may
-      # fail without failing the job: a public endpoint can throttle or drop a
-      # read halfway through the suite, and nothing inside forge fails over.
-      # The two retry steps below then run the whole suite once more on the
-      # paid secrets, and only that run decides the job. Paid runs and
-      # `pull_request_target` runs get one attempt, and the latter never
-      # reaches the paid steps.
       - name: RPC preflight
-        id: preflight
-        continue-on-error: ${{ env.RAINIX_PUBLIC_RETRY == 'true' }}
         uses: rainlanguage/rainix/.github/actions/rpc-preflight@main
         env:
           RAINIX_RPC_SECRET_ARBITRUM: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(env.RAINIX_PAID_FORK_RPC_NETWORKS, ' arbitrum ')) && secrets.RPC_URL_ARBITRUM_FORK || '' }}
@@ -136,35 +123,4 @@ jobs:
           RAINIX_RPC_VARS_BSC: ${{ vars.RPC_URL_BSC_FORK }}
           RAINIX_RPC_SECRET_SEPOLIA: ${{ (env.RAINIX_PAID_FORK_RPC == 'true' || contains(env.RAINIX_PAID_FORK_RPC_NETWORKS, ' sepolia ')) && secrets.RPC_URL_SEPOLIA_FORK || '' }}
           RAINIX_RPC_VARS_SEPOLIA: ${{ vars.RPC_URL_SEPOLIA_FORK }}
-      - name: Fork tests
-        id: fork-test
-        if: steps.preflight.outcome == 'success'
-        continue-on-error: ${{ env.RAINIX_PUBLIC_RETRY == 'true' }}
-        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge test -vvv
-      - name: RPC preflight (paid retry)
-        if: env.RAINIX_PUBLIC_RETRY == 'true' && github.event_name != 'pull_request_target' && (steps.preflight.outcome == 'failure' || steps.fork-test.outcome == 'failure')
-        uses: rainlanguage/rainix/.github/actions/rpc-preflight@main
-        env:
-          RAINIX_RPC_SECRET_ARBITRUM: ${{ secrets.RPC_URL_ARBITRUM_FORK }}
-          RAINIX_RPC_VARS_ARBITRUM: ${{ vars.RPC_URL_ARBITRUM_FORK }}
-          RAINIX_RPC_SECRET_BASE: ${{ secrets.RPC_URL_BASE_FORK }}
-          RAINIX_RPC_VARS_BASE: ${{ vars.RPC_URL_BASE_FORK }}
-          RAINIX_RPC_SECRET_BASE_SEPOLIA: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK }}
-          RAINIX_RPC_VARS_BASE_SEPOLIA: ${{ vars.RPC_URL_BASE_SEPOLIA_FORK }}
-          RAINIX_RPC_SECRET_ETHEREUM: ${{ secrets.RPC_URL_ETHEREUM_FORK }}
-          RAINIX_RPC_VARS_ETHEREUM: ${{ vars.RPC_URL_ETHEREUM_FORK }}
-          RAINIX_RPC_SECRET_FLARE: ${{ secrets.RPC_URL_FLARE_FORK }}
-          RAINIX_RPC_VARS_FLARE: ${{ vars.RPC_URL_FLARE_FORK }}
-          RAINIX_RPC_SECRET_HYPEREVM: ${{ secrets.RPC_URL_HYPEREVM_FORK }}
-          RAINIX_RPC_VARS_HYPEREVM: ${{ vars.RPC_URL_HYPEREVM_FORK }}
-          RAINIX_RPC_SECRET_POLYGON: ${{ secrets.RPC_URL_POLYGON_FORK }}
-          RAINIX_RPC_VARS_POLYGON: ${{ vars.RPC_URL_POLYGON_FORK }}
-          RAINIX_RPC_SECRET_ROBINHOOD: ${{ secrets.RPC_URL_ROBINHOOD_FORK }}
-          RAINIX_RPC_VARS_ROBINHOOD: ${{ vars.RPC_URL_ROBINHOOD_FORK }}
-          RAINIX_RPC_SECRET_BSC: ${{ secrets.RPC_URL_BSC_FORK }}
-          RAINIX_RPC_VARS_BSC: ${{ vars.RPC_URL_BSC_FORK }}
-          RAINIX_RPC_SECRET_SEPOLIA: ${{ secrets.RPC_URL_SEPOLIA_FORK }}
-          RAINIX_RPC_VARS_SEPOLIA: ${{ vars.RPC_URL_SEPOLIA_FORK }}
-      - name: Fork tests (paid retry)
-        if: env.RAINIX_PUBLIC_RETRY == 'true' && github.event_name != 'pull_request_target' && (steps.preflight.outcome == 'failure' || steps.fork-test.outcome == 'failure')
-        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge test -vvv
+      - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge test -vvv
