@@ -1138,10 +1138,13 @@ const PROXY_POLICY: &[&str] = &[
 /// Render the eRPC config. Pure, so the ordering and the knobs that keep
 /// traffic off the paid key are unit tested.
 ///
-/// - retry `maxAttempts` = upstream count: one try per upstream, paid last.
-/// - `retryEmpty` on, with `emptyResultMaxAttempts` = upstream count and no
-///   block-time delay: "missing trie node" and friends are missing-data
-///   errors, which eRPC only fails over when this is on. Real empty answers
+/// - one network attempt already sweeps every upstream in policy order, paid
+///   last. `maxAttempts: 2` allows one more sweep, 1s later, for a moment
+///   when every upstream failed at once; each sweep reaches the paid key at
+///   most once.
+/// - `retryEmpty` on, capped at the same two sweeps with no block-time
+///   delay, so a missing-data error ("missing trie node") everywhere also
+///   gets the second sweep. Real empty answers
 ///   (`0x` code, zero balance) stay accepted by eRPC's default
 ///   `emptyResultAccept`, so they do not walk the list.
 /// - no hedge (it would race a second upstream, possibly the paid one).
@@ -1169,15 +1172,14 @@ fn proxy_yaml(port: u16, nets: &[(&Network, Vec<Upstream>)]) -> String {
     y.push_str("    upstreamDefaults:\n      failsafe:\n        - matchMethod: \"*\"\n          timeout: { duration: 10s }\n          retry: { maxAttempts: 1 }\n");
     y.push_str("    networks:\n");
     for (net, ups) in nets {
-        let n = ups.len().max(1);
         y.push_str(&format!(
             "      - architecture: evm\n        evm: {{ chainId: {}, blockUnavailableDelayMultiplier: 0 }}\n",
             net.chain_id
         ));
         y.push_str("        directiveDefaults: { retryEmpty: true, enforceHighestBlock: false }\n");
-        y.push_str(&format!(
-            "        failsafe:\n          - matchMethod: \"*\"\n            timeout: {{ duration: 120s }}\n            retry: {{ maxAttempts: {n}, delay: 0s, emptyResultMaxAttempts: {n}, emptyResultDelay: 0s }}\n"
-        ));
+        y.push_str(
+            "        failsafe:\n          - matchMethod: \"*\"\n            timeout: { duration: 120s }\n            retry: { maxAttempts: 2, delay: 1s, emptyResultMaxAttempts: 2, emptyResultDelay: 0s }\n",
+        );
         y.push_str("        selectionPolicy:\n          evalFunc: |\n");
         for line in PROXY_POLICY {
             y.push_str(&format!("            {line}\n"));
@@ -1356,7 +1358,7 @@ mod tests {
     }
 
     #[test]
-    fn proxy_yaml_puts_paid_last_and_tries_every_upstream() {
+    fn proxy_yaml_puts_paid_last_and_caps_sweeps() {
         let ups = vec![
             up("arbitrum-default-0", "https://a.example", false),
             up("arbitrum-default-1", "https://b.example", false),
@@ -1368,7 +1370,7 @@ mod tests {
         let p = y.find("id: arbitrum-paid-0").unwrap();
         assert!(a < b && b < p, "registry order is public first, paid last");
         assert!(y.contains(
-            "retry: { maxAttempts: 3, delay: 0s, emptyResultMaxAttempts: 3, emptyResultDelay: 0s }"
+            "retry: { maxAttempts: 2, delay: 1s, emptyResultMaxAttempts: 2, emptyResultDelay: 0s }"
         ));
         assert!(y.contains("directiveDefaults: { retryEmpty: true, enforceHighestBlock: false }"));
         assert!(y.contains(".concat(upstreams.byTag('tier:paid'))"));
@@ -1388,7 +1390,6 @@ mod tests {
             )],
         );
         assert!(!y.contains("tags: [\"tier:paid\"]"));
-        assert!(y.contains("maxAttempts: 1, delay: 0s, emptyResultMaxAttempts: 1"));
     }
 
     #[test]
