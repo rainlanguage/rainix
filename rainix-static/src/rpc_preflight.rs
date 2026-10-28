@@ -1102,7 +1102,8 @@ const STATE_DEPTHS: [u64; 4] = [1_000_000, 100_000, 10_000, 1_000];
 
 /// The state window to declare for a public node: `None` (no bound) when it
 /// serves the deepest probe or when the answer is unclear (a 429 or timeout is
-/// not a refusal), else the deepest depth it served, else 128 blocks.
+/// not a refusal), else the deepest depth it served, else 128 blocks. A depth is
+/// served only by non-empty probe-contract code: pruned nodes may answer `0x`.
 fn state_window(url: &Url, net: &Network, timeout: u32) -> Option<u64> {
     let head_body = r#"{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}"#;
     let head = rpc(url, timeout, head_body, None)
@@ -1111,19 +1112,23 @@ fn state_window(url: &Url, net: &Network, timeout: u32) -> Option<u64> {
     for depth in STATE_DEPTHS {
         let old = head.saturating_sub(depth).max(1);
         let body = format!(
-            r#"{{"jsonrpc":"2.0","id":1,"method":"eth_getBalance","params":["{}","{}"]}}"#,
+            r#"{{"jsonrpc":"2.0","id":1,"method":"eth_getCode","params":["{}","{}"]}}"#,
             net.probe_contract,
             block_tag(Some(old))
         );
         match rpc(url, timeout, &body, Some(old)) {
-            Ok(v) if hex_result(&v).is_some() => {
+            Ok(v) if served_code(&v) => {
                 return (depth != STATE_DEPTHS[0]).then_some(depth);
             }
-            Err(Reason::NotArchive { .. } | Reason::Auth { .. }) => continue,
+            Ok(_) | Err(Reason::NotArchive { .. } | Reason::Auth { .. }) => continue,
             _ => return None,
         }
     }
     Some(128)
+}
+
+fn served_code(v: &serde_json::Value) -> bool {
+    hex_result(v).is_some_and(|s| s.len() > 2)
 }
 
 /// Rejections worth a second chance when no public candidate passed: the node
