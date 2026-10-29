@@ -455,6 +455,22 @@ fn main() {
             // Deploy/broadcast paths only ever read head state; requiring
             // archive there would reject a healthy pruning endpoint.
             let archive = !args.iter().any(|a| a == "--no-archive");
+            // --proxy-config <file>: write an eRPC config with per-request
+            // failover instead of selecting one URL (see run_proxy).
+            if let Some(config) = flag(&args, "--proxy-config") {
+                let port = num(&args, "--proxy-port", 4000);
+                let port =
+                    u16::try_from(port).unwrap_or_else(|_| fail("--proxy-port: must fit in a u16"));
+                rpc_preflight::run_proxy(
+                    Path::new(&root),
+                    Path::new(&github_env),
+                    Path::new(&config),
+                    timeout,
+                    archive,
+                    port,
+                );
+                return;
+            }
             rpc_preflight::run(
                 Path::new(&root),
                 Path::new(&github_env),

@@ -76,6 +76,11 @@ impl fmt::Display for Source {
 }
 
 impl Source {
+    /// `default[0]` as an eRPC upstream id fragment: `default-0`.
+    fn slug(&self) -> String {
+        self.to_string().replace('[', "-").replace(']', "")
+    }
+
     /// True for candidates that came from a GitHub secret, i.e. the ones whose
     /// URL may embed an API key and must be masked before it reaches GITHUB_ENV.
     fn is_secret(&self) -> bool {
@@ -1080,6 +1085,332 @@ pub(crate) fn run(
     println!("rpc-preflight: clean");
 }
 
+/// One eRPC upstream: its id (what metrics and logs show), URL and tier.
+struct Upstream {
+    id: String,
+    url: Url,
+    paid: bool,
+    /// `Some(n)` for a public node that refused state further back than `n`
+    /// blocks below its head. eRPC is told it holds only that window, so an
+    /// older read skips it: a refusal does not always fail over (publicnode's
+    /// 403 on an old Robinhood block failed st0x.deploy run 40673454956).
+    window: Option<u64>,
+}
+
+/// Depths probed, deepest first, on networks with no archive pin.
+const STATE_DEPTHS: [u64; 4] = [1_000_000, 100_000, 10_000, 1_000];
+
+/// The state window to declare for a public node: `None` (no bound) when it
+/// serves the deepest probe or when the answer is unclear (a 429 or timeout is
+/// not a refusal), else the deepest depth it served, else 128 blocks. A depth is
+/// served only by non-empty probe-contract code: pruned nodes may answer `0x`.
+fn state_window(url: &Url, net: &Network, timeout: u32) -> Option<u64> {
+    let head_body = r#"{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}"#;
+    let head = rpc(url, timeout, head_body, None)
+        .ok()
+        .and_then(|v| hex_result(&v).and_then(|h| u64::from_str_radix(&h[2..], 16).ok()))?;
+    for depth in STATE_DEPTHS {
+        let old = head.saturating_sub(depth).max(1);
+        let body = format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"eth_getCode","params":["{}","{}"]}}"#,
+            net.probe_contract,
+            block_tag(Some(old))
+        );
+        match rpc(url, timeout, &body, Some(old)) {
+            Ok(v) if served_code(&v) => {
+                return (depth != STATE_DEPTHS[0]).then_some(depth);
+            }
+            Ok(_) | Err(Reason::NotArchive { .. } | Reason::Auth { .. }) => continue,
+            _ => return None,
+        }
+    }
+    Some(128)
+}
+
+fn served_code(v: &serde_json::Value) -> bool {
+    hex_result(v).is_some_and(|s| s.len() > 2)
+}
+
+/// Rejections worth a second chance when no public candidate passed: the node
+/// may recover. A wrong chain or wrong state never joins.
+fn transient(reason: &Reason) -> bool {
+    matches!(
+        reason,
+        Reason::Quota { .. } | Reason::Unreachable { .. } | Reason::Http { .. }
+    )
+}
+
+/// Selection policy for every network: healthy public upstreams ranked by
+/// latency, then every paid upstream at the TAIL. eRPC's retry walks this list
+/// in order, so a request reaches the paid key only after every public one has
+/// failed it. The stock policy would rank the paid key first (it is fastest)
+/// or drop it from the list while any public survives.
+const PROXY_POLICY: &[&str] = &[
+    "(upstreams, ctx) => upstreams",
+    "  .excludeTag('tier:paid')",
+    "  .removeCordoned()",
+    "  .excludeIf(all(samplesAbove(10), errorRateAbove(0.7)))",
+    "  .excludeIf(all(samplesAbove(10), throttleRateAbove(0.4)))",
+    "  .whenEmpty(() => upstreams.excludeTag('tier:paid'))",
+    "  .sortByScore(PREFER_FASTEST)",
+    "  .concat(upstreams.byTag('tier:paid'))",
+];
+
+/// Render the eRPC config. Pure, so the ordering and the knobs that keep
+/// traffic off the paid key are unit tested.
+///
+/// - one network attempt already sweeps every upstream in policy order, paid
+///   last. `maxAttempts: 2` allows one more sweep, 1s later, for a moment
+///   when every upstream failed at once; each sweep reaches the paid key at
+///   most once.
+/// - `retryEmpty` on, with no block-time delay. Its cap counts every
+///   missing-data or block-unavailable answer, each upstream a sweep skips
+///   for an old block included, so it is twice the upstream count: two full
+///   sweeps, matching `maxAttempts`. A cap of 2 stopped an old-block BSC
+///   `eth_getLogs` at the second recent-only public, before the paid key.
+///   Real empty answers
+///   (`0x` code, zero balance) stay accepted by eRPC's default
+///   `emptyResultAccept`, so they do not walk the list.
+/// - no hedge (it would race a second upstream, possibly the paid one).
+/// - `enforceHighestBlock` off: a public a few blocks behind is not retried.
+/// - paid upstreams get no shadow probes and a slow state poller.
+fn proxy_yaml(port: u16, nets: &[(&Network, Vec<Upstream>)]) -> String {
+    let q = |s: &str| serde_json::to_string(s).expect("string encodes");
+    let mut y = String::new();
+    y.push_str("logLevel: warn\n");
+    y.push_str(&format!(
+        "server:\n  httpHostV4: 127.0.0.1\n  httpPortV4: {port}\n  listenV6: false\n  maxTimeout: 300s\n"
+    ));
+    y.push_str(&format!(
+        "metrics:\n  enabled: true\n  hostV4: 127.0.0.1\n  port: {}\n  listenV6: false\n",
+        port + 1
+    ));
+    // In-run cache: a fork suite re-reads the same state from many forks.
+    y.push_str("database:\n  evmJsonRpcCache:\n    connectors:\n      - id: run\n        driver: memory\n        memory: { maxItems: 2000000, maxTotalSize: 4GB }\n    policies:\n");
+    for (finality, ttl) in [("finalized", "0"), ("unfinalized", "0"), ("realtime", "2s")] {
+        y.push_str(&format!(
+            "      - {{ network: \"*\", method: \"*\", finality: {finality}, empty: allow, connector: run, ttl: {ttl} }}\n"
+        ));
+    }
+    y.push_str("projects:\n  - id: main\n");
+    y.push_str("    upstreamDefaults:\n      failsafe:\n        - matchMethod: \"*\"\n          timeout: { duration: 10s }\n          retry: { maxAttempts: 1 }\n");
+    y.push_str("    networks:\n");
+    for (net, ups) in nets {
+        let cap = 2 * ups.len().max(1);
+        y.push_str(&format!(
+            "      - architecture: evm\n        evm: {{ chainId: {}, blockUnavailableDelayMultiplier: 0 }}\n",
+            net.chain_id
+        ));
+        y.push_str("        directiveDefaults: { retryEmpty: true, enforceHighestBlock: false }\n");
+        y.push_str(&format!(
+            "        failsafe:\n          - matchMethod: \"*\"\n            timeout: {{ duration: 120s }}\n            retry: {{ maxAttempts: 2, delay: 1s, emptyResultMaxAttempts: {cap}, emptyResultDelay: 0s }}\n"
+        ));
+        y.push_str("        selectionPolicy:\n          evalInterval: 1s\n          evalFunc: |\n");
+        for line in PROXY_POLICY {
+            y.push_str(&format!("            {line}\n"));
+        }
+    }
+    y.push_str("    upstreams:\n");
+    for (net, ups) in nets {
+        for u in ups {
+            y.push_str(&format!(
+                "      - id: {}\n        endpoint: {}\n",
+                u.id,
+                q(u.url.expose())
+            ));
+            if u.paid {
+                y.push_str(&format!(
+                    "        tags: [\"tier:paid\"]\n        routing: {{ probe: \"off\" }}\n        evm: {{ chainId: {}, statePollerInterval: 300s }}\n",
+                    net.chain_id
+                ));
+            } else if let Some(window) = u.window {
+                y.push_str(&format!(
+                    "        tags: [\"tier:public\"]\n        evm: {{ chainId: {}, blockAvailability: {{ lower: {{ latestBlockMinus: {window} }} }} }}\n",
+                    net.chain_id
+                ));
+            } else {
+                y.push_str(&format!(
+                    "        tags: [\"tier:public\"]\n        evm: {{ chainId: {} }}\n",
+                    net.chain_id
+                ));
+            }
+        }
+    }
+    y
+}
+
+/// Proxy mode: instead of exporting one chosen URL per network, write an eRPC
+/// config that serves every demanded network from 127.0.0.1 with per-request
+/// failover, and export the local URL. Public candidates (variable, then
+/// defaults) are probed once, without the load burst, so a node that answers
+/// archive reads wrongly never joins; the secret's entries are appended last
+/// and never probed, so the probe spends nothing on the paid key.
+pub(crate) fn run_proxy(
+    root: &Path,
+    github_env: &Path,
+    config: &Path,
+    timeout: u32,
+    archive: bool,
+    port: u16,
+) {
+    let want = demanded(root);
+    let mut nets: Vec<(&Network, Vec<Upstream>)> = Vec::new();
+    let mut failed: Vec<&'static str> = Vec::new();
+    for net in NETWORKS {
+        if !want.contains(net.key) {
+            continue;
+        }
+        let secret_raw =
+            std::env::var(format!("RAINIX_RPC_SECRET_{}", upper(net.key))).unwrap_or_default();
+        let vars_raw =
+            std::env::var(format!("RAINIX_RPC_VARS_{}", upper(net.key))).unwrap_or_default();
+        let paid = parse_list(&secret_raw);
+        let publics: Vec<(Source, Url)> = pool(net, "", &vars_raw)
+            .into_iter()
+            .filter(|(_, u)| !paid.iter().any(|p| p == u.expose()))
+            .collect();
+        let configured = !publics.is_empty() || !paid.is_empty();
+        let mut ups = Vec::new();
+        let mut rejected = Vec::new();
+        for (src, url) in &publics {
+            match probe(url, net, 1, timeout, archive, 0) {
+                Ok(()) => {
+                    // `probe` already read state at the network's archive
+                    // pin; a network with none gets the depth check here.
+                    let window = if archive && net.archive_blocks.is_empty() {
+                        state_window(url, net, timeout)
+                    } else {
+                        None
+                    };
+                    if let Some(w) = window {
+                        println!(
+                            "rpc-proxy: {}: {src} serves the last {w} blocks only",
+                            net.key
+                        );
+                    }
+                    ups.push(Upstream {
+                        id: format!("{}-{}", net.key, src.slug()),
+                        url: Url(url.expose().to_string()),
+                        paid: false,
+                        window,
+                    })
+                }
+                Err(reason) => {
+                    println!("rpc-proxy: {}: {src} left out: {reason}", net.key);
+                    if transient(&reason) {
+                        rejected.push((*src, Url(url.expose().to_string())));
+                    }
+                }
+            }
+        }
+        if ups.is_empty() {
+            // Every public failed its one probe: keep the ones that failed
+            // for a reason that can pass (throttled, unreachable) rather than
+            // none, so they are still tried before the paid key.
+            println!(
+                "::warning::rpc-proxy: {}: no public candidate passed the probe; keeping {} transient failure(s)",
+                net.key,
+                rejected.len()
+            );
+            for (src, url) in rejected {
+                ups.push(Upstream {
+                    id: format!("{}-{}", net.key, src.slug()),
+                    url,
+                    paid: false,
+                    window: None,
+                });
+            }
+        }
+        for (i, u) in paid.into_iter().enumerate() {
+            let url = Url(u);
+            // Defence in depth, as in `run`: the runner masks the secret, and
+            // this also covers a keyed URL that arrived through a variable.
+            println!("::add-mask::{}", url.expose());
+            // One eth_chainId per paid URL: a wrong-chain one is dropped, where
+            // eRPC would refuse to start. An error keeps it (it may recover).
+            let chain = r#"{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}"#;
+            if let Some(got) = rpc(&url, timeout, chain, None)
+                .ok()
+                .and_then(|v| parse_chain_id(&v))
+            {
+                if got != net.chain_id {
+                    println!(
+                        "::warning::rpc-proxy: {}: secret[{i}] dropped: {}",
+                        net.key,
+                        Reason::WrongChain {
+                            expected: net.chain_id,
+                            got
+                        }
+                    );
+                    continue;
+                }
+            }
+            ups.push(Upstream {
+                id: format!("{}-paid-{i}", net.key),
+                url,
+                paid: true,
+                window: None,
+            });
+        }
+        if ups.is_empty() {
+            if !configured {
+                println!(
+                    "rpc-proxy: {}: no candidates configured; leaving {} unset",
+                    net.key, net.env_name
+                );
+                continue;
+            }
+            eprintln!(
+                "::error::rpc-proxy: {}: every candidate was rejected (reasons above); \
+                 add a working URL to the {} secret (keyed) or variable (public, newline-separated).",
+                net.key, net.secret_name
+            );
+            failed.push(net.key);
+            continue;
+        }
+        let order: Vec<&str> = ups.iter().map(|u| u.id.as_str()).collect();
+        println!(
+            "rpc-proxy: {}: chain {} via {}",
+            net.key,
+            net.chain_id,
+            order.join(" > ")
+        );
+        nets.push((net, ups));
+    }
+
+    if !failed.is_empty() {
+        fail(&format!(
+            "rpc-proxy: no usable RPC endpoint for: {}",
+            failed.join(", ")
+        ));
+    }
+    if nets.is_empty() {
+        // No config at all: the action then skips downloading eRPC.
+        let _ = std::fs::remove_file(config);
+        println!("rpc-proxy: repo references no fork RPC env vars; nothing to serve");
+        return;
+    }
+    let yaml = proxy_yaml(port, &nets);
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(config)
+            .unwrap_or_else(|e| fail(&format!("rpc-proxy: open {}: {e}", config.display())));
+        f.write_all(yaml.as_bytes())
+            .unwrap_or_else(|e| fail(&format!("rpc-proxy: write {}: {e}", config.display())));
+    }
+    for (net, _) in &nets {
+        let local = Url(format!("http://127.0.0.1:{port}/main/evm/{}", net.chain_id));
+        export(github_env, net.env_name, &local);
+        export(github_env, net.secret_name, &local);
+    }
+    println!("rpc-proxy: config written for {} network(s)", nets.len());
+}
+
 fn upper(key: &str) -> String {
     key.to_ascii_uppercase()
 }
@@ -1088,6 +1419,94 @@ fn upper(key: &str) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn proxy_net() -> &'static Network {
+        NETWORKS.iter().find(|n| n.key == "arbitrum").unwrap()
+    }
+
+    fn up(id: &str, url: &str, paid: bool) -> Upstream {
+        Upstream {
+            id: id.to_string(),
+            url: Url(url.to_string()),
+            paid,
+            window: None,
+        }
+    }
+
+    #[test]
+    fn proxy_yaml_puts_paid_last_and_caps_sweeps() {
+        let ups = vec![
+            up("arbitrum-default-0", "https://a.example", false),
+            up("arbitrum-default-1", "https://b.example", false),
+            up("arbitrum-paid-0", "https://paid.example/KEY", true),
+        ];
+        let y = proxy_yaml(4000, &[(proxy_net(), ups)]);
+        let a = y.find("id: arbitrum-default-0").unwrap();
+        let b = y.find("id: arbitrum-default-1").unwrap();
+        let p = y.find("id: arbitrum-paid-0").unwrap();
+        assert!(a < b && b < p, "registry order is public first, paid last");
+        assert!(y.contains(
+            "retry: { maxAttempts: 2, delay: 1s, emptyResultMaxAttempts: 6, emptyResultDelay: 0s }"
+        ));
+        assert!(y.contains("directiveDefaults: { retryEmpty: true, enforceHighestBlock: false }"));
+        assert!(y.contains("selectionPolicy:\n          evalInterval: 1s\n          evalFunc: |\n"));
+        assert!(y.contains(".concat(upstreams.byTag('tier:paid'))"));
+        assert!(!y.contains("hedge"), "no hedge: it could race the paid key");
+        assert!(y.contains("endpoint: \"https://paid.example/KEY\"\n        tags: [\"tier:paid\"]\n        routing: { probe: \"off\" }"));
+        assert!(y.contains("httpHostV4: 127.0.0.1\n  httpPortV4: 4000"));
+        assert!(y.contains("port: 4001"));
+    }
+
+    #[test]
+    fn proxy_yaml_without_paid_has_no_paid_tier_upstream() {
+        let y = proxy_yaml(
+            4000,
+            &[(
+                proxy_net(),
+                vec![up("arbitrum-default-0", "https://a.example", false)],
+            )],
+        );
+        assert!(!y.contains("tags: [\"tier:paid\"]"));
+    }
+
+    #[test]
+    fn proxy_yaml_marks_recent_only_publics() {
+        let mut recent = up("arbitrum-variable-0", "https://r.example", false);
+        recent.window = Some(10_000);
+        let y = proxy_yaml(4000, &[(proxy_net(), vec![recent])]);
+        assert!(y.contains("blockAvailability: { lower: { latestBlockMinus: 10000 } }"));
+    }
+
+    #[test]
+    fn only_transient_rejections_get_a_second_chance() {
+        assert!(transient(&Reason::Quota { code: 429 }));
+        assert!(transient(&Reason::Unreachable { curl_exit: 28 }));
+        assert!(transient(&Reason::Http { status: 503 }));
+        assert!(!transient(&Reason::WrongChain {
+            expected: 1,
+            got: 2
+        }));
+        assert!(!transient(&Reason::NotArchive {
+            code: -32000,
+            block: 1
+        }));
+        assert!(!transient(&Reason::BadResponse));
+    }
+
+    #[test]
+    fn proxy_yaml_quotes_urls() {
+        let y = proxy_yaml(
+            4000,
+            &[(proxy_net(), vec![up("x", "https://a.example/#: y", false)])],
+        );
+        assert!(y.contains("endpoint: \"https://a.example/#: y\""));
+    }
+
+    #[test]
+    fn source_slug_is_an_id_fragment() {
+        assert_eq!(Source::Default(2).slug(), "default-2");
+        assert_eq!(Source::Variable(0).slug(), "variable-0");
+    }
 
     #[test]
     fn url_never_formats_its_value() {
@@ -1721,5 +2140,22 @@ mod tests {
             classify(30, "Request timeout on the free plan", None),
             Reason::Quota { code: 30 }
         );
+    }
+
+    #[test]
+    fn served_code_is_true_for_nonempty_hex_bytecode() {
+        assert!(served_code(&json!("0x60806040")));
+    }
+
+    #[test]
+    fn served_code_is_false_for_empty_bytecode() {
+        assert!(!served_code(&json!("0x")));
+    }
+
+    #[test]
+    fn served_code_is_false_for_non_hex_results() {
+        assert!(!served_code(&json!(null)));
+        assert!(!served_code(&json!(123)));
+        assert!(!served_code(&json!("6080")));
     }
 }

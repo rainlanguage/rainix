@@ -139,7 +139,17 @@ jobs:
   # Same BOOTSTRAP CAVEAT as the composites above: `@main` resolves against the
   # tip of main, so the PR that first adds this action is red on this job until
   # it merges.
+  #
+  # Two legs. `paid` passes the secrets. `public` passes them empty, so the
+  # variables and hardcoded defaults are checked even while the paid key is
+  # healthy (the preflight stops at the first healthy candidate, so `paid`
+  # alone never reaches them). Those public candidates are also what the
+  # fork-test proxy uses, and all `pull_request_target` runs get.
   rpc-preflight:
+    strategy:
+      matrix:
+        source: [paid, public]
+      fail-fast: false
     runs-on: ubuntu-latest
     steps:
       - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
@@ -147,19 +157,19 @@ jobs:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - uses: rainlanguage/rainix/.github/actions/rpc-preflight@main
         env:
-          RAINIX_RPC_SECRET_ARBITRUM: ${{ secrets.RPC_URL_ARBITRUM_FORK }}
+          RAINIX_RPC_SECRET_ARBITRUM: ${{ matrix.source == 'paid' && secrets.RPC_URL_ARBITRUM_FORK || '' }}
           RAINIX_RPC_VARS_ARBITRUM: ${{ vars.RPC_URL_ARBITRUM_FORK }}
-          RAINIX_RPC_SECRET_BASE: ${{ secrets.RPC_URL_BASE_FORK }}
+          RAINIX_RPC_SECRET_BASE: ${{ matrix.source == 'paid' && secrets.RPC_URL_BASE_FORK || '' }}
           RAINIX_RPC_VARS_BASE: ${{ vars.RPC_URL_BASE_FORK }}
-          RAINIX_RPC_SECRET_BASE_SEPOLIA: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK }}
+          RAINIX_RPC_SECRET_BASE_SEPOLIA: ${{ matrix.source == 'paid' && secrets.RPC_URL_BASE_SEPOLIA_FORK || '' }}
           RAINIX_RPC_VARS_BASE_SEPOLIA: ${{ vars.RPC_URL_BASE_SEPOLIA_FORK }}
-          RAINIX_RPC_SECRET_ETHEREUM: ${{ secrets.RPC_URL_ETHEREUM_FORK }}
+          RAINIX_RPC_SECRET_ETHEREUM: ${{ matrix.source == 'paid' && secrets.RPC_URL_ETHEREUM_FORK || '' }}
           RAINIX_RPC_VARS_ETHEREUM: ${{ vars.RPC_URL_ETHEREUM_FORK }}
-          RAINIX_RPC_SECRET_FLARE: ${{ secrets.RPC_URL_FLARE_FORK }}
+          RAINIX_RPC_SECRET_FLARE: ${{ matrix.source == 'paid' && secrets.RPC_URL_FLARE_FORK || '' }}
           RAINIX_RPC_VARS_FLARE: ${{ vars.RPC_URL_FLARE_FORK }}
-          RAINIX_RPC_SECRET_POLYGON: ${{ secrets.RPC_URL_POLYGON_FORK }}
+          RAINIX_RPC_SECRET_POLYGON: ${{ matrix.source == 'paid' && secrets.RPC_URL_POLYGON_FORK || '' }}
           RAINIX_RPC_VARS_POLYGON: ${{ vars.RPC_URL_POLYGON_FORK }}
-          RAINIX_RPC_SECRET_SEPOLIA: ${{ secrets.RPC_URL_SEPOLIA_FORK }}
+          RAINIX_RPC_SECRET_SEPOLIA: ${{ matrix.source == 'paid' && secrets.RPC_URL_SEPOLIA_FORK || '' }}
           RAINIX_RPC_VARS_SEPOLIA: ${{ vars.RPC_URL_SEPOLIA_FORK }}
       - name: Assert the preflight bound every archive network
         # Presence only — never echo the values, they may be secret-derived.
@@ -173,6 +183,48 @@ jobs:
             fi
           done
           exit "$fail"
+  # The fork-test proxy, from THIS checkout (`./`): the PR that changes it
+  # tests its own version. Both legs check that Arbitrum is served, archive
+  # reads included, and that an empty answer (an EOA's `0x` code) is accepted
+  # from the first public upstream instead of walking down to the paid key.
+  rpc-proxy:
+    strategy:
+      matrix:
+        source: [paid, public]
+      fail-fast: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: ./.github/actions/rpc-proxy
+        env:
+          RAINIX_RPC_SECRET_ARBITRUM: ${{ matrix.source == 'paid' && secrets.RPC_URL_ARBITRUM_FORK || '' }}
+          RAINIX_RPC_VARS_ARBITRUM: ${{ vars.RPC_URL_ARBITRUM_FORK }}
+      - name: Requests through the proxy
+        run: |
+          set -euo pipefail
+          # Prints the JSON-RPC result (or the error), then checks it with jq.
+          rpc() {
+            out=$(curl -sS "$ARBITRUM_RPC_URL" -H 'content-type: application/json' \
+              -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$1\",\"params\":$2}")
+            echo "$1 $(jq -c '.result // .error' <<< "$out" | cut -c1-120)"
+            jq -e "$3" <<< "$out" > /dev/null
+          }
+          rpc eth_chainId '[]' '.result == "0xa4b1"'
+          # WETH balance at the deepest Arbitrum block the org pins.
+          rpc eth_getBalance '["0x82aF49447D8a07e3bd95BD0d56f35241523fBab1","0x10b07600"]' '.result | startswith("0x")'
+          rpc eth_getCode '["0x000000000000000000000000000000000000dEaD","latest"]' '.result == "0x"'
+          # awk, not grep: zero matching lines is the passing case.
+          paid_code=$(curl -fs http://127.0.0.1:4001/metrics | awk '
+            /^erpc_upstream_request_total\{/ && /category="eth_getCode"/ && /upstream="arbitrum-paid-/ { s += $NF }
+            END { print s + 0 }')
+          echo "paid eth_getCode calls: $paid_code"
+          [ "$paid_code" -eq 0 ]
+      - if: always()
+        uses: ./.github/actions/rpc-proxy
+        with:
+          mode: report
   # rainix eats the caps it hands consumers, like the sol gates above. Neither
   # ran against rainix itself: both are composite actions, and the matrix jobs
   # here run devshell TASKS. So the repo that sets the org's limits was the one
