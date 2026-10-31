@@ -10,7 +10,6 @@ path = [
   "REUSE.toml",
   "CLAUDE.md",
   "README.md",
-  ".coderabbit.yaml",
   ".github/**/",
   ".vscode/**/",
   "lib/**/",
