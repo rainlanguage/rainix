@@ -34,6 +34,12 @@ on:
         required: false
         type: string
         default: ''
+      npm-package-dir:
+        description: >-
+          directory of the npm package named by `npm-package`, relative to the caller repo root (default the root). Every npm step — change detection, version bump, pack and publish — runs in it, and the bump commits that directory's package.json and package-lock.json.
+        required: false
+        type: string
+        default: '.'
       soldeer-package:
         description: >-
           optional Soldeer registry package name (e.g. rain-erc). When set, the workflow publishes to the Soldeer registry on a content change vs the newest published revision, tags `sol-v<version>` and creates a GitHub release. How the version is derived, what a `next-v<x.y.z>` intent tag does, why foundry.toml carries no release metadata, and why nothing is committed or pushed to the consumer branch: rainix README, "Release lifecycle".
@@ -197,6 +203,7 @@ jobs:
       - name: NPM hashes
         if: ${{ inputs.npm-package != '' }}
         id: npm
+        working-directory: ${{ inputs.npm-package-dir }}
         run: |
           nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#rust-node-shell -c bash -c '
             OLD=$(npm view ${{ inputs.npm-package }}@latest dist.shasum 2>/dev/null || echo "none")
@@ -278,6 +285,7 @@ jobs:
           git commit --amend -m "Package Release: cargo version bump ($CRATES)"
       - name: Bump NPM version
         if: ${{ inputs.npm-package != '' && steps.npm.outputs.changed == 'true' }}
+        working-directory: ${{ inputs.npm-package-dir }}
         run: |
           NEW=$(nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#rust-node-shell -c npm version patch --no-git-tag-version)
           echo "NPM_VERSION=$NEW" >> $GITHUB_ENV
@@ -357,6 +365,7 @@ jobs:
       # Package npm tarball for upload step.
       - name: NPM pack
         if: ${{ inputs.npm-package != '' && steps.npm.outputs.changed == 'true' }}
+        working-directory: ${{ inputs.npm-package-dir }}
         run: |
           TARBALL=$(nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#rust-node-shell -c npm pack --silent)
           mv "$TARBALL" npm_package_${{ env.NPM_VERSION }}.tgz
@@ -389,6 +398,7 @@ jobs:
       # automatic provenance); setup-node's bundled npm can lag behind that.
       - name: Upgrade npm for OIDC
         if: ${{ inputs.npm-package != '' && steps.npm.outputs.changed == 'true' && steps.npm.outputs.old != 'none' }}
+        working-directory: ${{ inputs.npm-package-dir }}
         run: |
           npm install -g npm@latest
           npm --version
@@ -415,9 +425,10 @@ jobs:
         with:
           token: ${{ secrets.NPM_PUBLISH_PRIVATE_TOKEN }}
           access: public
-          package: npm_package_${{ env.NPM_VERSION }}.tgz
+          package: ${{ inputs.npm-package-dir }}/npm_package_${{ env.NPM_VERSION }}.tgz
       - name: Publish to NPM
         if: ${{ inputs.npm-package != '' && steps.npm.outputs.changed == 'true' && steps.npm.outputs.old != 'none' }}
+        working-directory: ${{ inputs.npm-package-dir }}
         run: npm publish "npm_package_$NPM_VERSION.tgz" --access public --tag latest --verbose
       # GitHub Releases. One per crate (loop), plus npm; the soldeer release
       # is created earlier, right after its tag push.
@@ -437,5 +448,5 @@ jobs:
         with:
           tag-name: npm-${{ env.NPM_VERSION }}
           name: NPM Package Release ${{ env.NPM_VERSION }}
-          files: npm_package_${{ env.NPM_VERSION }}.tgz
+          files: ${{ inputs.npm-package-dir }}/npm_package_${{ env.NPM_VERSION }}.tgz
           github-token: ${{ secrets.GITHUB_TOKEN }}
