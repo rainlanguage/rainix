@@ -371,7 +371,9 @@ carries a cargo lane and an npm lane, which a library repo may use instead of or
 alongside it; those gate on their own registry comparison (a normalized crate
 content hash against crates.io, the `npm pack` shasum against the published one)
 and take their version from the repo's own manifest via `cargo release` /
-`npm version`, not from the rules below.
+`npm version`, not from the rules below. The npm lane runs in `npm-package-dir`
+(default the repo root), so its package can live in a subdirectory beside the
+crates or Soldeer package.
 
 #### Library repos: what publishes, and when
 
