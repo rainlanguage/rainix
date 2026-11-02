@@ -1,0 +1,40 @@
+name: rainix-subgraph-deploy
+on:
+  workflow_call:
+    inputs:
+      subgraph-name:
+        type: string
+        required: true
+        description: |
+          `SUBGRAPH_NAME`: each network in `subgraph/networks.json` deploys as
+          `<subgraph-name>-<network>`.
+      ormi-query-base:
+        type: string
+        required: true
+        description: |
+          `ORMI_QUERY_BASE`: public query base of the Ormi account the deploy
+          key belongs to, probed to skip a version that is already live.
+    # Declared so cross-org callers can pass them; `secrets: inherit` does not
+    # cross organizations.
+    secrets:
+      CACHIX_AUTH_TOKEN:
+        required: false
+      ORMI_DEPLOY_KEY:
+        required: true
+env:
+  RAINIX_SHA: 2aea60e5c4004cfaeb6168f26e71b3ed695fd349
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          gc-max-store-size-linux: 1G
+      - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#subgraph-shell -c subgraph-deploy
+        env:
+          SUBGRAPH_NAME: ${{ inputs.subgraph-name }}
+          ORMI_QUERY_BASE: ${{ inputs.ormi-query-base }}
+          ORMI_DEPLOY_KEY: ${{ secrets.ORMI_DEPLOY_KEY }}
