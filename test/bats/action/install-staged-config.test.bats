@@ -123,9 +123,8 @@ install() {
   [[ "$output" == *"does not exist"* ]]
 }
 
-@test "a repo with script/build.sh leaves the staging dir to that hook" {
+@test "a repo with script/build.sh has its staged config installed" {
   mk_marked_consumer
-  cp "$work/foundry.toml" "$work/before.toml"
   mkdir "$work/script" "$work/.staged-config"
   printf '#!/usr/bin/env bash\n' >"$work/script/build.sh"
   printf 'NEW FOUNDRY\n' >"$work/.staged-config/foundry.toml"
@@ -133,43 +132,17 @@ install() {
   install
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"script/build.sh present"* ]]
-  cmp "$work/foundry.toml" "$work/before.toml"
-  [ "$(cat "$work/.staged-config/foundry.toml")" = "NEW FOUNDRY" ]
+  [ "$(cat "$work/foundry.toml")" = "NEW FOUNDRY" ]
+  [ ! -e "$work/.staged-config" ]
 }
 
-@test "a repo with script/build.sh and nothing staged is left to that hook" {
+@test "a repo with script/build.sh and nothing staged still fails" {
   mk_marked_consumer
   mkdir "$work/script"
   printf '#!/usr/bin/env bash\n' >"$work/script/build.sh"
 
   install
 
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"script/build.sh present"* ]]
-}
-
-@test "a directory named script/build.sh is not a hook" {
-  mk_marked_consumer
-  mkdir -p "$work/script/build.sh" "$work/.staged-config"
-  printf 'NEW FOUNDRY\n' >"$work/.staged-config/foundry.toml"
-
-  install
-
-  [ "$status" -eq 0 ]
-  [ "$(cat "$work/foundry.toml")" = "NEW FOUNDRY" ]
-  [ ! -e "$work/.staged-config" ]
-}
-
-@test "a repo with other script hooks but no script/build.sh installs the staged config" {
-  mk_marked_consumer
-  mkdir "$work/script" "$work/.staged-config"
-  printf '#!/usr/bin/env bash\n' >"$work/script/build-meta.sh"
-  printf 'NEW FOUNDRY\n' >"$work/.staged-config/foundry.toml"
-
-  install
-
-  [ "$status" -eq 0 ]
-  [ "$(cat "$work/foundry.toml")" = "NEW FOUNDRY" ]
-  [ ! -e "$work/.staged-config" ]
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"does not exist"* ]]
 }

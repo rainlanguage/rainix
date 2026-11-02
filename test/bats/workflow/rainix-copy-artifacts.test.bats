@@ -49,7 +49,7 @@ setup() {
 
 @test "every codegen hook reaches the log — none is left undeclarable" {
   local hook
-  for hook in script/build-meta.sh script/Build.sol script/CopyArtifacts.sol script/build.sh; do
+  for hook in script/build-meta.sh script/Build.sol script/CopyArtifacts.sol REGENERATE_COMMAND; do
     echo "$teed" | grep -qF "$hook"
   done
 }
@@ -99,4 +99,15 @@ setup() {
   [ "$build" -lt "$install" ]
   [ "$install" -lt "$forge_build" ]
   [ "$install" -lt "$verify" ]
+}
+
+@test "derived artifacts regenerate from the declared input, never a file the repo happens to have" {
+  local step
+  step="$(yq -r '.jobs.copy-artifacts.steps[] | select(.name == "Regenerate derived artifacts")' "$workflow")"
+  [ "$(echo "$step" | yq -r '.if')" = "inputs.regenerate-command != ''" ]
+  # shellcheck disable=SC2016
+  [ "$(echo "$step" | yq -r '.env.REGENERATE_COMMAND')" = '${{ inputs.regenerate-command }}' ]
+  [ "$(yq -r '.on.workflow_call.inputs.regenerate-command.default' "$workflow")" = "" ]
+  [ -z "$(grep -F 'script/build.sh' "$workflow" || true)" ]
+  [ -z "$(echo "$runs" | grep -F 'inputs.' || true)" ]
 }

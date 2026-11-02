@@ -2,9 +2,6 @@ use std::path::Path;
 
 pub(crate) const STAGED_DIR: &str = ".staged-config";
 
-/// A consumer with this hook installs the staging dir itself.
-pub(crate) const BUILD_HOOK: &str = "script/build.sh";
-
 /// Foundry refuses a cheatcode write to the root `foundry.toml`, so a generated
 /// block marked there can only be refreshed through the staging dir.
 pub(crate) const GENERATED_MARKER: &str = "# rain-deploy:generated:";
@@ -58,10 +55,6 @@ pub(crate) fn install(root: &Path) -> Result<Vec<String>, String> {
 }
 
 pub(crate) fn run(root: &Path) {
-    if root.join(BUILD_HOOK).is_file() {
-        println!("install-staged-config: {BUILD_HOOK} present, leaving {STAGED_DIR}/ to it");
-        return;
-    }
     match install(root) {
         Err(e) => crate::fail(&format!("install-staged-config: {e}")),
         Ok(names) if names.is_empty() => {
