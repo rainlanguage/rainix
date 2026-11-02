@@ -71,10 +71,11 @@ on:
         default: main
     secrets:
       # The release is push-free: this workflow makes no commit and no branch
-      # push, so PUBLISH_PRIVATE_KEY (deploy key), CI_GIT_EMAIL and CI_GIT_USER
-      # are no longer used here. They stay declared (required: false) so callers
-      # that pass them by name — rather than `secrets: inherit` — do not break.
-      PUBLISH_PRIVATE_KEY:
+      # push, so AUTOPUBLISH_SSH_DEPLOY_KEY (GitHub SSH deploy key), CI_GIT_EMAIL
+      # and CI_GIT_USER are no longer used here. They stay declared
+      # (required: false) so callers that pass them by name — rather than
+      # `secrets: inherit` — do not break.
+      AUTOPUBLISH_SSH_DEPLOY_KEY:
         required: false
       CI_GIT_EMAIL:
         required: false

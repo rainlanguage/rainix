@@ -13,6 +13,10 @@
 // Subcommands:
 //   no-submodules [dir]
 //       fail if the repo vendors git submodules.
+//   env-ignored [dir]
+//       fail unless the repo's own committed .gitignore ignores .env (per
+//       `git check-ignore`; global excludes and .git/info/exclude do not
+//       count) and no file named .env is tracked.
 //   relative-src-imports [dir]
 //       fail if a tracked src/**/*.sol imports through a path whose first segment
 //       is an entry of the repo root (src/, test/, dependencies/, ...): the
@@ -150,6 +154,7 @@ mod ci_gate;
 mod codegen_declaration;
 mod comment_loc_cap;
 mod context_bytes;
+mod env_ignored;
 mod frozen_snapshots;
 mod install_staged_config;
 mod mutation_ledger;
@@ -218,6 +223,19 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let sub = args.get(1).map(String::as_str).unwrap_or("");
     match sub {
+        "env-ignored" => {
+            let dir = Path::new(args.get(2).map(String::as_str).unwrap_or("."));
+            let offenders =
+                env_ignored::check(dir).unwrap_or_else(|e| fail(&format!("env-ignored: {e}")));
+            if offenders.is_empty() {
+                println!("env-ignored: clean");
+            } else {
+                for line in offenders {
+                    println!("{line}");
+                }
+                std::process::exit(1);
+            }
+        }
         "no-submodules" => {
             let dir = Path::new(args.get(2).map(String::as_str).unwrap_or("."));
             let offenders = no_submodules::check(dir);
@@ -436,6 +454,22 @@ fn main() {
             // Deploy/broadcast paths only ever read head state; requiring
             // archive there would reject a healthy pruning endpoint.
             let archive = !args.iter().any(|a| a == "--no-archive");
+            // --proxy-config <file>: write an eRPC config with per-request
+            // failover instead of selecting one URL (see run_proxy).
+            if let Some(config) = flag(&args, "--proxy-config") {
+                let port = num(&args, "--proxy-port", 4000);
+                let port =
+                    u16::try_from(port).unwrap_or_else(|_| fail("--proxy-port: must fit in a u16"));
+                rpc_preflight::run_proxy(
+                    Path::new(&root),
+                    Path::new(&github_env),
+                    Path::new(&config),
+                    timeout,
+                    archive,
+                    port,
+                );
+                return;
+            }
             rpc_preflight::run(
                 Path::new(&root),
                 Path::new(&github_env),

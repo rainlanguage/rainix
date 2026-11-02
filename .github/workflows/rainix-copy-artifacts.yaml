@@ -6,6 +6,9 @@ on:
         description: Run after forge build and CopyArtifacts.sol, outside any devshell, to regenerate committed artifacts the fixed steps do not.
         type: string
         default: ""
+    secrets:
+      CACHIX_AUTH_TOKEN:
+        required: false
 env:
   RAINIX_SHA: 2aea60e5c4004cfaeb6168f26e71b3ed695fd349
 jobs:

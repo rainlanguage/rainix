@@ -21,6 +21,8 @@ setup() {
   TESTDIR="$(mktemp -d)"
   git init -q "$TESTDIR"
   cp -L "$CONFIG" "$TESTDIR/.pre-commit-config.yaml"
+  printf '.env\n' > "$TESTDIR/.gitignore"
+  git -C "$TESTDIR" add .gitignore
 }
 
 teardown() {
@@ -71,4 +73,31 @@ EOF
   run pre-commit run --all-files --color never
   [ "$status" -eq 0 ]
   echo "$output" | grep -q '^prettier-rainix'
+}
+
+@test "pre-commit run --all-files passes when .gitignore ignores .env" {
+  cd "$TESTDIR"
+  run pre-commit run --all-files --color never
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '^env-ignored.*Passed'
+}
+
+@test "pre-commit run --all-files fails when .gitignore does not ignore .env" {
+  git -C "$TESTDIR" rm -q --cached .gitignore
+  rm "$TESTDIR/.gitignore"
+  cd "$TESTDIR"
+  run pre-commit run --all-files --color never
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -q '^env-ignored.*Failed'
+  echo "$output" | grep -q 'does not ignore \.env'
+}
+
+@test "pre-commit run --all-files fails when a .env is tracked" {
+  printf 'SECRET=1\n' > "$TESTDIR/.env"
+  git -C "$TESTDIR" add -f .env
+  cd "$TESTDIR"
+  run pre-commit run --all-files --color never
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -q '^env-ignored.*Failed'
+  echo "$output" | grep -q '^  \.env$'
 }
