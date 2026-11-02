@@ -1,12 +1,23 @@
 name: rainix-rs
 on:
   workflow_call:
+    secrets:
+      CACHIX_AUTH_TOKEN:
+        required: false
 jobs:
   static:
     uses: ./.github/workflows/rainix-rs-static.yaml
+    secrets:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
   test:
     uses: ./.github/workflows/rainix-rs-test.yaml
+    secrets:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
   wasm:
     uses: ./.github/workflows/rainix-rs-wasm.yaml
+    secrets:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
   wasm-test:
     uses: ./.github/workflows/rainix-rs-wasm-test.yaml
+    secrets:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}

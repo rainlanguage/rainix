@@ -74,6 +74,12 @@ Downstream flakes can compose their own tasks and shells using:
 
 ### Reusable Workflows
 
+Every secret a reusable reads is declared in its `workflow_call.secrets`.
+`secrets: inherit` forwards only within the caller's own organization, so a
+caller outside `rainlanguage` maps each secret it has explicitly, e.g.
+`CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}`. The examples below use
+`secrets: inherit`, which is enough for same-org callers.
+
 #### rainix-sol-static
 
 `.github/workflows/rainix-sol-static.yaml` runs `rainix-sol-static` (slither) on
@@ -135,11 +141,11 @@ jobs:
     secrets: inherit
 ```
 
-`secrets: inherit` is required because the reusable wires the standard fork RPC
-env vars (`ARBITRUM_RPC_URL`, `BASE_RPC_URL`, `BASE_SEPOLIA_RPC_URL`,
-`BSC_RPC_URL`, `ETHEREUM_RPC_URL`, `FLARE_RPC_URL`, `HYPEREVM_RPC_URL`,
-`POLYGON_RPC_URL`, `ROBINHOOD_RPC_URL`, `SEPOLIA_RPC_URL`) from the consumer
-org's `RPC_URL_<NETWORK>_FORK` secrets/vars, plus `ETHERSCAN_API_KEY` and
+The secrets matter because the reusable wires the standard fork RPC env vars
+(`ARBITRUM_RPC_URL`, `BASE_RPC_URL`, `BASE_SEPOLIA_RPC_URL`, `BSC_RPC_URL`,
+`ETHEREUM_RPC_URL`, `FLARE_RPC_URL`, `HYPEREVM_RPC_URL`, `POLYGON_RPC_URL`,
+`ROBINHOOD_RPC_URL`, `SEPOLIA_RPC_URL`) from the consumer org's
+`RPC_URL_<NETWORK>_FORK` secrets/vars, plus `ETHERSCAN_API_KEY` and
 `DEPLOYMENT_KEY`. Repos that do no fork tests can ignore — empty values are
 harmless.
 

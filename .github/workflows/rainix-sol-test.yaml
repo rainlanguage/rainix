@@ -2,6 +2,8 @@ name: rainix-sol-test
 on:
   workflow_call:
     secrets:
+      CACHIX_AUTH_TOKEN:
+        required: false
       PRIVATE_KEY:
         required: false
       EXPLORER_VERIFICATION_KEY:
