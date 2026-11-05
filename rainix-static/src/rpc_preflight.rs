@@ -1085,20 +1085,67 @@ pub(crate) fn run(
     println!("rpc-preflight: clean");
 }
 
+/// Which list an upstream sits in: our own node first, then the public ones,
+/// then the paid key.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Tier {
+    /// Our own node behind its gate, reached through the local auth forwarder
+    /// the rpc-proxy action starts (`RAINIX_RPC_OWN_<NETWORK>`).
+    Own,
+    Public,
+    Paid,
+}
+
 /// One eRPC upstream: its id (what metrics and logs show), URL and tier.
 struct Upstream {
     id: String,
     url: Url,
-    paid: bool,
-    /// `Some(n)` for a public node that refused state further back than `n`
-    /// blocks below its head. eRPC is told it holds only that window, so an
-    /// older read skips it: a refusal does not always fail over (publicnode's
-    /// 403 on an old Robinhood block failed st0x.deploy run 40673454956).
+    tier: Tier,
+    /// `Some(n)` for a node that refused state further back than `n` blocks
+    /// below its head. eRPC is told it holds only that window, so an older
+    /// read skips it: a refusal does not always fail over (publicnode's 403 on
+    /// an old Robinhood block failed st0x.deploy run 40673454956).
     window: Option<u64>,
 }
 
 /// Depths probed, deepest first, on networks with no archive pin.
 const STATE_DEPTHS: [u64; 4] = [1_000_000, 100_000, 10_000, 1_000];
+
+/// Depths probed on our own node after block 1, deepest first. Our Base node
+/// is a full node that holds about 13M blocks of state (2026-11-05), so its
+/// window is 10M; the Ethereum and Robinhood nodes are archive and pass at
+/// block 1.
+const OWN_DEPTHS: [u64; 5] = [10_000_000, 1_000_000, 100_000, 10_000, 1_000];
+
+/// The state our own node serves: `Some(None)` for full history (it answers
+/// `eth_getBalance` at block 1), `Some(Some(n))` for the last `n` blocks,
+/// `None` when it serves none of the probes or its head is unknown. Unlike
+/// `state_window`, any error counts as a refusal: our nodes answer pruned
+/// reads with an error (reth `-32603 state ... is pruned`), never `0x`, and a
+/// node we cannot read is left out rather than trusted with every block.
+fn own_window(url: &Url, net: &Network, timeout: u32) -> Option<Option<u64>> {
+    let head_body = r#"{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}"#;
+    let head = rpc(url, timeout, head_body, None)
+        .ok()
+        .and_then(|v| hex_result(&v).and_then(|h| u64::from_str_radix(&h[2..], 16).ok()))?;
+    let serves = |block: u64| {
+        let body = format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"eth_getBalance","params":["{}","{}"]}}"#,
+            net.probe_contract,
+            block_tag(Some(block))
+        );
+        rpc(url, timeout, &body, Some(block))
+            .ok()
+            .is_some_and(|v| hex_result(&v).is_some())
+    };
+    if serves(1) {
+        return Some(None);
+    }
+    OWN_DEPTHS
+        .into_iter()
+        .find(|d| *d < head && serves(head - d))
+        .map(Some)
+}
 
 /// The state window to declare for a public node: `None` (no bound) when it
 /// serves the deepest probe or when the answer is unclear (a 429 or timeout is
@@ -1156,6 +1203,29 @@ const PROXY_POLICY: &[&str] = &[
     "  .concat(upstreams.byTag('tier:paid'))",
 ];
 
+/// Selection policy for a network that has our own node: the own node first
+/// while it is healthy, then the public list exactly as in `PROXY_POLICY`,
+/// then the paid key. The own node is never ranked by latency against the
+/// publics (a runner far from our box would otherwise prefer a public), and an
+/// own node that keeps refusing (the gate's 503 while the node lags, 429 over
+/// its rate limit) drops out by the same error and throttle rules.
+const OWN_POLICY: &[&str] = &[
+    "(upstreams, ctx) => upstreams",
+    "  .byTag('tier:own')",
+    "  .removeCordoned()",
+    "  .excludeIf(all(samplesAbove(10), errorRateAbove(0.7)))",
+    "  .excludeIf(all(samplesAbove(10), throttleRateAbove(0.4)))",
+    "  .concat(upstreams",
+    "    .excludeTag('tier:paid')",
+    "    .excludeTag('tier:own')",
+    "    .removeCordoned()",
+    "    .excludeIf(all(samplesAbove(10), errorRateAbove(0.7)))",
+    "    .excludeIf(all(samplesAbove(10), throttleRateAbove(0.4)))",
+    "    .whenEmpty(() => upstreams.excludeTag('tier:paid').excludeTag('tier:own'))",
+    "    .sortByScore(PREFER_FASTEST))",
+    "  .concat(upstreams.byTag('tier:paid'))",
+];
+
 /// Render the eRPC config. Pure, so the ordering and the knobs that keep
 /// traffic off the paid key are unit tested.
 ///
@@ -1206,7 +1276,12 @@ fn proxy_yaml(port: u16, nets: &[(&Network, Vec<Upstream>)]) -> String {
             "        failsafe:\n          - matchMethod: \"*\"\n            timeout: {{ duration: 120s }}\n            retry: {{ maxAttempts: 2, delay: 1s, emptyResultMaxAttempts: {cap}, emptyResultDelay: 0s }}\n"
         ));
         y.push_str("        selectionPolicy:\n          evalInterval: 1s\n          evalFunc: |\n");
-        for line in PROXY_POLICY {
+        let policy = if ups.iter().any(|u| u.tier == Tier::Own) {
+            OWN_POLICY
+        } else {
+            PROXY_POLICY
+        };
+        for line in policy {
             y.push_str(&format!("            {line}\n"));
         }
     }
@@ -1218,25 +1293,93 @@ fn proxy_yaml(port: u16, nets: &[(&Network, Vec<Upstream>)]) -> String {
                 u.id,
                 q(u.url.expose())
             ));
-            if u.paid {
+            let tag = match u.tier {
+                Tier::Own => "tier:own",
+                Tier::Public => "tier:public",
+                Tier::Paid => "tier:paid",
+            };
+            if u.tier == Tier::Paid {
                 y.push_str(&format!(
-                    "        tags: [\"tier:paid\"]\n        routing: {{ probe: \"off\" }}\n        evm: {{ chainId: {}, statePollerInterval: 300s }}\n",
+                    "        tags: [\"{tag}\"]\n        routing: {{ probe: \"off\" }}\n        evm: {{ chainId: {}, statePollerInterval: 300s }}\n",
                     net.chain_id
                 ));
             } else if let Some(window) = u.window {
                 y.push_str(&format!(
-                    "        tags: [\"tier:public\"]\n        evm: {{ chainId: {}, blockAvailability: {{ lower: {{ latestBlockMinus: {window} }} }} }}\n",
+                    "        tags: [\"{tag}\"]\n        evm: {{ chainId: {}, blockAvailability: {{ lower: {{ latestBlockMinus: {window} }} }} }}\n",
                     net.chain_id
                 ));
             } else {
                 y.push_str(&format!(
-                    "        tags: [\"tier:public\"]\n        evm: {{ chainId: {} }}\n",
+                    "        tags: [\"{tag}\"]\n        evm: {{ chainId: {} }}\n",
                     net.chain_id
                 ));
             }
         }
     }
     y
+}
+
+/// Our own node for `net`, when the rpc-proxy action started the local auth
+/// forwarder for it (`RAINIX_RPC_OWN_<NETWORK>`, set only in jobs that can
+/// mint a GitHub OIDC token). It must report the right chain and serve some
+/// state; its window comes from `own_window`. Anything else leaves it out, and
+/// the network runs on the public and paid lists as before.
+fn own_upstream(net: &Network, timeout: u32) -> Option<Upstream> {
+    let raw = std::env::var(format!("RAINIX_RPC_OWN_{}", upper(net.key))).unwrap_or_default();
+    let url = Url(raw.trim().to_string());
+    if url.expose().is_empty() {
+        return None;
+    }
+    let chain = r#"{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}"#;
+    match rpc(&url, timeout, chain, None).map(|v| parse_chain_id(&v)) {
+        Ok(Some(got)) if got == net.chain_id => {}
+        Ok(Some(got)) => {
+            println!(
+                "::warning::rpc-proxy: {}: own node left out: {}",
+                net.key,
+                Reason::WrongChain {
+                    expected: net.chain_id,
+                    got
+                }
+            );
+            return None;
+        }
+        Ok(None) => {
+            println!(
+                "::warning::rpc-proxy: {}: own node left out: {}",
+                net.key,
+                Reason::BadResponse
+            );
+            return None;
+        }
+        Err(reason) => {
+            println!(
+                "::warning::rpc-proxy: {}: own node left out: {reason}",
+                net.key
+            );
+            return None;
+        }
+    }
+    let Some(window) = own_window(&url, net, timeout) else {
+        println!(
+            "::warning::rpc-proxy: {}: own node left out: it served no state probe",
+            net.key
+        );
+        return None;
+    };
+    match window {
+        Some(w) => println!(
+            "rpc-proxy: {}: own node serves the last {w} blocks only",
+            net.key
+        ),
+        None => println!("rpc-proxy: {}: own node serves full history", net.key),
+    }
+    Some(Upstream {
+        id: format!("{}-own-0", net.key),
+        url,
+        tier: Tier::Own,
+        window,
+    })
 }
 
 /// Proxy mode: instead of exporting one chosen URL per network, write an eRPC
@@ -1269,7 +1412,8 @@ pub(crate) fn run_proxy(
             .into_iter()
             .filter(|(_, u)| !paid.iter().any(|p| p == u.expose()))
             .collect();
-        let configured = !publics.is_empty() || !paid.is_empty();
+        let own = own_upstream(net, timeout);
+        let configured = !publics.is_empty() || !paid.is_empty() || own.is_some();
         let mut ups = Vec::new();
         let mut rejected = Vec::new();
         for (src, url) in &publics {
@@ -1291,7 +1435,7 @@ pub(crate) fn run_proxy(
                     ups.push(Upstream {
                         id: format!("{}-{}", net.key, src.slug()),
                         url: Url(url.expose().to_string()),
-                        paid: false,
+                        tier: Tier::Public,
                         window,
                     })
                 }
@@ -1316,10 +1460,13 @@ pub(crate) fn run_proxy(
                 ups.push(Upstream {
                     id: format!("{}-{}", net.key, src.slug()),
                     url,
-                    paid: false,
+                    tier: Tier::Public,
                     window: None,
                 });
             }
+        }
+        if let Some(o) = own {
+            ups.insert(0, o);
         }
         for (i, u) in paid.into_iter().enumerate() {
             let url = Url(u);
@@ -1348,7 +1495,7 @@ pub(crate) fn run_proxy(
             ups.push(Upstream {
                 id: format!("{}-paid-{i}", net.key),
                 url,
-                paid: true,
+                tier: Tier::Paid,
                 window: None,
             });
         }
@@ -1428,9 +1575,67 @@ mod tests {
         Upstream {
             id: id.to_string(),
             url: Url(url.to_string()),
-            paid,
+            tier: if paid { Tier::Paid } else { Tier::Public },
             window: None,
         }
+    }
+
+    fn own(id: &str, window: Option<u64>) -> Upstream {
+        Upstream {
+            id: id.to_string(),
+            url: Url("http://127.0.0.1:4002/arbitrum".to_string()),
+            tier: Tier::Own,
+            window,
+        }
+    }
+
+    #[test]
+    fn proxy_yaml_puts_own_node_first_and_paid_last() {
+        let ups = vec![
+            own("arbitrum-own-0", None),
+            up("arbitrum-default-0", "https://a.example", false),
+            up("arbitrum-paid-0", "https://paid.example/KEY", true),
+        ];
+        let y = proxy_yaml(4000, &[(proxy_net(), ups)]);
+        let o = y.find("id: arbitrum-own-0").unwrap();
+        let a = y.find("id: arbitrum-default-0").unwrap();
+        let p = y.find("id: arbitrum-paid-0").unwrap();
+        assert!(o < a && a < p);
+        assert!(y.contains("endpoint: \"http://127.0.0.1:4002/arbitrum\"\n        tags: [\"tier:own\"]\n        evm: { chainId: 42161 }\n"));
+        // The own tier leads the policy, ahead of the latency-sorted publics,
+        // and the publics never re-admit it.
+        let policy: String = OWN_POLICY.join("\n");
+        assert!(y.contains(&policy.replace('\n', "\n            ")));
+        let own_at = policy.find(".byTag('tier:own')").unwrap();
+        let public_at = policy.find(".excludeTag('tier:own')").unwrap();
+        let paid_at = policy
+            .rfind(".concat(upstreams.byTag('tier:paid'))")
+            .unwrap();
+        assert!(own_at < public_at && public_at < paid_at);
+        assert!(policy
+            .contains("whenEmpty(() => upstreams.excludeTag('tier:paid').excludeTag('tier:own'))"));
+    }
+
+    #[test]
+    fn proxy_yaml_keeps_the_public_policy_without_an_own_node() {
+        let y = proxy_yaml(
+            4000,
+            &[(
+                proxy_net(),
+                vec![up("arbitrum-default-0", "https://a.example", false)],
+            )],
+        );
+        assert!(!y.contains("tier:own"));
+        assert!(y.contains(&PROXY_POLICY.join("\n            ")));
+    }
+
+    #[test]
+    fn proxy_yaml_declares_the_own_node_window() {
+        let y = proxy_yaml(
+            4000,
+            &[(proxy_net(), vec![own("arbitrum-own-0", Some(10_000_000))])],
+        );
+        assert!(y.contains("tags: [\"tier:own\"]\n        evm: { chainId: 42161, blockAvailability: { lower: { latestBlockMinus: 10000000 } } }"));
     }
 
     #[test]

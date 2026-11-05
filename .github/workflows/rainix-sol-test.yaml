@@ -78,13 +78,18 @@ jobs:
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
       # Serve every <NETWORK>_RPC_URL foundry.toml reads from a local eRPC:
-      # public upstreams first, the paid secret last, and each request fails
-      # over on its own, so one throttled read no longer fails the suite.
+      # our own node first where we run one (Ethereum, Robinhood, Base; only
+      # when the caller grants `id-token: write`, never on
+      # `pull_request_target`), then public upstreams, the paid secret last,
+      # and each request fails over on its own, so one throttled read no
+      # longer fails the suite.
       # Candidate URLs travel as env, never as `with:` inputs, because GitHub
       # renders a composite's resolved inputs into the log and a keyed URL
       # embeds its API key.
       - name: RPC proxy
         uses: rainlanguage/rainix/.github/actions/rpc-proxy@main
+        with:
+          own-nodes: ${{ env.RAINIX_FORK_SECRETS }}
         env:
           RAINIX_RPC_SECRET_ARBITRUM: ${{ env.RAINIX_FORK_SECRETS == 'true' && secrets.RPC_URL_ARBITRUM_FORK || '' }}
           RAINIX_RPC_VARS_ARBITRUM: ${{ vars.RPC_URL_ARBITRUM_FORK }}
