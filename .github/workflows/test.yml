@@ -187,12 +187,20 @@ jobs:
   # tests its own version. Both legs check that Arbitrum is served, archive
   # reads included, and that an empty answer (an EOA's `0x` code) is accepted
   # from the first public upstream instead of walking down to the paid key.
+  #
+  # `id-token: write` lets the proxy put our own Ethereum, Robinhood and Base
+  # nodes first. Arbitrum has no own node, so the checks below are unchanged;
+  # the Ethereum step shows whether our node served (it is left out, and the
+  # publics serve, while the gate does not trust this workflow).
   rpc-proxy:
     strategy:
       matrix:
         source: [paid, public]
       fail-fast: false
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
         with:
@@ -221,6 +229,18 @@ jobs:
             END { print s + 0 }')
           echo "paid eth_getCode calls: $paid_code"
           [ "$paid_code" -eq 0 ]
+      - name: Ethereum through our own node
+        run: |
+          set -euo pipefail
+          # WETH balance at block 15,000,000: archive state, which our
+          # Ethereum node serves.
+          out=$(curl -sS "$ETHEREUM_RPC_URL" -H 'content-type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"eth_getBalance","params":["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2","0xe4e1c0"]}')
+          jq -e '.result | startswith("0x")' <<< "$out" > /dev/null
+          own=$(curl -fs http://127.0.0.1:4001/metrics | awk '
+            /^erpc_upstream_request_total\{/ && /upstream="ethereum-own-0"/ && !/network="n\/a"/ { s += $NF }
+            END { print s + 0 }')
+          echo "ethereum own-node requests: $own"
       - if: always()
         uses: ./.github/actions/rpc-proxy
         with:

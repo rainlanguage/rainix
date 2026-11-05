@@ -1,6 +1,6 @@
 name: rpc-proxy
 description: >-
-  Runs eRPC (github.com/erpc/erpc) on the runner as a per-request failover proxy for fork tests, and points every <NETWORK>_RPC_URL the repo uses at it on 127.0.0.1. Per network the upstreams are the public candidates (RPC_URL_<NETWORK>_FORK variable, then the hardcoded public archive defaults, each probed once) followed by the RPC_URL_<NETWORK>_FORK secret as the last resort. A request that fails on one upstream (429, 5xx, timeout, missing trie node, unknown block) is retried on the next, so a public endpoint that throttles mid-suite no longer fails the suite, and the paid key is only spent on requests every public one failed. Candidates travel as env, exactly as for rpc-preflight. Call it again with mode report after the tests to print the calls each upstream served.
+  Runs eRPC (github.com/erpc/erpc) on the runner as a per-request failover proxy for fork tests, and points every <NETWORK>_RPC_URL the repo uses at it on 127.0.0.1. Per network the upstreams are our own node where we run one (Ethereum, Robinhood, Base; see the own-nodes input), then the public candidates (RPC_URL_<NETWORK>_FORK variable, then the hardcoded public archive defaults, each probed once) followed by the RPC_URL_<NETWORK>_FORK secret as the last resort. A request that fails on one upstream (429, 5xx, timeout, missing trie node, unknown block) is retried on the next, so a public endpoint that throttles mid-suite no longer fails the suite, and the paid key is only spent on requests every public one failed. Candidates travel as env, exactly as for rpc-preflight. Call it again with mode report after the tests to print the calls each upstream served.
 inputs:
   mode:
     description: >-
@@ -12,6 +12,11 @@ inputs:
       Whether a public candidate must serve historical state at the network's archive probe block to join. Same meaning as rpc-preflight's input.
     required: false
     default: 'true'
+  own-nodes:
+    description: >-
+      Whether to put our own nodes (Ethereum, Robinhood, Base behind st0x-rpc-gate at <chain>-mainnet.arpeecee.com) first, ahead of the public candidates. They are reached with the job's GitHub OIDC token through a local forwarder, so this needs the caller to grant `permissions: id-token: write`; without that, or on `pull_request_target`, the proxy runs on the public and paid lists as before.
+    required: false
+    default: 'true'
 runs:
   using: composite
   steps:
@@ -20,6 +25,7 @@ runs:
       shell: bash
       env:
         RAINIX_RPC_ARCHIVE: ${{ inputs.archive }}
+        RAINIX_OWN_NODES: ${{ inputs.own-nodes }}
         # eRPC 0.4.0 (2026-10-11), linux x86_64, sha256 from its checksums.txt.
         ERPC_VERSION: 0.4.0
         ERPC_SHA256: bb4658b11bb1333e943b4e6f8819da26e1ed7e84b8c72305cbdc1a30cc4ea5f1
@@ -31,6 +37,43 @@ runs:
         fi
         dir="$RUNNER_TEMP/rpc-proxy"
         mkdir -p "$dir"
+
+        # Our own nodes, first in every network that has one. The forwarder
+        # signs each call with a GitHub OIDC token for that gate, so the job
+        # needs `id-token: write`; pull_request_target runs fork code, so it
+        # never gets one from here.
+        if [[ "$RAINIX_OWN_NODES" != "true" ]]; then
+          echo "rpc-proxy: own nodes off (own-nodes input)"
+        elif [[ "$GITHUB_EVENT_NAME" == pull_request_target ]]; then
+          echo "rpc-proxy: own nodes off on pull_request_target"
+        elif [[ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]]; then
+          echo "::notice::rpc-proxy: no GitHub OIDC token in this job, so our own nodes are skipped. Grant 'permissions: id-token: write' to the job that calls rainix-sol to fork through them first."
+        else
+          auth="$GITHUB_ACTION_PATH/own-node-auth.py"
+          if claims=$(python3 -I "$auth" --claims ethereum 2>/dev/null); then
+            echo "rpc-proxy: own-node token claims: $claims"
+          else
+            echo "::warning::rpc-proxy: could not mint a GitHub OIDC token; own nodes skipped"
+            auth=""
+          fi
+          if [[ -n "$auth" ]]; then
+            nohup python3 -I "$auth" serve 4002 > "$dir/own-node-auth.log" 2>&1 &
+            echo $! > "$dir/own-node-auth.pid"
+            for _ in $(seq 1 20); do
+              if curl -fs -o /dev/null http://127.0.0.1:4002/healthz; then
+                export RAINIX_RPC_OWN_ETHEREUM=http://127.0.0.1:4002/ethereum
+                export RAINIX_RPC_OWN_ROBINHOOD=http://127.0.0.1:4002/robinhood
+                export RAINIX_RPC_OWN_BASE=http://127.0.0.1:4002/base
+                break
+              fi
+              sleep 0.5
+            done
+            if [[ -z "${RAINIX_RPC_OWN_ETHEREUM:-}" ]]; then
+              echo "::warning::rpc-proxy: own-node forwarder did not start; own nodes skipped"
+            fi
+          fi
+        fi
+
         args=(rpc-preflight --proxy-config "$dir/erpc.yaml")
         if [[ "$RAINIX_RPC_ARCHIVE" != "true" ]]; then
           args+=(--no-archive)
@@ -102,6 +145,9 @@ runs:
             echo "| $u | $n | ${e:-0} |"
           done <<< "$requests"
           paid=$(awk '$1 ~ /-paid-/ { s += $2 } END { print s + 0 }' <<< "$requests")
+          own=$(awk '$1 ~ /-own-/ { s += $2 } END { print s + 0 }' <<< "$requests")
+          echo
+          echo "Own node requests this run: **$own**"
           echo
           echo "Paid key requests this run: **$paid**"
         } | tee -a "$GITHUB_STEP_SUMMARY"
