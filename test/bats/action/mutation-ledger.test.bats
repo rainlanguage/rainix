@@ -110,12 +110,17 @@ real_git() {
 }
 
 # Regression for the git 2.56 crash: a `tree:0` unshallow of a shallow checkout
-# whose commit another remote branch builds on (a stacked PR) aborts in
-# index-pack with `BUG: builtin/pack-objects.c:5098`. This runs the action's own
-# fetch with real git against that shape, so a filter that crashes, or one that
-# leaves ancestry unanswerable, turns this red. It proves the fix only where the
-# git under test is 2.56 or newer; older gits pass with either filter.
+# aborts in index-pack when the checked-out commit is the parent of a commit on
+# another fetched branch (a push of a lower branch in a stack), with
+# `BUG: builtin/pack-objects.c:5098`. This runs the action's own fetch with real
+# git against that shape, so a filter that crashes, or one that leaves ancestry
+# unanswerable, turns this red. It proves the fix only where the git under test
+# has the bug (2.56.0 is the version checked); older gits pass with either
+# filter.
 @test "the real deepen survives a stacked-PR checkout and answers ancestry" {
+  # Host git config (commit.gpgsign, protocol.file.allow, and so on) must not
+  # break the fixture before the filter is tested.
+  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
   local git_bin
   git_bin="$(real_git)"
   local origin="$work/origin"
