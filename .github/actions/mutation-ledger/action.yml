@@ -29,10 +29,11 @@ runs:
         # walks history.
         #
         # It keeps the default refspec (every remote branch) on purpose. A
-        # HEAD-only `tree:0` fetch is smaller and also dodges the crash below,
-        # but only because no fetched commit then points at the shallow commit:
-        # it still runs the code path that has the bug. `blob:none` does not
-        # depend on which refs are fetched.
+        # `tree:0` fetch of only the checked-out SHA is smaller and dodges the
+        # crash below, because no fetched commit then points at the shallow
+        # commit, but it still runs the code path that has the bug. Fetching
+        # `HEAD` or the branch name does not dodge it once the branch moved on.
+        # `blob:none` does not depend on which refs are fetched.
         #
         # NOT `--filter=tree:0`, which is smaller. git 2.56, the GitHub
         # runner's git, aborts on it with `BUG: builtin/pack-objects.c:5098:

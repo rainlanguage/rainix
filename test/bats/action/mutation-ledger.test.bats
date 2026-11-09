@@ -110,38 +110,37 @@ real_git() {
 }
 
 # Regression for the git 2.56 crash: a `tree:0` unshallow of a shallow checkout
-# aborts in index-pack when the checked-out commit is the parent of a commit on
-# any fetched branch (here a push of a lower branch in a stack; the same
-# branch moving past it also crashes), with
-# `BUG: builtin/pack-objects.c:5098`. This runs the action's own fetch with real
-# git against that shape, so a filter that crashes, or one that leaves ancestry
-# unanswerable, turns this red. It proves the fix only where the git under test
-# has the bug (2.56.0 is the version checked); older gits pass with either
-# filter.
-@test "the real deepen survives a push checkout that a fetched branch builds on and answers ancestry" {
+# aborts in index-pack with `BUG: builtin/pack-objects.c:5098` when the
+# checked-out commit is the parent of a commit on any fetched branch. Two
+# shapes do that: another branch builds on it (a push of a lower branch in a
+# stack), or its own branch moved past it (a re-run of an older push). This
+# runs the action's own fetch with real git against each shape, so a filter
+# that crashes, or one that leaves ancestry unanswerable, turns this red. It
+# proves the fix only where the git under test has the bug (2.56.0 is the
+# version checked); older gits pass with either filter.
+#
+# Sets git_bin, origin, clone, and root for the test. $1 is the shape: `child` adds a branch on main's tip, `same-branch` adds a
+# commit to main itself, both after the depth-1 checkout of main's tip.
+real_deepen_fixture() {
   # Host git config (commit.gpgsign, protocol.file.allow, and so on) must not
   # break the fixture before the filter is tested.
   export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
-  local git_bin
+  local shape="$1"
   git_bin="$(real_git)"
-  local origin="$work/origin"
-  local clone="$work/clone"
+  origin="$work/origin"
+  clone="$work/clone"
+  commit_in_origin() {
+    printf '%s\n' "$1" > "$origin/f$1"
+    "$git_bin" -C "$origin" add -A
+    "$git_bin" -C "$origin" -c user.name=t -c user.email=t@t commit -qm "c$1"
+  }
   "$git_bin" init -q --initial-branch=main "$origin"
   "$git_bin" -C "$origin" config uploadpack.allowFilter true
   local i
   for i in 1 2 3; do
-    printf '%s\n' "$i" > "$origin/f$i"
-    "$git_bin" -C "$origin" add -A
-    "$git_bin" -C "$origin" -c user.name=t -c user.email=t@t commit -qm "c$i"
+    commit_in_origin "$i"
   done
-  local root
   root="$("$git_bin" -C "$origin" rev-list --max-parents=0 HEAD)"
-  # The stacked child: a branch whose commit has main's tip as its parent.
-  "$git_bin" -C "$origin" checkout -qb child
-  printf '4\n' > "$origin/f4"
-  "$git_bin" -C "$origin" add -A
-  "$git_bin" -C "$origin" -c user.name=t -c user.email=t@t commit -qm c4
-  "$git_bin" -C "$origin" checkout -q main
 
   # What actions/checkout leaves: a depth-1 fetch of one commit, checked out.
   "$git_bin" init -q "$clone"
@@ -152,16 +151,56 @@ real_git() {
   mkdir -p "$clone/audit"
   printf '[]\n' > "$clone/audit/mutation-test-scans.json"
 
-  cd "$clone"
-  export GIT_BIN="$git_bin"
-  export GITHUB_ACTION_PATH="$repo_root/.github/actions/mutation-ledger"
-  export ACTION_SCRIPT="$action_script"
-  run bash -c '
+  # Then the origin gets a commit whose parent is the checked-out commit.
+  case "$shape" in
+    child)
+      "$git_bin" -C "$origin" checkout -qb child
+      commit_in_origin 4
+      "$git_bin" -C "$origin" checkout -q main
+      ;;
+    same-branch)
+      commit_in_origin 4
+      ;;
+    *)
+      echo "unknown shape $shape" >&2
+      return 1
+      ;;
+  esac
+
+}
+
+# The action script run in the fixture clone with real git and only `nix`
+# stubbed. Sets nothing; the caller wraps it in `run`.
+run_real_gate() {
+  cd "$clone" || return 1
+  GIT_BIN="$git_bin" \
+    GITHUB_ACTION_PATH="$repo_root/.github/actions/mutation-ledger" \
+    ACTION_SCRIPT="$action_script" \
+    bash -c '
       git() { "$GIT_BIN" "$@"; }
       nix() { printf "nix"; printf " <%s>" "$@"; printf "\n"; }
       export -f git nix
       bash -c "$ACTION_SCRIPT"
     '
+}
+
+@test "the real deepen survives a push checkout that a fetched branch builds on and answers ancestry" {
+  real_deepen_fixture child
+
+  run run_real_gate
+
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"BUG:"* ]]
+  [[ "$output" == *"<mutation-ledger>"* ]]
+  [ "$("$git_bin" -C "$clone" rev-parse --is-shallow-repository)" = "false" ]
+  "$git_bin" -C "$clone" merge-base --is-ancestor "$root" HEAD
+}
+
+@test "the real deepen survives a push checkout whose own branch moved on and answers ancestry" {
+  real_deepen_fixture same-branch
+
+  run run_real_gate
 
   echo "$output"
   [ "$status" -eq 0 ]
