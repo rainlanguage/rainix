@@ -85,15 +85,84 @@ run_gate() {
 
 # THE regression the gate would otherwise ship with: the shared checkout is
 # shallow, and ancestry past the graft boundary is a silent wrong answer.
-@test "a shallow checkout is deepened, commits only, before ancestry is asked" {
+@test "a shallow checkout is deepened, without blobs, before ancestry is asked" {
   mkdir -p "$work/audit"
   printf '[]\n' > "$work/audit/mutation-test-scans.json"
 
   run run_gate true
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"git <fetch> <--no-tags> <--filter=tree:0> <--unshallow> <origin>"* ]]
+  [[ "$output" == *"git <fetch> <--no-tags> <--filter=blob:none> <--unshallow> <origin>"* ]]
   [[ "$output" == *"<mutation-ledger>"* ]]
+}
+
+# The git the action really runs: the runner's /usr/bin/git on GitHub (2.56 at
+# the time of writing), not the dev shell's pinned one. MUTATION_LEDGER_TEST_GIT
+# overrides it, to check a specific git by hand.
+real_git() {
+  if [ -n "${MUTATION_LEDGER_TEST_GIT:-}" ]; then
+    printf '%s\n' "$MUTATION_LEDGER_TEST_GIT"
+  elif [ -x /usr/bin/git ]; then
+    printf '%s\n' /usr/bin/git
+  else
+    command -v git
+  fi
+}
+
+# Regression for the git 2.56 crash: a `tree:0` unshallow of a shallow checkout
+# whose commit another remote branch builds on (a stacked PR) aborts in
+# index-pack with `BUG: builtin/pack-objects.c:5098`. This runs the action's own
+# fetch with real git against that shape, so a filter that crashes, or one that
+# leaves ancestry unanswerable, turns this red. It proves the fix only where the
+# git under test is 2.56 or newer; older gits pass with either filter.
+@test "the real deepen survives a stacked-PR checkout and answers ancestry" {
+  local git_bin
+  git_bin="$(real_git)"
+  local origin="$work/origin"
+  local clone="$work/clone"
+  "$git_bin" init -q --initial-branch=main "$origin"
+  "$git_bin" -C "$origin" config uploadpack.allowFilter true
+  local i
+  for i in 1 2 3; do
+    printf '%s\n' "$i" > "$origin/f$i"
+    "$git_bin" -C "$origin" add -A
+    "$git_bin" -C "$origin" -c user.name=t -c user.email=t@t commit -qm "c$i"
+  done
+  local root
+  root="$("$git_bin" -C "$origin" rev-list --max-parents=0 HEAD)"
+  # The stacked child: a branch whose commit has main's tip as its parent.
+  "$git_bin" -C "$origin" checkout -qb child
+  printf '4\n' > "$origin/f4"
+  "$git_bin" -C "$origin" add -A
+  "$git_bin" -C "$origin" -c user.name=t -c user.email=t@t commit -qm c4
+  "$git_bin" -C "$origin" checkout -q main
+
+  # What actions/checkout leaves: a depth-1 fetch of one commit, checked out.
+  "$git_bin" init -q "$clone"
+  "$git_bin" -C "$clone" remote add origin "file://$origin"
+  "$git_bin" -C "$clone" fetch -q --no-tags --depth=1 origin \
+    +refs/heads/main:refs/remotes/origin/main
+  "$git_bin" -C "$clone" checkout -q -B main refs/remotes/origin/main
+  mkdir -p "$clone/audit"
+  printf '[]\n' > "$clone/audit/mutation-test-scans.json"
+
+  cd "$clone"
+  export GIT_BIN="$git_bin"
+  export GITHUB_ACTION_PATH="$repo_root/.github/actions/mutation-ledger"
+  export ACTION_SCRIPT="$action_script"
+  run bash -c '
+      git() { "$GIT_BIN" "$@"; }
+      nix() { printf "nix"; printf " <%s>" "$@"; printf "\n"; }
+      export -f git nix
+      bash -c "$ACTION_SCRIPT"
+    '
+
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"BUG:"* ]]
+  [[ "$output" == *"<mutation-ledger>"* ]]
+  [ "$("$git_bin" -C "$clone" rev-parse --is-shallow-repository)" = "false" ]
+  "$git_bin" -C "$clone" merge-base --is-ancestor "$root" HEAD
 }
 
 @test "a checkout that already has history is not refetched" {

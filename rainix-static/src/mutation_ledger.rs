@@ -408,7 +408,7 @@ pub(crate) fn check(root: &Path, path: &str) -> Result<Option<Vec<String>>, Stri
             return Err(format!(
                 "{path} names commits but {} is a shallow checkout, where ancestry is \
                  unanswerable — fetch full history first (`git fetch --no-tags \
-                 --filter=tree:0 --unshallow origin`)",
+                 --filter=blob:none --unshallow origin`)",
                 root.display()
             ));
         }
