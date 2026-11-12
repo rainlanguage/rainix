@@ -26,6 +26,8 @@ on:
         required: false
       RPC_URL_BSC_FORK:
         required: false
+      RPC_URL_ZEROG_FORK:
+        required: false
       RPC_URL_SEPOLIA_FORK:
         required: false
 jobs:
@@ -52,4 +54,5 @@ jobs:
       RPC_URL_POLYGON_FORK: ${{ secrets.RPC_URL_POLYGON_FORK }}
       RPC_URL_ROBINHOOD_FORK: ${{ secrets.RPC_URL_ROBINHOOD_FORK }}
       RPC_URL_BSC_FORK: ${{ secrets.RPC_URL_BSC_FORK }}
+      RPC_URL_ZEROG_FORK: ${{ secrets.RPC_URL_ZEROG_FORK }}
       RPC_URL_SEPOLIA_FORK: ${{ secrets.RPC_URL_SEPOLIA_FORK }}

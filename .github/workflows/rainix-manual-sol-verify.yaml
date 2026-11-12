@@ -60,6 +60,8 @@ on:
         required: false
       CI_DEPLOY_BSC_ETHERSCAN_API_KEY:
         required: false
+      CI_DEPLOY_ZEROG_ETHERSCAN_API_KEY:
+        required: false
       CI_DEPLOY_FLARE_ETHERSCAN_API_KEY:
         required: false
 env:
@@ -185,4 +187,9 @@ jobs:
           # entry for it never resolves to an unset variable.
           CI_DEPLOY_ROBINHOOD_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_ROBINHOOD_ETHERSCAN_API_KEY || vars.CI_DEPLOY_ROBINHOOD_ETHERSCAN_API_KEY || '' }}
           CI_DEPLOY_BSC_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_BSC_ETHERSCAN_API_KEY || vars.CI_DEPLOY_BSC_ETHERSCAN_API_KEY || '' }}
+          # 0G (16661) verifies against its chainscan, which speaks the Etherscan API
+          # and ignores the key, so the shared Etherscan V2 key is not sent there.
+          # Defaults to a placeholder, as 0G's docs do, because forge drops an
+          # `[etherscan]` entry whose key is empty and falls back to Sourcify.
+          CI_DEPLOY_ZEROG_ETHERSCAN_API_KEY: ${{ secrets.CI_DEPLOY_ZEROG_ETHERSCAN_API_KEY || vars.CI_DEPLOY_ZEROG_ETHERSCAN_API_KEY || 'PLACEHOLDER' }}
           CI_DEPLOY_FLARE_ETHERSCAN_API_KEY: ${{ secrets.CI_DEPLOY_FLARE_ETHERSCAN_API_KEY || vars.CI_DEPLOY_FLARE_ETHERSCAN_API_KEY || '' }}

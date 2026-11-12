@@ -427,6 +427,26 @@ pub(crate) const NETWORKS: &[Network] = &[
             "https://bsc-rpc.publicnode.com",
         ],
     },
+    Network {
+        key: "zerog",
+        env_name: "ZEROG_RPC_URL",
+        secret_name: "RPC_URL_ZEROG_FORK",
+        chain_id: 16661,
+        // 0G mainnet. Latest-only in every consumer today; add the deepest pin
+        // here the moment a consumer forks it at a block.
+        archive_blocks: &[],
+        probe_contract: "0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c", // W0G
+        // Measured 2026-11-12 with this preflight (--samples 5 --burst 16)
+        // from one non-CI host: the official endpoint, publicnode, drpc and
+        // thirdweb each passed all five sequential samples and all five
+        // 16-way bursts. The official endpoint leads as the chain's own.
+        defaults: &[
+            "https://evmrpc.0g.ai",
+            "https://0g-rpc.publicnode.com",
+            "https://0g.drpc.org",
+            "https://16661.rpc.thirdweb.com",
+        ],
+    },
 ];
 
 /// Split a secret/variable value into candidate URLs.
