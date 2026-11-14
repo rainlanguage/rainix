@@ -43,7 +43,7 @@ jobs:
       # rainix-sol-static would leave a rust-only repo that starts
       # mutation-testing ungated. raindex and rain.metadata run both static
       # jobs and do carry a ledger, so they check it twice: one extra
-      # commits-only fetch and one binary run, which is the price of the
+      # blob-less history fetch and one binary run, which is the price of the
       # sol-shaped hole not existing.
       - uses: rainlanguage/rainix/.github/actions/mutation-ledger@main
       - uses: rainlanguage/rainix/.github/actions/rust-cache@main
