@@ -29,21 +29,23 @@ runs:
         # walks history.
         #
         # It keeps the default refspec (every remote branch) on purpose. A
-        # HEAD-only `tree:0` fetch is smaller and also dodges the crash below,
-        # but only because no fetched commit then points at the shallow commit:
-        # it still runs the code path that has the bug. `blob:none` does not
-        # depend on which refs are fetched.
+        # `tree:0` fetch of only the checked-out SHA is smaller and dodges the
+        # crash below, because no fetched commit then points at the shallow
+        # commit, but it still runs the code path that has the bug. Fetching
+        # `HEAD` or the branch name does not dodge it once the branch moved on.
+        # `blob:none` does not depend on which refs are fetched.
         #
         # NOT `--filter=tree:0`, which is smaller. git 2.56, the GitHub
         # runner's git, aborts on it with `BUG: builtin/pack-objects.c:5098:
         # should_include_obj should only be called on existing objects` when
-        # the checked-out commit is the parent of a commit on another fetched
-        # branch: a push of a lower branch in a stack, or of main when a
-        # branch starts at its tip. A pull_request checkout of the synthetic
-        # `refs/pull/N/merge` commit does not hit it. index-pack's "repack
-        # local links" walks the local commit's history into the tree-less promisor
-        # pack and asks about trees it never fetched. git 2.55 does not do
-        # this; `blob:none` and an unfiltered fetch avoid it.
+        # the checked-out commit is the parent of a commit on any fetched
+        # branch, including its own branch once that branch has moved past it:
+        # a push of a lower branch in a stack, of main when a branch starts at
+        # its tip, or a re-run of an older push. A pull_request checkout of the
+        # synthetic `refs/pull/N/merge` commit does not hit it. index-pack's
+        # "repack local links" walks the local commit's history into the
+        # tree-less promisor pack and asks about trees it never fetched. git
+        # 2.55 does not do this; `blob:none` and an unfiltered fetch avoid it.
         # test/bats/action/mutation-ledger.test.bats reproduces it.
         if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
           git fetch --no-tags --filter=blob:none --unshallow origin
