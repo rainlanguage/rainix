@@ -378,7 +378,10 @@ pub(crate) const NETWORKS: &[Network] = &[
         //   hyperliquid.rpc.blxrbdn.com       code / code
         //   rpc.hypurrscan.io                 code / code
         //   999.rpc.thirdweb.com              code / code
-        defaults: &["https://hyperliquid.drpc.org", "https://rpc.hyperlend.finance"],
+        defaults: &[
+            "https://hyperliquid.drpc.org",
+            "https://rpc.hyperlend.finance",
+        ],
     },
     Network {
         key: "robinhood",
