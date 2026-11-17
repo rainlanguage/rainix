@@ -363,9 +363,8 @@ pub(crate) const NETWORKS: &[Network] = &[
         env_name: "HYPEREVM_RPC_URL",
         secret_name: "RPC_URL_HYPEREVM_FORK",
         chain_id: 999,
-        // rain.metadata.deploy's metaboard0 subgraph start block and the block
-        // before it.
-        archive_blocks: &[43_806_326, 43_806_327],
+        // Latest-only in every consumer today.
+        archive_blocks: &[],
         probe_contract: "0x5555555555555555555555555555555555555555", // WHYPE
         // drpc leads, 2026-10-06: 2/2 on 12 repeated createFork/createSelectFork.
         // 2026-11-17, eth_getCode of metaboard0 0x8fD50fF9..D721D2a1 at
