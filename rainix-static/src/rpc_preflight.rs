@@ -366,14 +366,20 @@ pub(crate) const NETWORKS: &[Network] = &[
         // Latest-only in every consumer today.
         archive_blocks: &[],
         probe_contract: "0x5555555555555555555555555555555555555555", // WHYPE
-        // drpc leads, 2026-10-06. All three pass a single fork and every
-        // history depth; 12 repeated createFork/createSelectFork separates
-        // them, which is the pattern the nine-network fork tests use:
-        //   hyperliquid.drpc.org      2/2
-        //   rpc.hyperliquid.xyz/evm   1/2, -32603 invalid block height
+        // drpc leads, 2026-10-06: 2/2 on 12 repeated createFork/createSelectFork.
+        // 2026-11-17, eth_getCode of metaboard0 0x8fD50fF9..D721D2a1 at
+        // 43806326 (must be 0x) / latest (must be code). Head code at 43806326
+        // means the block tag is ignored; those are not defaults:
+        //   hyperliquid.drpc.org              0x / code
+        //   rpc.hyperlend.finance             0x / code
+        //   hyperliquid-json-rpc.stakely.io   0x / code
+        //   rpc.hyperlend.finance/archive     0x / code
+        //   rpc.hyperliquid.xyz/evm           code / code
+        //   hyperliquid.rpc.blxrbdn.com       code / code
+        //   rpc.hypurrscan.io                 code / code
+        //   999.rpc.thirdweb.com              code / code
         defaults: &[
             "https://hyperliquid.drpc.org",
-            "https://rpc.hyperliquid.xyz/evm",
             "https://rpc.hyperlend.finance",
         ],
     },
@@ -2016,8 +2022,6 @@ mod tests {
             ("arbitrum", "https://arb-pokt.nodies.app"),
             ("base", "https://base-pokt.nodies.app"),
             ("ethereum", "https://eth-pokt.nodies.app"),
-            // A block-height error rather than a rate limit; same remedy.
-            ("hyperevm", "https://rpc.hyperliquid.xyz/evm"),
             ("robinhood", "https://rpc.mainnet.chain.robinhood.com"),
         ] {
             let net = net(key);
