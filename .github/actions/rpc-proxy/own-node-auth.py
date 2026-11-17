@@ -35,6 +35,7 @@ GATES = {
     "ethereum": "eth-mainnet.arpeecee.com",
     "robinhood": "robinhood-mainnet.arpeecee.com",
     "base": "base-mainnet.arpeecee.com",
+    "zerog": "zerog-mainnet.arpeecee.com",
 }
 
 # Re-mint this long before `exp`, so a token never expires in flight.
