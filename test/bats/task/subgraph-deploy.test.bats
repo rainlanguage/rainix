@@ -45,7 +45,7 @@ done
 case "$cmd" in
 build)
   case " ${BUILD_FAILS:-} " in *" $network "*) exit 1 ;; esac
-  var="BUILD_$(echo "$network" | tr a-z A-Z)"
+  var="BUILD_$(echo "$network" | tr a-z- A-Z_)"
   mkdir -p "$out"
   case " ${BUILD_EMPTY:-} " in *" $network "*) exit 0 ;; esac
   printf '%s' "${!var:-build of $network}" >"$out/subgraph.yaml"
@@ -71,7 +71,7 @@ if [ "$1" = subgraph-build-hash ]; then
 fi
 echo "probe $* key=${ORMI_DEPLOY_KEY-unset}" >>"$CALLS_LOG"
 net="${5#raindex-}"
-var="PROBE_RC_$(echo "$net" | tr a-z A-Z)"
+var="PROBE_RC_$(echo "$net" | tr a-z- A-Z_)"
 rc="${!var:-${PROBE_RC:-}}"
 if [ -n "$rc" ]; then exit "$rc"; fi
 if grep -qxF "$5/$7" "$HOSTED"; then exit 0; fi
