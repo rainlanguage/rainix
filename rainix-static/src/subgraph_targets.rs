@@ -5,7 +5,8 @@
 //! it. Two shapes:
 //!
 //! - `<dir>/networks.json`: one `subgraph.yaml` built per network with
-//!   `--network`, labelled by that network's one data source address.
+//!   `--network`, labelled by the address of that network's first data source
+//!   in file order.
 //! - `<dir>/manifests/<network>.yaml`: one manifest per network, built as
 //!   written, for a subgraph whose data sources differ per network (so it has
 //!   no single address; its label prefix is `manifest`).
@@ -13,8 +14,8 @@
 //! Prints `network TAB manifest TAB label-prefix` per network (the manifest is
 //! empty in the networks.json shape), networks in byte order. Exits 1 when the
 //! directory name is not plain, it has neither shape, a networks.json network
-//! does not have exactly one data source with an address, or a manifest
-//! name is not a plain network name.
+//! has no first data source with an address, or a manifest name is not a
+//! plain network name.
 
 use crate::fail;
 use std::path::Path;
@@ -26,6 +27,34 @@ pub(crate) struct Target {
     /// Relative to the subgraph directory; empty for the networks.json shape.
     pub manifest: String,
     pub label_prefix: String,
+}
+
+/// A JSON object's entries in FILE order. `serde_json::Map` sorts its keys
+/// (this crate does not enable `preserve_order`), which would make "the first
+/// data source" mean "the alphabetically first".
+struct OrderedMap<V>(Vec<(String, V)>);
+
+impl<'de, V: serde::Deserialize<'de>> serde::Deserialize<'de> for OrderedMap<V> {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct Entries<V>(std::marker::PhantomData<V>);
+        impl<'de, V: serde::Deserialize<'de>> serde::de::Visitor<'de> for Entries<V> {
+            type Value = OrderedMap<V>;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("an object")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut m: A,
+            ) -> Result<Self::Value, A::Error> {
+                let mut out = Vec::new();
+                while let Some(entry) = m.next_entry::<String, V>()? {
+                    out.push(entry);
+                }
+                Ok(OrderedMap(out))
+            }
+        }
+        d.deserialize_map(Entries(std::marker::PhantomData))
+    }
 }
 
 /// A plain name: no separators, no leading dot, nothing a shell or a path
@@ -41,38 +70,34 @@ fn plain(name: &str) -> bool {
 
 pub(crate) fn targets(root: &Path, dir: &str) -> Result<Vec<Target>, String> {
     if !plain(dir) {
-        return Err(format!("SUBGRAPH_DIR {dir:?} is not one plain directory name"));
+        return Err(format!(
+            "SUBGRAPH_DIR {dir:?} is not one plain directory name"
+        ));
     }
     let base = root.join(dir);
     let networks_json = base.join("networks.json");
     if networks_json.is_file() {
         let text = std::fs::read_to_string(&networks_json)
             .map_err(|e| format!("cannot read {}: {e}", networks_json.display()))?;
-        let doc: serde_json::Value = serde_json::from_str(&text)
-            .map_err(|e| format!("{} is not JSON: {e}", networks_json.display()))?;
-        let networks = doc
-            .as_object()
-            .ok_or_else(|| format!("{} is not an object", networks_json.display()))?;
+        let networks: OrderedMap<OrderedMap<serde_json::Value>> = serde_json::from_str(&text)
+            .map_err(|e| {
+                format!(
+                    "{} is not an object of network objects: {e}",
+                    networks_json.display()
+                )
+            })?;
         let mut out = Vec::new();
-        for (network, sources) in networks {
-            let sources = sources
-                .as_object()
-                .ok_or_else(|| format!("networks.json {network:?} is not an object"))?;
-            if sources.len() != 1 {
-                return Err(format!(
-                    "networks.json {network:?} has {} data sources; the label names one address, \
-                     so a subgraph with several per network uses manifests/<network>.yaml",
-                    sources.len()
-                ));
-            }
+        for (network, sources) in networks.0 {
+            // The FIRST data source in file order labels the network, as
+            // `jq '.[$net] | to_entries[0]'` did before this was Rust.
             let address = sources
-                .values()
-                .next()
-                .and_then(|s| s.get("address"))
+                .0
+                .first()
+                .and_then(|(_, s)| s.get("address"))
                 .and_then(|a| a.as_str())
                 .ok_or_else(|| format!("networks.json {network:?} has no address"))?;
             out.push(Target {
-                network: network.clone(),
+                network,
                 manifest: String::new(),
                 label_prefix: address.to_string(),
             });
@@ -95,7 +120,9 @@ pub(crate) fn targets(root: &Path, dir: &str) -> Result<Vec<Target>, String> {
                 continue;
             };
             if !plain(network) || !entry.path().is_file() {
-                return Err(format!("manifests/{name} is not a plain <network>.yaml file"));
+                return Err(format!(
+                    "manifests/{name} is not a plain <network>.yaml file"
+                ));
             }
             out.push(Target {
                 network: network.to_string(),
@@ -105,7 +132,9 @@ pub(crate) fn targets(root: &Path, dir: &str) -> Result<Vec<Target>, String> {
         }
     }
     if out.is_empty() {
-        return Err(format!("{dir} has neither networks.json nor manifests/*.yaml"));
+        return Err(format!(
+            "{dir} has neither networks.json nor manifests/*.yaml"
+        ));
     }
     out.sort_by(|a, b| a.network.cmp(&b.network));
     Ok(out)
@@ -163,15 +192,38 @@ mod tests {
     }
 
     #[test]
-    fn networks_json_with_two_sources_on_a_network_is_refused() {
+    fn networks_json_with_two_sources_labels_by_the_first_in_file_order() {
         let root = tmp();
         std::fs::create_dir_all(root.join("subgraph")).unwrap();
+        // `B` precedes `A` in the file, so file order and sorted order disagree.
         std::fs::write(
             root.join("subgraph/networks.json"),
-            r#"{"base":{"A":{"address":"0x1"},"B":{"address":"0x2"}}}"#,
+            r#"{"base":{"B":{"address":"0x2"},"A":{"address":"0x1"}}}"#,
         )
         .unwrap();
-        assert!(targets(&root, "subgraph").unwrap_err().contains("2 data sources"));
+        assert_eq!(
+            targets(&root, "subgraph").unwrap(),
+            vec![t("base", "", "0x2")]
+        );
+    }
+
+    #[test]
+    fn networks_json_that_is_not_an_object_of_objects_is_refused() {
+        let root = tmp();
+        std::fs::create_dir_all(root.join("subgraph")).unwrap();
+        for bad in ["[]", r#"{"base":[]}"#, "nope"] {
+            std::fs::write(root.join("subgraph/networks.json"), bad).unwrap();
+            assert!(
+                targets(&root, "subgraph")
+                    .unwrap_err()
+                    .contains("not an object"),
+                "{bad} accepted"
+            );
+        }
+        std::fs::write(root.join("subgraph/networks.json"), r#"{"base":{}}"#).unwrap();
+        assert!(targets(&root, "subgraph")
+            .unwrap_err()
+            .contains("no address"));
     }
 
     #[test]
@@ -179,7 +231,9 @@ mod tests {
         let root = tmp();
         std::fs::create_dir_all(root.join("subgraph")).unwrap();
         std::fs::write(root.join("subgraph/networks.json"), r#"{"base":{"A":{}}}"#).unwrap();
-        assert!(targets(&root, "subgraph").unwrap_err().contains("no address"));
+        assert!(targets(&root, "subgraph")
+            .unwrap_err()
+            .contains("no address"));
     }
 
     #[test]
@@ -203,8 +257,11 @@ mod tests {
         let root = tmp();
         std::fs::create_dir_all(root.join("s/manifests")).unwrap();
         std::fs::write(root.join("s/manifests/base.yaml"), "x").unwrap();
-        std::fs::write(root.join("s/networks.json"), r#"{"mainnet":{"C":{"address":"0x1"}}}"#)
-            .unwrap();
+        std::fs::write(
+            root.join("s/networks.json"),
+            r#"{"mainnet":{"C":{"address":"0x1"}}}"#,
+        )
+        .unwrap();
         assert_eq!(targets(&root, "s").unwrap(), vec![t("mainnet", "", "0x1")]);
     }
 
