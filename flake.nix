@@ -313,7 +313,7 @@
             src = ./rainix-static;
             pname = "rainix-static";
             version = "0.1.0";
-            hash = "sha256-2ZCPiTO11UhhWUAhn3C433VrLfOB+Dlld/B4wh14DXY=";
+            hash = "sha256-JhjNUR8yOZzbiLltB2NhCCEfB8EK+lUC8j8Y6QDxaQ4=";
           };
           nativeCheckInputs = [
             pkgs.git

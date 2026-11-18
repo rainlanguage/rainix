@@ -1,0 +1,8 @@
+{
+  "name": "counter-subgraph",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "@graphprotocol/graph-ts": "0.35.1"
+  }
+}
