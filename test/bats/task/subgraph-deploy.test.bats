@@ -38,13 +38,14 @@ while [ $# -gt 0 ]; do
   --network) network="$2" ;;
   --output-dir) out="$2" ;;
   --version-label) label="$2" ;;
+  *.yaml) network="$(basename "$1" .yaml)" ;;
   esac
   shift
 done
 case "$cmd" in
 build)
   case " ${BUILD_FAILS:-} " in *" $network "*) exit 1 ;; esac
-  var="BUILD_$(echo "$network" | tr a-z A-Z)"
+  var="BUILD_$(echo "$network" | tr a-z- A-Z_)"
   mkdir -p "$out"
   case " ${BUILD_EMPTY:-} " in *" $network "*) exit 0 ;; esac
   printf '%s' "${!var:-build of $network}" >"$out/subgraph.yaml"
@@ -61,13 +62,16 @@ EOF
   # Ormi from what graph deploy recorded: 0 hosted, 10 missing.
   cat >"$work/bin/rainix-static" <<'EOF'
 #!/usr/bin/env bash
+if [ "$1" = subgraph-targets ]; then
+  exec "$REAL_STATIC" "$@"
+fi
 if [ "$1" = subgraph-build-hash ]; then
   echo "hash $* key=${ORMI_DEPLOY_KEY-unset}" >>"$CALLS_LOG"
   exec "$REAL_STATIC" "$@"
 fi
 echo "probe $* key=${ORMI_DEPLOY_KEY-unset}" >>"$CALLS_LOG"
 net="${5#raindex-}"
-var="PROBE_RC_$(echo "$net" | tr a-z A-Z)"
+var="PROBE_RC_$(echo "$net" | tr a-z- A-Z_)"
 rc="${!var:-${PROBE_RC:-}}"
 if [ -n "$rc" ]; then exit "$rc"; fi
 if grep -qxF "$5/$7" "$HOSTED"; then exit 0; fi
@@ -298,4 +302,64 @@ label_for() {
     )
     [ ! -s "$log" ]
   done
+}
+
+two_manifests() {
+  mkdir -p "$work/tokens/manifests"
+  echo a >"$work/tokens/manifests/arbitrum-one.yaml"
+  echo b >"$work/tokens/manifests/matic.yaml"
+  export SUBGRAPH_DIR=tokens
+}
+
+@test "a manifests subgraph builds and deploys each network's own manifest" {
+  two_manifests
+  deploy
+  [ "$status" -eq 0 ]
+  [ "$(logged '^npm ci')" -eq 1 ]
+  [ "$(logged '^graph build manifests/arbitrum-one.yaml --output-dir ')" -eq 1 ]
+  [ "$(logged '^graph build manifests/matic.yaml --output-dir ')" -eq 1 ]
+  [ "$(logged '^graph build .*--network')" -eq 0 ]
+  [ "$(logged '^graph deploy raindex-arbitrum-one manifests/arbitrum-one.yaml --output-dir ')" -eq 1 ]
+  [ "$(logged '^graph deploy raindex-matic manifests/matic.yaml --output-dir ')" -eq 1 ]
+  grep -qE '^raindex-arbitrum-one/manifest-[0-9a-f]{16}$' "$hosted"
+  grep -qE '^raindex-matic/manifest-[0-9a-f]{16}$' "$hosted"
+}
+
+@test "a manifests subgraph whose build is unchanged is skipped" {
+  two_manifests
+  deploy
+  [ "$status" -eq 0 ]
+  : >"$log"
+  deploy
+  [ "$status" -eq 0 ]
+  [ "$(logged '^graph deploy')" -eq 0 ]
+}
+
+@test "a SUBGRAPH_DIR that is not one plain name fails before any tool runs" {
+  for bad in .. ../x a/b .hidden; do
+    : >"$log"
+    SUBGRAPH_DIR="$bad" deploy
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not one plain directory name"* ]]
+    [ ! -s "$log" ]
+  done
+}
+
+@test "a SUBGRAPH_DIR with neither networks.json nor manifests fails before any tool runs" {
+  mkdir -p "$work/empty"
+  SUBGRAPH_DIR=empty deploy
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"neither networks.json nor manifests"* ]]
+  [ ! -s "$log" ]
+}
+
+# The networks.json shape's manifest field is empty. Tab is IFS whitespace to
+# `read`, so an empty field BETWEEN two tabs collapses and shifts the address
+# into the manifest; this pins that the address still labels the version and
+# the build takes --network, not a manifest path.
+@test "a networks.json subgraph builds with --network and labels by its address" {
+  deploy
+  [ "$status" -eq 0 ]
+  [ "$(logged '^graph build --network mainnet --output-dir ')" -eq 1 ]
+  grep -qE '^raindex-mainnet/0xabc-[0-9a-f]{16}$' "$hosted"
 }

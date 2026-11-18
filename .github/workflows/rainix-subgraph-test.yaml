@@ -1,6 +1,12 @@
 name: rainix-subgraph-test
 on:
   workflow_call:
+    inputs:
+      subgraph-dir:
+        type: string
+        default: subgraph
+        description: |
+          `SUBGRAPH_DIR`: the subgraph's directory in the repo root.
     secrets:
       CACHIX_AUTH_TOKEN:
         required: false
@@ -17,3 +23,5 @@ jobs:
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#subgraph-shell -c subgraph-test
+        env:
+          SUBGRAPH_DIR: ${{ inputs.subgraph-dir }}

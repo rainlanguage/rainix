@@ -313,7 +313,7 @@
             src = ./rainix-static;
             pname = "rainix-static";
             version = "0.1.0";
-            hash = "sha256-2ZCPiTO11UhhWUAhn3C433VrLfOB+Dlld/B4wh14DXY=";
+            hash = "sha256-JhjNUR8yOZzbiLltB2NhCCEfB8EK+lUC8j8Y6QDxaQ4=";
           };
           nativeCheckInputs = [
             pkgs.git
@@ -492,14 +492,20 @@
           name = "subgraph-build";
           body = ''
             set -euxo pipefail
-            source ${./lib/subgraph.sh}
+            dir="''${SUBGRAPH_DIR:-subgraph}"
+            # Refuses a dir that is not one plain name or holds no subgraph.
+            targets="$(${rainix-static}/bin/rainix-static subgraph-targets "$dir")"
 
             ${pkgs.foundry-bin}/bin/forge build
-            (cd ./subgraph && ${pkgs.nodejs_22}/bin/npm ci && ${the-graph}/bin/graph codegen)
-            for network in $(subgraph_networks ./subgraph/networks.json); do
+            (cd "./$dir" && ${pkgs.nodejs_22}/bin/npm ci && ${the-graph}/bin/graph codegen)
+            while IFS=$'\t' read -r network _ manifest <&3; do
               echo "Building subgraph for $network..."
-              (cd ./subgraph && ${the-graph}/bin/graph build --network "$network")
-            done
+              if [ -z "$manifest" ]; then
+                (cd "./$dir" && ${the-graph}/bin/graph build --network "$network")
+              else
+                (cd "./$dir" && ${the-graph}/bin/graph build "$manifest")
+              fi
+            done 3<<<"$targets"
           '';
           additionalBuildInputs = sol-build-inputs ++ node-build-inputs;
         };
@@ -508,7 +514,10 @@
           name = "subgraph-test";
           body = ''
             set -euxo pipefail
-            (cd ./subgraph && ${pkgs.nodejs_22}/bin/npm ci && docker compose up --abort-on-container-exit)
+            dir="''${SUBGRAPH_DIR:-subgraph}"
+            # Refuses a dir that is not one plain name or holds no subgraph.
+            ${rainix-static}/bin/rainix-static subgraph-targets "$dir" >/dev/null
+            (cd "./$dir" && ${pkgs.nodejs_22}/bin/npm ci && docker compose up --abort-on-container-exit)
           '';
         };
 
