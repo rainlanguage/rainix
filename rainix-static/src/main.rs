@@ -148,6 +148,11 @@
 //       SHA-256 over every file in one network's `graph build` output, so an
 //       unchanged build keeps its label and is skipped. Semantics:
 //       subgraph_build_hash.rs module doc.
+//   subgraph-targets <subgraph dir>
+//       subgraph-deploy's and subgraph-test's targets: one `network TAB manifest
+//       TAB label-prefix` line per network, from `<dir>/networks.json` or
+//       `<dir>/manifests/<network>.yaml`; refuses a dir that is not one plain
+//       name. Semantics: subgraph_targets.rs module doc.
 
 mod agent_context_cap;
 mod ci_gate;
@@ -166,6 +171,7 @@ mod release_guard;
 mod rpc_preflight;
 mod soldeer_gate;
 mod subgraph_build_hash;
+mod subgraph_targets;
 
 use std::path::Path;
 
@@ -428,6 +434,12 @@ fn main() {
                 .unwrap_or_else(|| fail("subgraph-build-hash: <build dir> required"));
             subgraph_build_hash::run(dir);
         }
+        "subgraph-targets" => {
+            let dir = args
+                .get(2)
+                .unwrap_or_else(|| fail("subgraph-targets: <subgraph dir> required"));
+            subgraph_targets::run(dir);
+        }
         "rpc-preflight" => {
             let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
             // There is no stdout fallback on purpose: the selected URL may be
@@ -485,7 +497,7 @@ fn main() {
                  (available: no-submodules, relative-src-imports, agent-context-cap, prompt-cap, \
                  comment-loc-cap, codegen-declaration, install-staged-config, snapshots-append-only, \
                  mutation-ledger, ci-gate, soldeer-gate, rpc-preflight, release-guard, \
-                 ormi-probe, subgraph-build-hash)"
+                 ormi-probe, subgraph-build-hash, subgraph-targets)"
             );
             std::process::exit(2);
         }

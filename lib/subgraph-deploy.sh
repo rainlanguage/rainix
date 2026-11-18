@@ -18,8 +18,9 @@ subgraph_require_env() {
   done
 }
 
-# Deploy every network in subgraph/networks.json to Ormi as
-# <SUBGRAPH_NAME>-<network> at version label <address>-<build hash>, skipping a
+# Deploy every network of the subgraph in $SUBGRAPH_DIR (default `subgraph`;
+# see `rainix-static subgraph-targets`) to Ormi as <SUBGRAPH_NAME>-<network> at version label
+# <address or `manifest`>-<build hash>, skipping a
 # version Ormi already hosts. The build hash is `rainix-static
 # subgraph-build-hash` over that network's `graph build` output, so a network
 # whose build did not change keeps its label and is skipped: Ormi refuses an
@@ -59,24 +60,36 @@ subgraph_deploy() {
   local deploy_key="$ORMI_DEPLOY_KEY"
   unset ORMI_DEPLOY_KEY
 
-  # subgraph/abis and subgraph/generated are committed, so the deploy compiles
-  # the subgraph directly from them.
-  (cd ./subgraph && "$npm" ci)
+  # rainix-static refuses a SUBGRAPH_DIR that is not one plain name, so $dir is
+  # safe to cd into once it has answered.
+  local dir="${SUBGRAPH_DIR:-subgraph}" targets
+  targets="$("$static" subgraph-targets "$dir")" || return 1
 
-  local builds network address build hash version name rc
+  # <dir>/abis and <dir>/generated are committed, so the deploy compiles the
+  # subgraph directly from them.
+  (cd "./$dir" && "$npm" ci)
+
+  local builds network manifest prefix build hash version name rc
+  local -a source
   local failed="" i=0
   builds="$(mktemp -d)"
-  for network in $(subgraph_networks ./subgraph/networks.json); do
-    address="$(subgraph_network_address ./subgraph/networks.json "$network")"
+  while IFS=$'\t' read -r network manifest prefix <&3; do
     name="${SUBGRAPH_NAME}-${network}"
-    # Numbered, not named by network: a networks.json key is repo content and
+    # A networks.json subgraph builds subgraph.yaml for the network; a
+    # manifests one builds that network's own manifest.
+    if [ -z "$manifest" ]; then
+      source=(--network "$network")
+    else
+      source=("$manifest")
+    fi
+    # Numbered, not named by network: a network name is repo content and
     # must not pick a path.
     i=$((i + 1))
     build="$builds/$i"
 
     # The label is the digest of this network's own build, so an unchanged
     # build gets the label Ormi already hosts and is skipped below.
-    if ! (cd ./subgraph && "$graph" build --network "$network" --output-dir "$build"); then
+    if ! (cd "./$dir" && "$graph" build "${source[@]}" --output-dir "$build"); then
       echo "Build of $name failed; not deploying it, continuing with the other networks." >&2
       failed="$failed $name"
       continue
@@ -86,7 +99,7 @@ subgraph_deploy() {
       failed="$failed $name"
       continue
     fi
-    version="$(subgraph_deploy_version "$address" "$hash")"
+    version="$(subgraph_deploy_version "$prefix" "$hash")"
 
     # 0 = already deployed, 10 = confirmed missing. Anything else (the probe
     # could not get a trustworthy answer) must NOT fall through to a deploy.
@@ -102,8 +115,7 @@ subgraph_deploy() {
       # (an unchanged build re-uploads to the same IPFS hash), so what it
       # deploys is the build the label names.
       echo "Deploying subgraph $name/$version..."
-      if ! (cd ./subgraph && "$graph" deploy "$name" \
-        --network "$network" \
+      if ! (cd "./$dir" && "$graph" deploy "$name" "${source[@]}" \
         --output-dir "$build" \
         --node "$ormi_node" \
         --ipfs "$ormi_ipfs" \
@@ -118,7 +130,7 @@ subgraph_deploy() {
       failed="$failed $name"
       ;;
     esac
-  done
+  done 3<<<"$targets"
 
   rm -rf -- "$builds"
 

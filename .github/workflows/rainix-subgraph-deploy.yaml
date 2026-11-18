@@ -2,6 +2,13 @@ name: rainix-subgraph-deploy
 on:
   workflow_call:
     inputs:
+      subgraph-dir:
+        type: string
+        default: subgraph
+        description: |
+          `SUBGRAPH_DIR`: the subgraph's directory in the repo root. It has
+          `networks.json` (one address per network) or `manifests/<network>.yaml`
+          (one manifest per network).
       subgraph-name:
         type: string
         required: true
@@ -36,5 +43,6 @@ jobs:
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#subgraph-shell -c subgraph-deploy
         env:
           SUBGRAPH_NAME: ${{ inputs.subgraph-name }}
+          SUBGRAPH_DIR: ${{ inputs.subgraph-dir }}
           ORMI_QUERY_BASE: ${{ inputs.ormi-query-base }}
           ORMI_DEPLOY_KEY: ${{ secrets.ORMI_DEPLOY_KEY }}

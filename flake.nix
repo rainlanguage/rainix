@@ -508,7 +508,10 @@
           name = "subgraph-test";
           body = ''
             set -euxo pipefail
-            (cd ./subgraph && ${pkgs.nodejs_22}/bin/npm ci && docker compose up --abort-on-container-exit)
+            dir="${SUBGRAPH_DIR:-subgraph}"
+            # Refuses a dir that is not one plain name or holds no subgraph.
+            ${rainix-static}/bin/rainix-static subgraph-targets "$dir" >/dev/null
+            (cd "./$dir" && ${pkgs.nodejs_22}/bin/npm ci && docker compose up --abort-on-container-exit)
           '';
         };
 
