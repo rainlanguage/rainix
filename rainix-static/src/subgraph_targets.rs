@@ -253,6 +253,26 @@ mod tests {
     }
 
     #[test]
+    fn manifests_are_listed_in_network_order_whatever_the_directory_order() {
+        let root = tmp();
+        std::fs::create_dir_all(root.join("m/manifests")).unwrap();
+        // Written in reverse, so neither creation order nor a lucky directory
+        // order can stand in for the sort.
+        let names = ["h", "g", "f", "e", "d", "c", "b", "a"];
+        for n in names {
+            std::fs::write(root.join(format!("m/manifests/{n}.yaml")), "x").unwrap();
+        }
+        let got: Vec<String> = targets(&root, "m")
+            .unwrap()
+            .into_iter()
+            .map(|t| t.network)
+            .collect();
+        let mut want: Vec<String> = names.iter().map(|n| n.to_string()).collect();
+        want.sort();
+        assert_eq!(got, want);
+    }
+
+    #[test]
     fn networks_json_wins_over_manifests() {
         let root = tmp();
         std::fs::create_dir_all(root.join("s/manifests")).unwrap();
