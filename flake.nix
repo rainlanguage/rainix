@@ -20,7 +20,7 @@
       git-hooks-nix,
       ...
     }:
-    flake-utils.lib.eachDefaultSystem (
+    flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ] (
       system:
       let
         overlays = [
@@ -28,102 +28,7 @@
           foundry.overlay
           solc.overlay
         ];
-        nixpkgsPkgs = import nixpkgs { inherit system overlays; };
-
-        # 21 October 2026 Node.js security release. nixpkgs nodejs_22 22.22.2
-        # (the locked version) is missing the Brotli decoder fix
-        # (CVE-2026-111497) and the DNS and TLS hostname fixes. Official
-        # binaries carry the patched bundled Brotli, OpenSSL, c-ares and
-        # undici. A stopgap, used only while the locked nixpkgs is older than
-        # this release: once a lock bump brings a nixpkgs at or past it, this
-        # falls back to nixpkgs' own build, so a downstream flake that follows
-        # its own nixpkgs can never fail evaluation on this pin. Delete it once
-        # the lock reaches a cached revision that has the fix.
-        #
-        # This is the upstream binary, so unlike nixpkgs' source build:
-        #  - TLS roots are the compiled-in Mozilla set. It does not enable
-        #    --openssl-use-def-ca-store, so NIX_SSL_CERT_FILE / SSL_CERT_FILE
-        #    are not read; private CAs need NODE_EXTRA_CA_CERTS.
-        #  - It is runtime-only: no `python`, `npm` or `corepack` passthru and
-        #    none of nixpkgs' npm patches, so do not hand it to nixpkgs npm
-        #    builders.
-        #  - Only pkgs.nodejs_22 is replaced. nodejs / nodejs_24, pnpm, the
-        #    default buildNpmPackage, callPackage and nodejs_20 (end of life)
-        #    are not patched here.
-        nodejs_22 =
-          let
-            version = "22.23.4";
-            targets = {
-              aarch64-darwin = {
-                platform = "darwin-arm64";
-                sha256 = "c9e1dbc748b33ed2d14f42445191ecaf14c56259c7a9a26d0042c49ec2b66428";
-              };
-              x86_64-darwin = {
-                platform = "darwin-x64";
-                sha256 = "efcc2b0db6f94bf53eddb038fe2b370277a042bd29e4f19b8f8e23598795b819";
-              };
-              aarch64-linux = {
-                platform = "linux-arm64";
-                sha256 = "f7a1e486dbc8b286847815b477d4fb5e9fb963ed4489c3e1588853d685f589f9";
-              };
-              x86_64-linux = {
-                platform = "linux-x64";
-                sha256 = "b8492284c76a54baf58d61668dd0e41ee0fc98adabf9503d30f05d08f55b4406";
-              };
-            };
-            target = targets.${system};
-          in
-          if nixpkgsPkgs.lib.versionOlder nixpkgsPkgs.nodejs_22.version version then
-            nixpkgsPkgs.stdenv.mkDerivation {
-              pname = "nodejs";
-              inherit version;
-              src = nixpkgsPkgs.fetchurl {
-                url = "https://nodejs.org/dist/v${version}/node-v${version}-${target.platform}.tar.gz";
-                inherit (target) sha256;
-              };
-              nativeBuildInputs = nixpkgsPkgs.lib.optionals nixpkgsPkgs.stdenv.hostPlatform.isLinux [
-                nixpkgsPkgs.autoPatchelfHook
-              ];
-              buildInputs = nixpkgsPkgs.lib.optionals nixpkgsPkgs.stdenv.hostPlatform.isLinux [
-                nixpkgsPkgs.stdenv.cc.cc.lib
-              ];
-              dontBuild = true;
-              dontStrip = true;
-              installPhase = ''
-                mkdir -p "$out"
-                cp -R bin include lib share "$out/"
-              '';
-              # $out/bin is not on the build PATH, so the default fixup leaves
-              # npm, npx and corepack on `#!/usr/bin/env node`.
-              postFixup = ''
-                HOST_PATH=$out/bin patchShebangs --host \
-                  $out/lib/node_modules/npm/bin \
-                  $out/lib/node_modules/corepack/dist
-              '';
-              # Descriptive fields only: copying the whole nixpkgs meta would
-              # keep the 22.22.2 identity (meta.name) and its policy gates.
-              meta = {
-                inherit (nixpkgsPkgs.nodejs_22.meta)
-                  description
-                  homepage
-                  license
-                  maintainers
-                  mainProgram
-                  ;
-                changelog = "https://github.com/nodejs/node/releases/tag/v${version}";
-                platforms = builtins.attrNames targets;
-                sourceProvenance = [ nixpkgsPkgs.lib.sourceTypes.binaryNativeCode ];
-              };
-            }
-          else
-            nixpkgsPkgs.nodejs_22;
-
-        # Shallow override: shells and rainix.pkgs.nodejs_22 see 22.23.4.
-        # Packages already closed over the nixpkgs Node build, including
-        # prettier-bundle, keep that toolchain.
-        pkgs = nixpkgsPkgs // {
-          inherit nodejs_22;
-        };
+        pkgs = import nixpkgs { inherit system overlays; };
 
         rust-version = "1.94.0";
         rust-toolchain = pkgs.rust-bin.stable.${rust-version}.default.override (previous: {
@@ -179,10 +84,10 @@
           pkgs.libiconv
           pkgs.cargo-flamegraph
         ]
-        ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
+        ++ (pkgs.lib.optionals (!pkgs.stdenv.hostPlatform.isDarwin) [
           # pkgs.glibc
         ])
-        ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [ pkgs.darwin.DarwinTools ]);
+        ++ (pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ pkgs.darwin.DarwinTools ]);
 
         # The Solidity toolchain shared by sol-shell and default. sol-only
         # repos (rain.solmem, rain.deploy, rain.datacontract, etc.) consume
@@ -223,12 +128,10 @@
               release-name = "%40graphprotocol%2Fgraph-cli%400.69.2";
               system-mapping = {
                 x86_64-linux = "linux-x64";
-                x86_64-darwin = "darwin-x64";
                 aarch64-darwin = "darwin-arm64";
               };
               system-sha = {
                 x86_64-linux = "sha256:07grrdrx8w3m8sqwdmf9z9zymwnnzxckgnnjzfndk03a8r2d826m";
-                x86_64-darwin = "sha256:0j4p2bkx6pflkif6xkvfy4vj1v183mkg59p2kf3rk48wqfclids8";
                 aarch64-darwin = "sha256:0pq0g0fq1myp0s58lswhcab6ccszpi5sx6l3y9a18ai0c6yzxim0";
               };
             in
