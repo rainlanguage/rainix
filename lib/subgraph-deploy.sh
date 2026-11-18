@@ -73,7 +73,7 @@ subgraph_deploy() {
   local -a source
   local failed="" i=0
   builds="$(mktemp -d)"
-  while IFS=$'\t' read -r network manifest prefix <&3; do
+  while IFS=$'\t' read -r network prefix manifest <&3; do
     name="${SUBGRAPH_NAME}-${network}"
     # A networks.json subgraph builds subgraph.yaml for the network; a
     # manifests one builds that network's own manifest.

@@ -498,7 +498,7 @@
 
             ${pkgs.foundry-bin}/bin/forge build
             (cd "./$dir" && ${pkgs.nodejs_22}/bin/npm ci && ${the-graph}/bin/graph codegen)
-            while IFS=$'\t' read -r network manifest _ <&3; do
+            while IFS=$'\t' read -r network _ manifest <&3; do
               echo "Building subgraph for $network..."
               if [ -z "$manifest" ]; then
                 (cd "./$dir" && ${the-graph}/bin/graph build --network "$network")

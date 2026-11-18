@@ -11,8 +11,10 @@
 //!   written, for a subgraph whose data sources differ per network (so it has
 //!   no single address; its label prefix is `manifest`).
 //!
-//! Prints `network TAB manifest TAB label-prefix` per network (the manifest is
-//! empty in the networks.json shape), networks in byte order. Exits 1 when the
+//! Prints `network TAB label-prefix TAB manifest` per network, networks in byte
+//! order. The manifest is empty in the networks.json shape, so it is the LAST
+//! field: tab is IFS whitespace to bash `read`, which collapses an empty field
+//! between two tabs and would shift the label into the manifest. Exits 1 when the
 //! directory name is not plain, it has neither shape, a networks.json network
 //! has no first data source with an address, or a manifest name is not a
 //! plain network name.
@@ -144,7 +146,7 @@ pub(crate) fn run(dir: &str) {
     match targets(Path::new("."), dir) {
         Ok(ts) => {
             for t in ts {
-                println!("{}\t{}\t{}", t.network, t.manifest, t.label_prefix);
+                println!("{}\t{}\t{}", t.network, t.label_prefix, t.manifest);
             }
         }
         Err(e) => fail(&format!("subgraph-targets: {e}")),

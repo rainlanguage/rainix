@@ -149,8 +149,8 @@
 //       unchanged build keeps its label and is skipped. Semantics:
 //       subgraph_build_hash.rs module doc.
 //   subgraph-targets <subgraph dir>
-//       subgraph-deploy's and subgraph-test's targets: one `network TAB manifest
-//       TAB label-prefix` line per network, from `<dir>/networks.json` or
+//       subgraph-build/test/deploy's targets: one `network TAB label-prefix
+//       TAB manifest` line per network, from `<dir>/networks.json` or
 //       `<dir>/manifests/<network>.yaml`; refuses a dir that is not one plain
 //       name. Semantics: subgraph_targets.rs module doc.
 

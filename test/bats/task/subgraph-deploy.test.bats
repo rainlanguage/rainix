@@ -352,3 +352,14 @@ two_manifests() {
   [[ "$output" == *"neither networks.json nor manifests"* ]]
   [ ! -s "$log" ]
 }
+
+# The networks.json shape's manifest field is empty. Tab is IFS whitespace to
+# `read`, so an empty field BETWEEN two tabs collapses and shifts the address
+# into the manifest; this pins that the address still labels the version and
+# the build takes --network, not a manifest path.
+@test "a networks.json subgraph builds with --network and labels by its address" {
+  deploy
+  [ "$status" -eq 0 ]
+  [ "$(logged '^graph build --network mainnet --output-dir ')" -eq 1 ]
+  grep -qE '^raindex-mainnet/0xabc-[0-9a-f]{16}$' "$hosted"
+}
