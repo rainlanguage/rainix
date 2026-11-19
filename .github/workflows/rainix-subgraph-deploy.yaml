@@ -36,7 +36,7 @@ on:
         required: false
       ORMI_DEPLOY_KEY:
         required: false
-      GOLDSKY_TOKEN:
+      CI_GOLDSKY_TOKEN:
         required: false
 env:
   RAINIX_SHA: 41a94b6958874e263e9d5adceba1c2181298fc40
@@ -57,4 +57,4 @@ jobs:
           ORMI_QUERY_BASE: ${{ inputs.ormi-query-base }}
           ORMI_DEPLOY_KEY: ${{ secrets.ORMI_DEPLOY_KEY }}
           GOLDSKY_QUERY_BASE: ${{ inputs.goldsky-query-base }}
-          GOLDSKY_TOKEN: ${{ secrets.GOLDSKY_TOKEN }}
+          GOLDSKY_TOKEN: ${{ secrets.CI_GOLDSKY_TOKEN }}

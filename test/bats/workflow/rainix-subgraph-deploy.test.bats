@@ -39,16 +39,18 @@ setup() {
 }
 
 @test "each host's credential is a secret scoped to the deploy step alone" {
-  local secret holders
-  for secret in ORMI_DEPLOY_KEY GOLDSKY_TOKEN; do
+  local pair secret var holders
+  # <workflow secret>=<task env var>: the org secret names, so `secrets: inherit` works.
+  for pair in ORMI_DEPLOY_KEY=ORMI_DEPLOY_KEY CI_GOLDSKY_TOKEN=GOLDSKY_TOKEN; do
+    secret="${pair%%=*}" var="${pair#*=}"
     # Optional: a caller supplies the credential of each host it deploys to.
     [ "$(yq -r ".on.workflow_call.secrets.$secret.required" "$workflow")" = "false" ]
     # shellcheck disable=SC2016
-    [ "$(yq -r ".jobs.deploy.steps[] | select(.run) | select(.run | test(\"-c subgraph-deploy\$\")) | .env.$secret" "$workflow")" = "\${{ secrets.$secret }}" ]
+    [ "$(yq -r ".jobs.deploy.steps[] | select(.run) | select(.run | test(\"-c subgraph-deploy\$\")) | .env.$var" "$workflow")" = "\${{ secrets.$secret }}" ]
     holders="$(grep -c "secrets.$secret" "$workflow")"
     [ "$holders" -eq 1 ]
-    [ "$(yq -r ".env.$secret" "$workflow")" = "null" ]
-    [ "$(yq -r ".jobs.deploy.env.$secret" "$workflow")" = "null" ]
+    [ "$(yq -r ".env.$var" "$workflow")" = "null" ]
+    [ "$(yq -r ".jobs.deploy.env.$var" "$workflow")" = "null" ]
   done
 }
 

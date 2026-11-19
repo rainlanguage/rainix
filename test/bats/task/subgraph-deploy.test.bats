@@ -82,7 +82,7 @@ EOF
   # hosted, as Goldsky would.
   cat >"$work/bin/goldsky" <<'GS'
 #!/usr/bin/env bash
-echo "goldsky $* key=${ORMI_DEPLOY_KEY-${GOLDSKY_TOKEN-unset}}" >>"$CALLS_LOG"
+echo "goldsky $* telemetry-off=${GOLDSKY_CLI_TELEMETRY_DISABLED-unset} key=${ORMI_DEPLOY_KEY-${GOLDSKY_TOKEN-unset}}" >>"$CALLS_LOG"
 nv="$5"
 case " ${DEPLOY_FAILS:-} " in *" ${nv%%/*} "*) exit 1 ;; esac
 echo "$nv" >>"$HOSTED"
@@ -389,7 +389,7 @@ zerog_and_base() {
   out="$(sed -n 's/^graph build --network 0g --output-dir \([^ ]*\) key=unset$/\1/p' "$log")"
   [ -n "$out" ]
   grep -q "^probe subgraph-probe --host goldsky --base $GOLDSKY_QUERY_BASE --name raindex-0g --version $version key=unset$" "$log"
-  grep -q "^goldsky --token $GOLDSKY_TOKEN subgraph deploy raindex-0g/$version --path $out key=unset$" "$log"
+  grep -q "^goldsky --token $GOLDSKY_TOKEN subgraph deploy raindex-0g/$version --path $out telemetry-off=1 key=unset$" "$log"
   grep -q "^probe subgraph-probe --host ormi --base $ORMI_QUERY_BASE --name raindex-base " "$log"
   [ "$(logged '^graph deploy raindex-base ')" -eq 1 ]
   [ "$(logged '^graph deploy raindex-0g ')" -eq 0 ]

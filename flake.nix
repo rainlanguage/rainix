@@ -453,8 +453,8 @@
           '';
         };
 
-        # Tracing stays off for the whole task: ORMI_DEPLOY_KEY and GOLDSKY_TOKEN are credentials
-        # and `set -x` would print it. The logic lives in lib/subgraph-deploy.sh.
+        # Tracing stays off for the whole task: ORMI_DEPLOY_KEY and GOLDSKY_TOKEN
+        # are credentials and `set -x` would print them. The logic lives in lib/subgraph-deploy.sh.
         subgraph-deploy = mkTask {
           name = "subgraph-deploy";
           body = ''

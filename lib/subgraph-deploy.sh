@@ -145,7 +145,8 @@ subgraph_deploy() {
       if [ "$host" = goldsky ]; then
         # Goldsky deploys the build as built, so it is exactly what the label
         # names.
-        if ! (cd "./$dir" && "$goldsky" --token "$goldsky_token" \
+        # The CLI otherwise reports usage to Goldsky from the runner.
+        if ! (cd "./$dir" && GOLDSKY_CLI_TELEMETRY_DISABLED=1 "$goldsky" --token "$goldsky_token" \
           subgraph deploy "$name/$version" --path "$build"); then
           echo "Deploy of $name/$version failed; continuing with the other networks." >&2
           failed="$failed $name"
