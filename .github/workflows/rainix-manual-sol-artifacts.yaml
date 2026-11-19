@@ -97,6 +97,8 @@ on:
       CI_DEPLOY_FLARE_ETHERSCAN_API_KEY:
         required: false
 env:
+  # verify-status-recheck parses this forge's log text: when this moves,
+  # capture a new 0G log for its fixture (verify_status_recheck.rs).
   RAINIX_SHA: 41a94b6958874e263e9d5adceba1c2181298fc40
 jobs:
   deploy:
@@ -161,7 +163,23 @@ jobs:
       # 41 submission attempts over 10 minutes, against foundry's default 6 over
       # 25s, which a cold explorer does not fit inside. Only a failed attempt
       # sleeps, and only the no-code and no-answer cases retry at all.
-      - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ${{ inputs.script }} -vvvvv --slow --broadcast ${{ inputs.verify && '--verify --retries 40 --delay 15' || '' }} ${{ inputs.legacy && '--legacy' || '' }}
+      #
+      # Teed for the recheck below, and with `--verify` the `[etherscan]` table
+      # is saved from `forge config --json` (`${VAR}` urls stay unexpanded).
+      # That dump is not fatal: only the recheck reads it, and it fails closed
+      # on a missing or bad file. pipefail, or bash reports tee's status and a
+      # failed broadcast passes. A `--verify` run continues on error so that the
+      # recheck decides: it fails the job unless every failure was an unread
+      # status poll.
+      - name: Deploy
+        id: deploy
+        continue-on-error: ${{ inputs.verify }}
+        run: |
+          set -euo pipefail
+          if ${{ inputs.verify }}; then
+            nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge config --json > "$RUNNER_TEMP/rainix-forge-config.json" || true
+          fi
+          nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script ${{ inputs.script }} -vvvvv --slow --broadcast ${{ inputs.verify && '--verify --retries 40 --delay 15' || '' }} ${{ inputs.legacy && '--legacy' || '' }} 2>&1 | tee "$RUNNER_TEMP/rainix-forge-script.log"
         # <NETWORK>_RPC_URL is bound by the rpc-preflight step above, which picks
         # a candidate that is reachable right now rather than binding one URL
         # that may be dead.
@@ -190,3 +208,10 @@ jobs:
           # `[etherscan]` entry whose key is empty and falls back to Sourcify.
           CI_DEPLOY_ZEROG_ETHERSCAN_API_KEY: ${{ secrets.CI_DEPLOY_ZEROG_ETHERSCAN_API_KEY || vars.CI_DEPLOY_ZEROG_ETHERSCAN_API_KEY || 'PLACEHOLDER' }}
           CI_DEPLOY_FLARE_ETHERSCAN_API_KEY: ${{ secrets.CI_DEPLOY_FLARE_ETHERSCAN_API_KEY || vars.CI_DEPLOY_FLARE_ETHERSCAN_API_KEY || '' }}
+      # 0G's chainscan verifies what forge submits but cannot answer forge's
+      # status poll, so a deploy there fails on a contract that IS verified.
+      # Reads the deploy step's log and passes only when the explorer, asked by
+      # GET, reads every unread poll as verified; any other failure stays red.
+      - name: Recheck unread verification polls
+        if: steps.deploy.outcome == 'failure'
+        uses: rainlanguage/rainix/.github/actions/verify-status-recheck@main
