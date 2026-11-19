@@ -61,8 +61,9 @@ setup() {
   [ "$(yq -r '.on.workflow_call.inputs.subgraph-name.required' "$workflow")" = "true" ]
   # shellcheck disable=SC2016
   [ "$(yq -r '.jobs.deploy.steps[] | select(.run) | select(.run | test("-c subgraph-deploy$")) | .env.GOLDSKY_QUERY_BASE' "$workflow")" = '${{ inputs.goldsky-query-base }}' ]
-  [ "$(yq -r '.on.workflow_call.inputs.ormi-query-base.required' "$workflow")" = "true" ]
-  [ "$(yq -r '.on.workflow_call.inputs.goldsky-query-base.required' "$workflow")" = "false" ]
+  # Both default to the org accounts, so a caller passes neither.
+  [[ "$(yq -r '.on.workflow_call.inputs.ormi-query-base.default' "$workflow")" == https://subgraph.api.ormilabs.com/api/public/?* ]]
+  [[ "$(yq -r '.on.workflow_call.inputs.goldsky-query-base.default' "$workflow")" == https://api.goldsky.com/api/public/project_?* ]]
 }
 
 @test "the job can only read the repo" {
