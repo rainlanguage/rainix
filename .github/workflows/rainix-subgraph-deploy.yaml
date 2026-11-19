@@ -17,14 +17,13 @@ on:
           `<subgraph-name>-<network>`.
       ormi-query-base:
         type: string
-        default: ""
+        required: true
         description: |
           `ORMI_QUERY_BASE`: public query base of the Ormi account the deploy
           key belongs to, probed to skip a version that is already live.
-          Required when any network deploys to Ormi.
       goldsky-query-base:
         type: string
-        default: ""
+        required: false
         description: |
           `GOLDSKY_QUERY_BASE`: `https://api.goldsky.com/api/public/<project id>`
           for the project GOLDSKY_TOKEN deploys to. Required when any network
@@ -35,7 +34,7 @@ on:
       CACHIX_AUTH_TOKEN:
         required: false
       ORMI_DEPLOY_KEY:
-        required: false
+        required: true
       CI_GOLDSKY_TOKEN:
         required: false
 env:

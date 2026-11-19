@@ -318,7 +318,11 @@ mod tests {
             r#"{"0g":{"C":{"address":"0x1"}},"base":{"C":{"address":"0x2"}}}"#,
         )
         .unwrap();
-        let hosts: Vec<&str> = targets(&root, "s").unwrap().into_iter().map(|t| t.host).collect();
+        let hosts: Vec<&str> = targets(&root, "s")
+            .unwrap()
+            .into_iter()
+            .map(|t| t.host)
+            .collect();
         assert_eq!(hosts, vec!["goldsky", "ormi"]);
     }
 

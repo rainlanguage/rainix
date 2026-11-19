@@ -164,13 +164,13 @@ mod frozen_snapshots;
 mod install_staged_config;
 mod mutation_ledger;
 mod no_submodules;
-mod subgraph_probe;
 mod prompt_cap;
 mod relative_src_imports;
 mod release_guard;
 mod rpc_preflight;
 mod soldeer_gate;
 mod subgraph_build_hash;
+mod subgraph_probe;
 mod subgraph_targets;
 
 use std::path::Path;

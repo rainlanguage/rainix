@@ -150,8 +150,14 @@ fn classify(host: Host, status: u16, body: &str) -> Verdict {
     }
     if host == Host::Goldsky && status == 404 {
         let v = serde_json::from_str::<Value>(body).ok();
-        let message = v.as_ref().and_then(|v| v.get("message")).and_then(Value::as_str);
-        let code = v.as_ref().and_then(|v| v.get("statusCode")).and_then(Value::as_u64);
+        let message = v
+            .as_ref()
+            .and_then(|v| v.get("message"))
+            .and_then(Value::as_str);
+        let code = v
+            .as_ref()
+            .and_then(|v| v.get("statusCode"))
+            .and_then(Value::as_u64);
         if code == Some(404) && message.is_some_and(|m| m.starts_with(GOLDSKY_MISSING_MESSAGE)) {
             return Verdict::Answer(Probe::Missing);
         }
@@ -251,7 +257,8 @@ fn curl_probe(url: &str) -> Result<(u16, String), String> {
 }
 
 pub(crate) fn run(host: Host, base: &str, name: &str, version: &str) -> ! {
-    let url = probe_url(base, name, version).unwrap_or_else(|e| fail(&format!("subgraph-probe: {e}")));
+    let url =
+        probe_url(base, name, version).unwrap_or_else(|e| fail(&format!("subgraph-probe: {e}")));
     match probe_with(host, || curl_probe(&url), std::thread::sleep, ATTEMPTS) {
         Ok(Probe::Deployed) => {
             println!("deployed");

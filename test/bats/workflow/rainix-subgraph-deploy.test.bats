@@ -39,12 +39,11 @@ setup() {
 }
 
 @test "each host's credential is a secret scoped to the deploy step alone" {
-  local pair secret var holders
-  # <workflow secret>=<task env var>: the org secret names, so `secrets: inherit` works.
-  for pair in ORMI_DEPLOY_KEY=ORMI_DEPLOY_KEY CI_GOLDSKY_TOKEN=GOLDSKY_TOKEN; do
-    secret="${pair%%=*}" var="${pair#*=}"
-    # Optional: a caller supplies the credential of each host it deploys to.
-    [ "$(yq -r ".on.workflow_call.secrets.$secret.required" "$workflow")" = "false" ]
+  local pair secret var required holders
+  # <secret>=<task env var>=<required>: Ormi hosts every caller, Goldsky only some.
+  for pair in ORMI_DEPLOY_KEY=ORMI_DEPLOY_KEY=true CI_GOLDSKY_TOKEN=GOLDSKY_TOKEN=false; do
+    secret="${pair%%=*}" var="${pair#*=}" required="${var#*=}" var="${var%=*}"
+    [ "$(yq -r ".on.workflow_call.secrets.$secret.required" "$workflow")" = "$required" ]
     # shellcheck disable=SC2016
     [ "$(yq -r ".jobs.deploy.steps[] | select(.run) | select(.run | test(\"-c subgraph-deploy\$\")) | .env.$var" "$workflow")" = "\${{ secrets.$secret }}" ]
     holders="$(grep -c "secrets.$secret" "$workflow")"
@@ -62,8 +61,8 @@ setup() {
   [ "$(yq -r '.on.workflow_call.inputs.subgraph-name.required' "$workflow")" = "true" ]
   # shellcheck disable=SC2016
   [ "$(yq -r '.jobs.deploy.steps[] | select(.run) | select(.run | test("-c subgraph-deploy$")) | .env.GOLDSKY_QUERY_BASE' "$workflow")" = '${{ inputs.goldsky-query-base }}' ]
-  [ "$(yq -r '.on.workflow_call.inputs.ormi-query-base.default' "$workflow")" = "" ]
-  [ "$(yq -r '.on.workflow_call.inputs.goldsky-query-base.default' "$workflow")" = "" ]
+  [ "$(yq -r '.on.workflow_call.inputs.ormi-query-base.required' "$workflow")" = "true" ]
+  [ "$(yq -r '.on.workflow_call.inputs.goldsky-query-base.required' "$workflow")" = "false" ]
 }
 
 @test "the job can only read the repo" {
