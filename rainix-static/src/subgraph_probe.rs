@@ -1,22 +1,31 @@
-//! `ormi-probe` — is `<name>/<version>` already deployed on Ormi?
+//! `subgraph-probe` — is `<name>/<version>` already deployed on its host?
 //!
 //! `subgraph-deploy` skips a version that is already live and deploys one that
 //! is not. The two answers are only safe if everything else is refused: a
-//! transport failure, an HTTP error, a body that is not one of the two known
+//! transport failure, an HTTP error, a body that is not one of the known
 //! shapes, or a wrong query base must never read as "not deployed", because the
 //! next step is a deploy under a version label that may already exist.
 //!
-//! Ormi answers every query with HTTP 200 and tells the cases apart by body:
-//!   {"data":{"_meta":{"block":{"number":N}}}}   deployed and answering
-//!   {"error":"subgraph name/version error"}      this name/version does not exist
-//!   {"error":"path project error"}               wrong account in the query base
-//! Only the first two are verdicts; the third, like anything else, is a failure.
-//! Transport errors, 429 and 5xx are retried with backoff before failing.
+//! Both hosts serve `<base>/subgraphs/<name>/<version>/gn`, and a deployed
+//! subgraph answers the `_meta` query with HTTP 200 and
+//! `{"data":{"_meta":{"block":{"number":N}}}}`. They differ on "missing":
+//!
+//! - Ormi answers HTTP 200 `{"error":"subgraph name/version error"}`, and a
+//!   wrong account in the base answers `{"error":"path project error"}`, which
+//!   is a failure.
+//! - Goldsky answers HTTP 404 `{"statusCode":404,"message":"Subgraph not
+//!   found. …"}`, and answers a wrong project in the base the same way, so a
+//!   mistyped Goldsky base reads every version as missing. The deploy that
+//!   follows goes to the token's own project, where an existing version is
+//!   refused, so that mistake fails loudly instead of overwriting.
+//!
+//! Anything else is a failure. Transport errors, 429 and 5xx are retried with
+//! backoff before failing.
 //!
 //! Exit status: 0 deployed (prints `deployed`), 10 confirmed missing (prints
-//! `missing`), 1 anything else. Nothing here handles the deploy key; the probe
-//! hits the public query endpoint and needs no secret. Runs where `curl` is on
-//! PATH (the nix package wraps the binary with a pinned curl).
+//! `missing`), 1 anything else. Nothing here handles a deploy credential; the
+//! probe hits the public query endpoint and needs no secret. Runs where `curl`
+//! is on PATH (the nix package wraps the binary with a pinned curl).
 
 use crate::{fail, soldeer_gate::split_status_body};
 use serde_json::Value;
@@ -29,6 +38,27 @@ pub(crate) const MISSING_EXIT: i32 = 10;
 
 /// The exact body Ormi returns for a name/version it does not host.
 const MISSING_ERROR: &str = "subgraph name/version error";
+
+/// The start of the message Goldsky returns, with HTTP 404, for a
+/// name/version it does not host.
+const GOLDSKY_MISSING_MESSAGE: &str = "Subgraph not found.";
+
+/// Where the subgraph is hosted: `subgraph-targets` names it per network.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Host {
+    Ormi,
+    Goldsky,
+}
+
+impl Host {
+    pub(crate) fn parse(s: &str) -> Result<Host, String> {
+        match s {
+            "ormi" => Ok(Host::Ormi),
+            "goldsky" => Ok(Host::Goldsky),
+            _ => Err(format!("host {s:?} is neither ormi nor goldsky")),
+        }
+    }
+}
 
 const QUERY: &str = r#"{"query":"{ _meta { block { number } } }"}"#;
 
@@ -114,9 +144,17 @@ fn excerpt(body: &str) -> String {
 }
 
 /// One response -> one verdict. See the module doc for the accepted shapes.
-fn classify(status: u16, body: &str) -> Verdict {
+fn classify(host: Host, status: u16, body: &str) -> Verdict {
     if status == 429 || status >= 500 {
         return Verdict::Retry(format!("HTTP {status}: {}", excerpt(body)));
+    }
+    if host == Host::Goldsky && status == 404 {
+        let v = serde_json::from_str::<Value>(body).ok();
+        let message = v.as_ref().and_then(|v| v.get("message")).and_then(Value::as_str);
+        let code = v.as_ref().and_then(|v| v.get("statusCode")).and_then(Value::as_u64);
+        if code == Some(404) && message.is_some_and(|m| m.starts_with(GOLDSKY_MISSING_MESSAGE)) {
+            return Verdict::Answer(Probe::Missing);
+        }
     }
     if status != 200 {
         return Verdict::Fatal(format!("HTTP {status}: {}", excerpt(body)));
@@ -135,7 +173,10 @@ fn classify(status: u16, body: &str) -> Verdict {
             }
         }
     }
-    if obj.len() == 1 && obj.get("error").and_then(Value::as_str) == Some(MISSING_ERROR) {
+    if host == Host::Ormi
+        && obj.len() == 1
+        && obj.get("error").and_then(Value::as_str) == Some(MISSING_ERROR)
+    {
         return Verdict::Answer(Probe::Missing);
     }
     Verdict::Fatal(format!(
@@ -148,6 +189,7 @@ fn classify(status: u16, body: &str) -> Verdict {
 /// fetch and sleep are parameters so the retry policy is testable without a
 /// network or a clock.
 fn probe_with(
+    host: Host,
     mut fetch: impl FnMut() -> Result<(u16, String), String>,
     mut sleep: impl FnMut(Duration),
     attempts: u32,
@@ -155,14 +197,14 @@ fn probe_with(
     let mut last = String::new();
     for attempt in 1..=attempts {
         let verdict = match fetch() {
-            Ok((status, body)) => classify(status, &body),
+            Ok((status, body)) => classify(host, status, &body),
             Err(transport) => Verdict::Retry(transport),
         };
         match verdict {
             Verdict::Answer(p) => return Ok(p),
             Verdict::Fatal(e) => return Err(e),
             Verdict::Retry(e) => {
-                eprintln!("ormi-probe: attempt {attempt}/{attempts} failed: {e}");
+                eprintln!("subgraph-probe: attempt {attempt}/{attempts} failed: {e}");
                 last = e;
                 if attempt < attempts {
                     sleep(BACKOFF * attempt);
@@ -208,9 +250,9 @@ fn curl_probe(url: &str) -> Result<(u16, String), String> {
     split_status_body(&String::from_utf8_lossy(&out.stdout))
 }
 
-pub(crate) fn run(base: &str, name: &str, version: &str) -> ! {
-    let url = probe_url(base, name, version).unwrap_or_else(|e| fail(&format!("ormi-probe: {e}")));
-    match probe_with(|| curl_probe(&url), std::thread::sleep, ATTEMPTS) {
+pub(crate) fn run(host: Host, base: &str, name: &str, version: &str) -> ! {
+    let url = probe_url(base, name, version).unwrap_or_else(|e| fail(&format!("subgraph-probe: {e}")));
+    match probe_with(host, || curl_probe(&url), std::thread::sleep, ATTEMPTS) {
         Ok(Probe::Deployed) => {
             println!("deployed");
             std::process::exit(0);
@@ -219,7 +261,7 @@ pub(crate) fn run(base: &str, name: &str, version: &str) -> ! {
             println!("missing");
             std::process::exit(MISSING_EXIT);
         }
-        Err(e) => fail(&format!("ormi-probe: {name}/{version}: {e}")),
+        Err(e) => fail(&format!("subgraph-probe: {name}/{version}: {e}")),
     }
 }
 
@@ -232,7 +274,7 @@ mod tests {
     const MISSING: &str = r#"{"error":"subgraph name/version error"}"#;
 
     fn answer(status: u16, body: &str) -> Verdict {
-        classify(status, body)
+        classify(Host::Ormi, status, body)
     }
 
     #[test]
@@ -257,6 +299,59 @@ mod tests {
             answer(200, r#"{"error":"path project error"}"#),
             Verdict::Fatal(_)
         ));
+    }
+
+    /// Goldsky's body for a name/version it does not host, as served
+    /// 2026-11-19.
+    const GOLDSKY_MISSING: &str = r#"{"statusCode":404,"message":"Subgraph not found. Have you deleted this subgraph recently? If this error persists, please reach out to our support team over slack or at support@goldsky.com"}"#;
+
+    #[test]
+    fn goldsky_live_meta_is_deployed_and_its_404_not_found_is_missing() {
+        assert_eq!(
+            classify(Host::Goldsky, 200, LIVE),
+            Verdict::Answer(Probe::Deployed)
+        );
+        assert_eq!(
+            classify(Host::Goldsky, 404, GOLDSKY_MISSING),
+            Verdict::Answer(Probe::Missing)
+        );
+    }
+
+    #[test]
+    fn each_host_reads_only_its_own_missing_shape() {
+        assert!(matches!(answer(404, GOLDSKY_MISSING), Verdict::Fatal(_)));
+        assert!(matches!(
+            classify(Host::Goldsky, 200, MISSING),
+            Verdict::Fatal(_)
+        ));
+    }
+
+    #[test]
+    fn a_goldsky_404_that_is_not_its_not_found_body_is_fatal() {
+        for body in [
+            "Not Found",
+            r#"{"statusCode":404,"message":"Route not found"}"#,
+            r#"{"statusCode":403,"message":"Subgraph not found."}"#,
+            r#"{"message":"Subgraph not found."}"#,
+        ] {
+            assert!(
+                matches!(classify(Host::Goldsky, 404, body), Verdict::Fatal(_)),
+                "{body} accepted"
+            );
+        }
+        assert!(matches!(
+            classify(Host::Goldsky, 200, GOLDSKY_MISSING),
+            Verdict::Fatal(_)
+        ));
+    }
+
+    #[test]
+    fn host_parses_only_the_two_names() {
+        assert_eq!(Host::parse("ormi"), Ok(Host::Ormi));
+        assert_eq!(Host::parse("goldsky"), Ok(Host::Goldsky));
+        for bad in ["", "Ormi", "graph", "goldsky "] {
+            assert!(Host::parse(bad).is_err(), "{bad:?} accepted");
+        }
     }
 
     #[test]
@@ -304,6 +399,7 @@ mod tests {
         let calls = Cell::new(0);
         let sleeps = RefCell::new(Vec::new());
         let r = probe_with(
+            Host::Ormi,
             || {
                 calls.set(calls.get() + 1);
                 Err("curl: (7) connection refused".to_string())
@@ -321,6 +417,7 @@ mod tests {
     fn transient_failure_then_answer_succeeds() {
         let calls = Cell::new(0);
         let r = probe_with(
+            Host::Ormi,
             || {
                 calls.set(calls.get() + 1);
                 match calls.get() {
@@ -340,6 +437,7 @@ mod tests {
     fn fatal_response_is_not_retried() {
         let calls = Cell::new(0);
         let r = probe_with(
+            Host::Ormi,
             || {
                 calls.set(calls.get() + 1);
                 Ok((200, r#"{"error":"path project error"}"#.to_string()))

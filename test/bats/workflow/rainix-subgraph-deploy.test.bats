@@ -38,15 +38,18 @@ setup() {
   done
 }
 
-@test "the deploy key is a required secret, scoped to the deploy step alone" {
-  [ "$(yq -r '.on.workflow_call.secrets.ORMI_DEPLOY_KEY.required' "$workflow")" = "true" ]
-  # shellcheck disable=SC2016
-  [ "$(yq -r '.jobs.deploy.steps[] | select(.run) | select(.run | test("-c subgraph-deploy$")) | .env.ORMI_DEPLOY_KEY' "$workflow")" = '${{ secrets.ORMI_DEPLOY_KEY }}' ]
-  local holders
-  holders="$(grep -c 'secrets.ORMI_DEPLOY_KEY' "$workflow")"
-  [ "$holders" -eq 1 ]
-  [ "$(yq -r '.env.ORMI_DEPLOY_KEY' "$workflow")" = "null" ]
-  [ "$(yq -r '.jobs.deploy.env.ORMI_DEPLOY_KEY' "$workflow")" = "null" ]
+@test "each host's credential is a secret scoped to the deploy step alone" {
+  local secret holders
+  for secret in ORMI_DEPLOY_KEY GOLDSKY_TOKEN; do
+    # Optional: a caller supplies the credential of each host it deploys to.
+    [ "$(yq -r ".on.workflow_call.secrets.$secret.required" "$workflow")" = "false" ]
+    # shellcheck disable=SC2016
+    [ "$(yq -r ".jobs.deploy.steps[] | select(.run) | select(.run | test(\"-c subgraph-deploy\$\")) | .env.$secret" "$workflow")" = "\${{ secrets.$secret }}" ]
+    holders="$(grep -c "secrets.$secret" "$workflow")"
+    [ "$holders" -eq 1 ]
+    [ "$(yq -r ".env.$secret" "$workflow")" = "null" ]
+    [ "$(yq -r ".jobs.deploy.env.$secret" "$workflow")" = "null" ]
+  done
 }
 
 @test "the deploy name and query base come from the caller's inputs" {
@@ -55,7 +58,10 @@ setup() {
   # shellcheck disable=SC2016
   [ "$(yq -r '.jobs.deploy.steps[] | select(.run) | select(.run | test("-c subgraph-deploy$")) | .env.ORMI_QUERY_BASE' "$workflow")" = '${{ inputs.ormi-query-base }}' ]
   [ "$(yq -r '.on.workflow_call.inputs.subgraph-name.required' "$workflow")" = "true" ]
-  [ "$(yq -r '.on.workflow_call.inputs.ormi-query-base.required' "$workflow")" = "true" ]
+  # shellcheck disable=SC2016
+  [ "$(yq -r '.jobs.deploy.steps[] | select(.run) | select(.run | test("-c subgraph-deploy$")) | .env.GOLDSKY_QUERY_BASE' "$workflow")" = '${{ inputs.goldsky-query-base }}' ]
+  [ "$(yq -r '.on.workflow_call.inputs.ormi-query-base.default' "$workflow")" = "" ]
+  [ "$(yq -r '.on.workflow_call.inputs.goldsky-query-base.default' "$workflow")" = "" ]
 }
 
 @test "the job can only read the repo" {

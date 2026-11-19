@@ -11,7 +11,10 @@
 //!   written, for a subgraph whose data sources differ per network (so it has
 //!   no single address; its label prefix is `manifest`).
 //!
-//! Prints `network TAB label-prefix TAB manifest` per network, networks in byte
+//! Each network deploys to one host: Goldsky for a network in
+//! [`GOLDSKY_NETWORKS`] (Ormi does not index it), Ormi for every other.
+//!
+//! Prints `network TAB host TAB label-prefix TAB manifest` per network, networks in byte
 //! order. The manifest is empty in the networks.json shape, so it is the LAST
 //! field: tab is IFS whitespace to bash `read`, which collapses an empty field
 //! between two tabs and would shift the label into the manifest. Exits 1 when the
@@ -26,6 +29,8 @@ use std::path::Path;
 #[derive(Debug, PartialEq)]
 pub(crate) struct Target {
     pub network: String,
+    /// `ormi` or `goldsky`: see [`host`].
+    pub host: &'static str,
     /// Relative to the subgraph directory; empty for the networks.json shape.
     pub manifest: String,
     pub label_prefix: String,
@@ -56,6 +61,19 @@ impl<'de, V: serde::Deserialize<'de>> serde::Deserialize<'de> for OrderedMap<V> 
             }
         }
         d.deserialize_map(Entries(std::marker::PhantomData))
+    }
+}
+
+/// Graph network names Ormi does not index, so their subgraphs deploy to
+/// Goldsky. Every other network deploys to Ormi.
+pub(crate) const GOLDSKY_NETWORKS: &[&str] = &["0g"];
+
+/// The host a network's subgraph deploys to.
+pub(crate) fn host(network: &str) -> &'static str {
+    if GOLDSKY_NETWORKS.contains(&network) {
+        "goldsky"
+    } else {
+        "ormi"
     }
 }
 
@@ -99,6 +117,7 @@ pub(crate) fn targets(root: &Path, dir: &str) -> Result<Vec<Target>, String> {
                 .and_then(|a| a.as_str())
                 .ok_or_else(|| format!("networks.json {network:?} has no address"))?;
             out.push(Target {
+                host: host(&network),
                 network,
                 manifest: String::new(),
                 label_prefix: address.to_string(),
@@ -127,6 +146,7 @@ pub(crate) fn targets(root: &Path, dir: &str) -> Result<Vec<Target>, String> {
                 ));
             }
             out.push(Target {
+                host: host(network),
                 network: network.to_string(),
                 manifest: format!("manifests/{name}"),
                 label_prefix: "manifest".to_string(),
@@ -146,7 +166,10 @@ pub(crate) fn run(dir: &str) {
     match targets(Path::new("."), dir) {
         Ok(ts) => {
             for t in ts {
-                println!("{}\t{}\t{}", t.network, t.label_prefix, t.manifest);
+                println!(
+                    "{}\t{}\t{}\t{}",
+                    t.network, t.host, t.label_prefix, t.manifest
+                );
             }
         }
         Err(e) => fail(&format!("subgraph-targets: {e}")),
@@ -172,6 +195,7 @@ mod tests {
 
     fn t(network: &str, manifest: &str, prefix: &str) -> Target {
         Target {
+            host: host(network),
             network: network.into(),
             manifest: manifest.into(),
             label_prefix: prefix.into(),
@@ -272,6 +296,30 @@ mod tests {
         let mut want: Vec<String> = names.iter().map(|n| n.to_string()).collect();
         want.sort();
         assert_eq!(got, want);
+    }
+
+    #[test]
+    fn a_goldsky_network_deploys_to_goldsky_and_every_other_to_ormi() {
+        let root = tmp();
+        std::fs::create_dir_all(root.join("s/manifests")).unwrap();
+        std::fs::write(root.join("s/manifests/0g.yaml"), "x").unwrap();
+        std::fs::write(root.join("s/manifests/base.yaml"), "x").unwrap();
+        let hosts: Vec<(String, &str)> = targets(&root, "s")
+            .unwrap()
+            .into_iter()
+            .map(|t| (t.network, t.host))
+            .collect();
+        assert_eq!(
+            hosts,
+            vec![("0g".to_string(), "goldsky"), ("base".to_string(), "ormi")]
+        );
+        std::fs::write(
+            root.join("s/networks.json"),
+            r#"{"0g":{"C":{"address":"0x1"}},"base":{"C":{"address":"0x2"}}}"#,
+        )
+        .unwrap();
+        let hosts: Vec<&str> = targets(&root, "s").unwrap().into_iter().map(|t| t.host).collect();
+        assert_eq!(hosts, vec!["goldsky", "ormi"]);
     }
 
     #[test]

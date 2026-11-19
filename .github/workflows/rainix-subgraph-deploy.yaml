@@ -17,17 +17,27 @@ on:
           `<subgraph-name>-<network>`.
       ormi-query-base:
         type: string
-        required: true
+        default: ""
         description: |
           `ORMI_QUERY_BASE`: public query base of the Ormi account the deploy
           key belongs to, probed to skip a version that is already live.
+          Required when any network deploys to Ormi.
+      goldsky-query-base:
+        type: string
+        default: ""
+        description: |
+          `GOLDSKY_QUERY_BASE`: `https://api.goldsky.com/api/public/<project id>`
+          for the project GOLDSKY_TOKEN deploys to. Required when any network
+          deploys to Goldsky (`rainix-static subgraph-targets` names the host).
     # Declared so cross-org callers can pass them; `secrets: inherit` does not
     # cross organizations.
     secrets:
       CACHIX_AUTH_TOKEN:
         required: false
       ORMI_DEPLOY_KEY:
-        required: true
+        required: false
+      GOLDSKY_TOKEN:
+        required: false
 env:
   RAINIX_SHA: 41a94b6958874e263e9d5adceba1c2181298fc40
 jobs:
@@ -46,3 +56,5 @@ jobs:
           SUBGRAPH_DIR: ${{ inputs.subgraph-dir }}
           ORMI_QUERY_BASE: ${{ inputs.ormi-query-base }}
           ORMI_DEPLOY_KEY: ${{ secrets.ORMI_DEPLOY_KEY }}
+          GOLDSKY_QUERY_BASE: ${{ inputs.goldsky-query-base }}
+          GOLDSKY_TOKEN: ${{ secrets.GOLDSKY_TOKEN }}
