@@ -1,0 +1,19 @@
+name: verify-status-recheck
+description: >-
+  Second opinion on a failed `forge script --verify` in `rainix-manual-sol-artifacts`. 0G's chainscan (16661) verifies what forge submits, but reads `checkverifystatus`'s guid only from the query string, and forge sends that poll as a POST form, so every poll is unreadable and the run fails on a contract the explorer verified. When every failure in forge's log is such an unread poll, this GETs each GUID's status from the chain's `[etherscan]` url and passes only if all read verified. Any other failure, including an explorer rejection or a chain forge never reached, fails here as it failed in forge. Reads the log and `forge config --json` the deploy step leaves under $RUNNER_TEMP.
+runs:
+  using: composite
+  steps:
+    - name: Recheck unread verification polls
+      shell: bash
+      run: |
+        set -euo pipefail
+        # path: ref runs the check from THIS composite's own checkout, so the
+        # check version always matches the action version (same pattern as
+        # codegen-declaration). The log it reads comes from the forge that
+        # rainix-manual-sol-artifacts' RAINIX_SHA pins, so a bump there can
+        # change the text it parses; the check then fails closed.
+        nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- \
+          verify-status-recheck \
+          --log "$RUNNER_TEMP/rainix-forge-script.log" \
+          --config "$RUNNER_TEMP/rainix-forge-config.json"

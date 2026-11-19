@@ -153,6 +153,14 @@
 //       TAB manifest` line per network, from `<dir>/networks.json` or
 //       `<dir>/manifests/<network>.yaml`; refuses a dir that is not one plain
 //       name. Semantics: subgraph_targets.rs module doc.
+//   verify-status-recheck --log <file> --config <file>
+//       rainix-manual-sol-artifacts' second opinion on a `forge script
+//       --verify` failure: when every failure in forge's log is a status
+//       poll it could not read (0G chainscan answers forge's POST poll
+//       without its guid), GET each GUID's status from the chain's
+//       `[etherscan]` url in `forge config --json` and exit 0 only if all
+//       read verified. Any other failure stands. Semantics:
+//       verify_status_recheck.rs module doc.
 
 mod agent_context_cap;
 mod ci_gate;
@@ -172,6 +180,7 @@ mod rpc_preflight;
 mod soldeer_gate;
 mod subgraph_build_hash;
 mod subgraph_targets;
+mod verify_status_recheck;
 
 use std::path::Path;
 
@@ -440,6 +449,13 @@ fn main() {
                 .unwrap_or_else(|| fail("subgraph-targets: <subgraph dir> required"));
             subgraph_targets::run(dir);
         }
+        "verify-status-recheck" => {
+            let log = flag(&args, "--log")
+                .unwrap_or_else(|| fail("verify-status-recheck: --log <file> required"));
+            let config = flag(&args, "--config")
+                .unwrap_or_else(|| fail("verify-status-recheck: --config <file> required"));
+            verify_status_recheck::run(Path::new(&log), Path::new(&config));
+        }
         "rpc-preflight" => {
             let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
             // There is no stdout fallback on purpose: the selected URL may be
@@ -497,7 +513,7 @@ fn main() {
                  (available: no-submodules, relative-src-imports, agent-context-cap, prompt-cap, \
                  comment-loc-cap, codegen-declaration, install-staged-config, snapshots-append-only, \
                  mutation-ledger, ci-gate, soldeer-gate, rpc-preflight, release-guard, \
-                 ormi-probe, subgraph-build-hash, subgraph-targets)"
+                 ormi-probe, subgraph-build-hash, subgraph-targets, verify-status-recheck)"
             );
             std::process::exit(2);
         }

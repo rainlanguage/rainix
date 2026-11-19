@@ -474,6 +474,7 @@
             bats test/bats/action/codegen-declaration.test.bats
             bats test/bats/action/install-staged-config.test.bats
             bats test/bats/action/relative-src-imports.test.bats
+            bats test/bats/action/verify-status-recheck.test.bats
             bats test/bats/task/skip-simulation.test.bats
             bats test/bats/task/subgraph-build.test.bats
             bats test/bats/task/subgraph-deploy-version.test.bats
@@ -484,6 +485,7 @@
             bats test/bats/workflow/rainix-sol-static.test.bats
             bats test/bats/workflow/rainix-rs-static.test.bats
             bats test/bats/workflow/rainix-copy-artifacts.test.bats
+            bats test/bats/workflow/rainix-manual-sol-artifacts.test.bats
             bats test/bats/workflow/rainix-subgraph-deploy.test.bats
             bats test/bats/workflow/test-yml.test.bats
           '';

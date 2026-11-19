@@ -144,8 +144,8 @@ jobs:
 The secrets matter because the reusable wires the standard fork RPC env vars
 (`ARBITRUM_RPC_URL`, `BASE_RPC_URL`, `BASE_SEPOLIA_RPC_URL`, `BSC_RPC_URL`,
 `ETHEREUM_RPC_URL`, `FLARE_RPC_URL`, `HYPEREVM_RPC_URL`, `POLYGON_RPC_URL`,
-`ROBINHOOD_RPC_URL`, `SEPOLIA_RPC_URL`, `ZEROG_RPC_URL`) from the consumer
-org's `RPC_URL_<NETWORK>_FORK` secrets/vars, plus `ETHERSCAN_API_KEY` and
+`ROBINHOOD_RPC_URL`, `SEPOLIA_RPC_URL`, `ZEROG_RPC_URL`) from the consumer org's
+`RPC_URL_<NETWORK>_FORK` secrets/vars, plus `ETHERSCAN_API_KEY` and
 `DEPLOYMENT_KEY`. Repos that do no fork tests can ignore — empty values are
 harmless.
 
