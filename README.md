@@ -144,8 +144,8 @@ jobs:
 The secrets matter because the reusable wires the standard fork RPC env vars
 (`ARBITRUM_RPC_URL`, `BASE_RPC_URL`, `BASE_SEPOLIA_RPC_URL`, `BSC_RPC_URL`,
 `ETHEREUM_RPC_URL`, `FLARE_RPC_URL`, `HYPEREVM_RPC_URL`, `POLYGON_RPC_URL`,
-`ROBINHOOD_RPC_URL`, `SEPOLIA_RPC_URL`) from the consumer org's
-`RPC_URL_<NETWORK>_FORK` secrets/vars, plus `ETHERSCAN_API_KEY` and
+`ROBINHOOD_RPC_URL`, `SEPOLIA_RPC_URL`, `ZEROG_RPC_URL`) from the consumer
+org's `RPC_URL_<NETWORK>_FORK` secrets/vars, plus `ETHERSCAN_API_KEY` and
 `DEPLOYMENT_KEY`. Repos that do no fork tests can ignore — empty values are
 harmless.
 
@@ -571,9 +571,9 @@ any repo in the org pins for that network, three times consecutively. An
 suite with `trying to fork from an older block with a non-archive node`; a
 code-only check would select a host that answers no `eth_call` at all; and a
 single sample would qualify a load balancer that round-robins over a mix of
-archive and pruning backends. Ethereum, HyperEVM, Robinhood Chain and BNB Smart
-Chain are latest-only in every consumer, so they are not held to the archive
-bar, and neither are deploy/broadcast paths.
+archive and pruning backends. Ethereum, HyperEVM, Robinhood Chain, BNB Smart
+Chain and 0G are latest-only in every consumer, so they are not held to the
+archive bar, and neither are deploy/broadcast paths.
 
 **Health also covers load, not just correctness.** Chain id, historical state
 and historical `eth_call` are all correctness questions, and an endpoint that is

@@ -26,6 +26,8 @@ on:
         required: false
       RPC_URL_BSC_FORK:
         required: false
+      RPC_URL_ZEROG_FORK:
+        required: false
       RPC_URL_SEPOLIA_FORK:
         required: false
 env:
@@ -109,6 +111,8 @@ jobs:
           RAINIX_RPC_VARS_ROBINHOOD: ${{ vars.RPC_URL_ROBINHOOD_FORK }}
           RAINIX_RPC_SECRET_BSC: ${{ env.RAINIX_FORK_SECRETS == 'true' && secrets.RPC_URL_BSC_FORK || '' }}
           RAINIX_RPC_VARS_BSC: ${{ vars.RPC_URL_BSC_FORK }}
+          RAINIX_RPC_SECRET_ZEROG: ${{ env.RAINIX_FORK_SECRETS == 'true' && secrets.RPC_URL_ZEROG_FORK || '' }}
+          RAINIX_RPC_VARS_ZEROG: ${{ vars.RPC_URL_ZEROG_FORK }}
           RAINIX_RPC_SECRET_SEPOLIA: ${{ env.RAINIX_FORK_SECRETS == 'true' && secrets.RPC_URL_SEPOLIA_FORK || '' }}
           RAINIX_RPC_VARS_SEPOLIA: ${{ vars.RPC_URL_SEPOLIA_FORK }}
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge test -vvv
