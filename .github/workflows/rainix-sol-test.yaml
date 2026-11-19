@@ -80,7 +80,7 @@ jobs:
         if: hashFiles('soldeer.lock') != ''
         run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
       # Serve every <NETWORK>_RPC_URL foundry.toml reads from a local eRPC:
-      # our own node first where we run one (Ethereum, Robinhood, Base; only
+      # our own node first where we run one (Ethereum, Robinhood, Base, 0G; only
       # when the caller grants `id-token: write`, never on
       # `pull_request_target`), then public upstreams, the paid secret last,
       # and each request fails over on its own, so one throttled read no
