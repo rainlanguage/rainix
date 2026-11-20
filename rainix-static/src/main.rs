@@ -518,11 +518,7 @@ fn main() {
                  (available: no-submodules, relative-src-imports, agent-context-cap, prompt-cap, \
                  comment-loc-cap, codegen-declaration, install-staged-config, snapshots-append-only, \
                  mutation-ledger, ci-gate, soldeer-gate, rpc-preflight, release-guard, \
-<<<<<<< HEAD
-                 subgraph-probe, subgraph-build-hash, subgraph-targets)"
-=======
-                 ormi-probe, subgraph-build-hash, subgraph-targets, verify-status-recheck)"
->>>>>>> origin/main
+                 subgraph-probe, subgraph-build-hash, subgraph-targets, verify-status-recheck)"
             );
             std::process::exit(2);
         }
