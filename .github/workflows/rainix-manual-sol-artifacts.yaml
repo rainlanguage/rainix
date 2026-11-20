@@ -99,7 +99,7 @@ on:
 env:
   # verify-status-recheck parses this forge's log text: when this moves,
   # capture a new 0G log for its fixture (verify_status_recheck.rs).
-  RAINIX_SHA: 41a94b6958874e263e9d5adceba1c2181298fc40
+  RAINIX_SHA: fa80f5cd7ff7ace6ce3d502984dceb06260eb008
 jobs:
   deploy:
     runs-on: ubuntu-latest

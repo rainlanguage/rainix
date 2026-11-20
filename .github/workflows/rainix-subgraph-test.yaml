@@ -11,7 +11,7 @@ on:
       CACHIX_AUTH_TOKEN:
         required: false
 env:
-  RAINIX_SHA: 41a94b6958874e263e9d5adceba1c2181298fc40
+  RAINIX_SHA: fa80f5cd7ff7ace6ce3d502984dceb06260eb008
 jobs:
   subgraph-test:
     runs-on: ubuntu-latest
