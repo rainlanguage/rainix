@@ -136,20 +136,20 @@
 //       removed — a deploy repo's generated released-suites lib imports it, so
 //       removing it makes the tree uncompilable (rainlanguage/rainix#341). Runs
 //       where git is on PATH.
-//   ormi-probe --base <ORMI_QUERY_BASE> --name <name> --version <version>
+//   subgraph-probe --host <ormi|goldsky> --base <query base> --name <name> --version <version>
 //       subgraph-deploy's skip decision: is <name>/<version> already live on
-//       Ormi? Exit 0 = deployed, 10 = confirmed missing, 1 = anything else
-//       (transport/HTTP failure after retries, unrecognised body, wrong query
-//       base, malformed argument) — so a failed probe can never read as "not
-//       deployed" and trigger a deploy. Needs no secret. Semantics:
-//       ormi_probe.rs module doc. Runs where curl is on PATH.
+//       its host? Exit 0 = deployed, 10 = confirmed missing, 1 = anything else
+//       (transport/HTTP failure after retries, unrecognised body, wrong Ormi
+//       query base, malformed argument) — so a failed probe can never read as
+//       "not deployed" and trigger a deploy. Needs no secret. Semantics:
+//       subgraph_probe.rs module doc. Runs where curl is on PATH.
 //   subgraph-build-hash <build dir>
 //       subgraph-deploy's version label suffix: the first 16 hex digits of a
 //       SHA-256 over every file in one network's `graph build` output, so an
 //       unchanged build keeps its label and is skipped. Semantics:
 //       subgraph_build_hash.rs module doc.
 //   subgraph-targets <subgraph dir>
-//       subgraph-build/test/deploy's targets: one `network TAB label-prefix
+//       subgraph-build/test/deploy's targets: one `network TAB host TAB label-prefix
 //       TAB manifest` line per network, from `<dir>/networks.json` or
 //       `<dir>/manifests/<network>.yaml`; refuses a dir that is not one plain
 //       name. Semantics: subgraph_targets.rs module doc.
@@ -172,13 +172,13 @@ mod frozen_snapshots;
 mod install_staged_config;
 mod mutation_ledger;
 mod no_submodules;
-mod ormi_probe;
 mod prompt_cap;
 mod relative_src_imports;
 mod release_guard;
 mod rpc_preflight;
 mod soldeer_gate;
 mod subgraph_build_hash;
+mod subgraph_probe;
 mod subgraph_targets;
 mod verify_status_recheck;
 
@@ -429,13 +429,18 @@ fn main() {
             let foundry = flag(&args, "--foundry").unwrap_or_else(|| "foundry.toml".to_string());
             release_guard::run(&version, &root, &foundry);
         }
-        "ormi-probe" => {
+        "subgraph-probe" => {
+            let host = flag(&args, "--host")
+                .unwrap_or_else(|| fail("subgraph-probe: --host <ormi|goldsky> required"));
+            let host = subgraph_probe::Host::parse(&host)
+                .unwrap_or_else(|e| fail(&format!("subgraph-probe: {e}")));
             let base = flag(&args, "--base")
-                .unwrap_or_else(|| fail("ormi-probe: --base <query base url> required"));
-            let name = flag(&args, "--name").unwrap_or_else(|| fail("ormi-probe: --name required"));
-            let version =
-                flag(&args, "--version").unwrap_or_else(|| fail("ormi-probe: --version required"));
-            ormi_probe::run(&base, &name, &version);
+                .unwrap_or_else(|| fail("subgraph-probe: --base <query base url> required"));
+            let name =
+                flag(&args, "--name").unwrap_or_else(|| fail("subgraph-probe: --name required"));
+            let version = flag(&args, "--version")
+                .unwrap_or_else(|| fail("subgraph-probe: --version required"));
+            subgraph_probe::run(host, &base, &name, &version);
         }
         "subgraph-build-hash" => {
             let dir = args
@@ -513,7 +518,7 @@ fn main() {
                  (available: no-submodules, relative-src-imports, agent-context-cap, prompt-cap, \
                  comment-loc-cap, codegen-declaration, install-staged-config, snapshots-append-only, \
                  mutation-ledger, ci-gate, soldeer-gate, rpc-preflight, release-guard, \
-                 ormi-probe, subgraph-build-hash, subgraph-targets, verify-status-recheck)"
+                 subgraph-probe, subgraph-build-hash, subgraph-targets, verify-status-recheck)"
             );
             std::process::exit(2);
         }

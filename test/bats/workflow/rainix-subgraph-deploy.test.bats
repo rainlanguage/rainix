@@ -38,15 +38,19 @@ setup() {
   done
 }
 
-@test "the deploy key is a required secret, scoped to the deploy step alone" {
-  [ "$(yq -r '.on.workflow_call.secrets.ORMI_DEPLOY_KEY.required' "$workflow")" = "true" ]
-  # shellcheck disable=SC2016
-  [ "$(yq -r '.jobs.deploy.steps[] | select(.run) | select(.run | test("-c subgraph-deploy$")) | .env.ORMI_DEPLOY_KEY' "$workflow")" = '${{ secrets.ORMI_DEPLOY_KEY }}' ]
-  local holders
-  holders="$(grep -c 'secrets.ORMI_DEPLOY_KEY' "$workflow")"
-  [ "$holders" -eq 1 ]
-  [ "$(yq -r '.env.ORMI_DEPLOY_KEY' "$workflow")" = "null" ]
-  [ "$(yq -r '.jobs.deploy.env.ORMI_DEPLOY_KEY' "$workflow")" = "null" ]
+@test "each host's credential is a secret scoped to the deploy step alone" {
+  local pair secret env_var required holders
+  # <secret>=<task env var>=<required>: a caller sets only the hosts its networks use.
+  for pair in ORMI_DEPLOY_KEY=ORMI_DEPLOY_KEY=false CI_GOLDSKY_TOKEN=GOLDSKY_TOKEN=false; do
+    secret="${pair%%=*}" env_var="${pair#*=}" required="${env_var#*=}" env_var="${env_var%=*}"
+    [ "$(yq -r ".on.workflow_call.secrets.$secret.required" "$workflow")" = "$required" ]
+    # shellcheck disable=SC2016
+    [ "$(yq -r ".jobs.deploy.steps[] | select(.run) | select(.run | test(\"-c subgraph-deploy\$\")) | .env.$env_var" "$workflow")" = "\${{ secrets.$secret }}" ]
+    holders="$(grep -c "secrets.$secret" "$workflow")"
+    [ "$holders" -eq 1 ]
+    [ "$(yq -r ".env.$env_var" "$workflow")" = "null" ]
+    [ "$(yq -r ".jobs.deploy.env.$env_var" "$workflow")" = "null" ]
+  done
 }
 
 @test "the deploy name and query base come from the caller's inputs" {
@@ -55,7 +59,11 @@ setup() {
   # shellcheck disable=SC2016
   [ "$(yq -r '.jobs.deploy.steps[] | select(.run) | select(.run | test("-c subgraph-deploy$")) | .env.ORMI_QUERY_BASE' "$workflow")" = '${{ inputs.ormi-query-base }}' ]
   [ "$(yq -r '.on.workflow_call.inputs.subgraph-name.required' "$workflow")" = "true" ]
-  [ "$(yq -r '.on.workflow_call.inputs.ormi-query-base.required' "$workflow")" = "true" ]
+  # shellcheck disable=SC2016
+  [ "$(yq -r '.jobs.deploy.steps[] | select(.run) | select(.run | test("-c subgraph-deploy$")) | .env.GOLDSKY_QUERY_BASE' "$workflow")" = '${{ inputs.goldsky-query-base }}' ]
+  # Optional with no fallback: a caller sets only the hosts its networks use.
+  [ "$(yq -r '.on.workflow_call.inputs.ormi-query-base | [.required, has("default")] | @tsv' "$workflow")" = $'false\tfalse' ]
+  [ "$(yq -r '.on.workflow_call.inputs.goldsky-query-base | [.required, has("default")] | @tsv' "$workflow")" = $'false\tfalse' ]
 }
 
 @test "the job can only read the repo" {

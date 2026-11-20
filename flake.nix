@@ -120,6 +120,35 @@
           pkgs.nodejs_22
           pkgs.jq
         ];
+        # subgraph-deploy deploys a network Ormi does not index to Goldsky.
+        goldsky = pkgs.stdenv.mkDerivation rec {
+          pname = "goldsky";
+          version = "13.19.0";
+          src =
+            let
+              system-mapping = {
+                x86_64-linux = "linux";
+                x86_64-darwin = "macos";
+                aarch64-darwin = "macos";
+              };
+              system-sha = {
+                x86_64-linux = "sha256:15k5gwj0byl00h0ccvzh859wvrc1ma0xxw1sl438b5majzdq3zbn";
+                x86_64-darwin = "sha256:0p5l5ikfj6r196fvw249adsxhqbpfy19r4612zwqnwxxzj2wac6l";
+                aarch64-darwin = "sha256:0p5l5ikfj6r196fvw249adsxhqbpfy19r4612zwqnwxxzj2wac6l";
+              };
+            in
+            builtins.fetchurl {
+              url = "https://cli.goldsky.com/${version}/${system-mapping.${system}}/goldsky";
+              sha256 = system-sha.${system};
+            };
+          phases = [ "installPhase" ];
+          installPhase = ''
+            mkdir -p $out/bin
+            cp $src $out/bin/goldsky
+            chmod +x $out/bin/goldsky
+          '';
+        };
+
         the-graph = pkgs.stdenv.mkDerivation {
           pname = "the-graph";
           version = "0.69.2";
@@ -401,7 +430,7 @@
 
             ${pkgs.foundry-bin}/bin/forge build
             (cd "./$dir" && ${pkgs.nodejs_22}/bin/npm ci && ${the-graph}/bin/graph codegen)
-            while IFS=$'\t' read -r network _ manifest <&3; do
+            while IFS=$'\t' read -r network _ _ manifest <&3; do
               echo "Building subgraph for $network..."
               if [ -z "$manifest" ]; then
                 (cd "./$dir" && ${the-graph}/bin/graph build --network "$network")
@@ -424,8 +453,8 @@
           '';
         };
 
-        # Tracing stays off for the whole task: ORMI_DEPLOY_KEY is a credential
-        # and `set -x` would print it. The logic lives in lib/subgraph-deploy.sh.
+        # Tracing stays off for the whole task: ORMI_DEPLOY_KEY and GOLDSKY_TOKEN
+        # are credentials and `set -x` would print them. The logic lives in lib/subgraph-deploy.sh.
         subgraph-deploy = mkTask {
           name = "subgraph-deploy";
           body = ''
@@ -436,7 +465,8 @@
             subgraph_deploy \
               ${the-graph}/bin/graph \
               ${pkgs.nodejs_22}/bin/npm \
-              ${rainix-static}/bin/rainix-static
+              ${rainix-static}/bin/rainix-static \
+              ${goldsky}/bin/goldsky
           '';
           additionalBuildInputs = node-build-inputs;
         };

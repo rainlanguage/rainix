@@ -21,7 +21,7 @@ setup() {
   # Each stub records `<tool> <args> key=<visible ORMI_DEPLOY_KEY>`.
   cat >"$work/bin/npm" <<'EOF'
 #!/usr/bin/env bash
-echo "npm $* key=${ORMI_DEPLOY_KEY-unset}" >>"$CALLS_LOG"
+echo "npm $* key=${ORMI_DEPLOY_KEY-${GOLDSKY_TOKEN-unset}}" >>"$CALLS_LOG"
 EOF
   # graph build writes "$BUILD_<NETWORK>" (default: one fixed text per network)
   # as the build output (plus an empty only-<network> file when $NETWORK_FILES
@@ -31,7 +31,7 @@ EOF
   # <name>/<label> as hosted, as Ormi would.
   cat >"$work/bin/graph" <<'EOF'
 #!/usr/bin/env bash
-echo "graph $* key=${ORMI_DEPLOY_KEY-unset}" >>"$CALLS_LOG"
+echo "graph $* key=${ORMI_DEPLOY_KEY-${GOLDSKY_TOKEN-unset}}" >>"$CALLS_LOG"
 cmd="$1" name="$2"
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -57,26 +57,36 @@ deploy)
   ;;
 esac
 EOF
-  # The rainix-static stub runs the real subgraph-build-hash. ormi-probe exits
+  # The rainix-static stub runs the real subgraph-build-hash. subgraph-probe exits
   # with PROBE_RC_<NETWORK> for that network, else $PROBE_RC, else answers like
-  # Ormi from what graph deploy recorded: 0 hosted, 10 missing.
+  # its host from what a deploy recorded: 0 hosted, 10 missing.
   cat >"$work/bin/rainix-static" <<'EOF'
 #!/usr/bin/env bash
 if [ "$1" = subgraph-targets ]; then
   exec "$REAL_STATIC" "$@"
 fi
 if [ "$1" = subgraph-build-hash ]; then
-  echo "hash $* key=${ORMI_DEPLOY_KEY-unset}" >>"$CALLS_LOG"
+  echo "hash $* key=${ORMI_DEPLOY_KEY-${GOLDSKY_TOKEN-unset}}" >>"$CALLS_LOG"
   exec "$REAL_STATIC" "$@"
 fi
-echo "probe $* key=${ORMI_DEPLOY_KEY-unset}" >>"$CALLS_LOG"
-net="${5#raindex-}"
+echo "probe $* key=${ORMI_DEPLOY_KEY-${GOLDSKY_TOKEN-unset}}" >>"$CALLS_LOG"
+net="${7#raindex-}"
 var="PROBE_RC_$(echo "$net" | tr a-z- A-Z_)"
 rc="${!var:-${PROBE_RC:-}}"
 if [ -n "$rc" ]; then exit "$rc"; fi
-if grep -qxF "$5/$7" "$HOSTED"; then exit 0; fi
+if grep -qxF "$7/$9" "$HOSTED"; then exit 0; fi
 exit 10
 EOF
+  # goldsky `--token T subgraph deploy <name>/<label> --path <build>` fails for
+  # a name listed in $DEPLOY_FAILS and otherwise records <name>/<label> as
+  # hosted, as Goldsky would.
+  cat >"$work/bin/goldsky" <<'GS'
+#!/usr/bin/env bash
+echo "goldsky $* telemetry-off=${GOLDSKY_CLI_TELEMETRY_DISABLED-unset} key=${ORMI_DEPLOY_KEY-${GOLDSKY_TOKEN-unset}}" >>"$CALLS_LOG"
+nv="$5"
+case " ${DEPLOY_FAILS:-} " in *" ${nv%%/*} "*) exit 1 ;; esac
+echo "$nv" >>"$HOSTED"
+GS
   chmod +x "$work/bin/"*
 
   export CALLS_LOG="$log"
@@ -109,7 +119,7 @@ deploy() {
   run bash $flags -c '
     source "$1/lib/subgraph.sh"
     source "$1/lib/subgraph-deploy.sh"
-    subgraph_deploy "$2/graph" "$2/npm" "$2/rainix-static"
+    subgraph_deploy "$2/graph" "$2/npm" "$2/rainix-static" "$2/goldsky"
   ' _ "$repo_root" "$work/bin"
 }
 
@@ -132,7 +142,7 @@ label_for() {
   out="$(sed -n 's/^graph build --network mainnet --output-dir \([^ ]*\) key=unset$/\1/p' "$log")"
   [ -n "$out" ]
   grep -q "^hash subgraph-build-hash $out key=unset$" "$log"
-  grep -q "^probe ormi-probe --base $ORMI_QUERY_BASE --name raindex-mainnet --version $version key=unset$" "$log"
+  grep -q "^probe subgraph-probe --host ormi --base $ORMI_QUERY_BASE --name raindex-mainnet --version $version key=unset$" "$log"
   grep -q "^graph deploy raindex-mainnet --network mainnet --output-dir $out --node https://subgraph.api.ormilabs.com/deploy --ipfs https://subgraph.api.ormilabs.com/ipfs --deploy-key $ORMI_DEPLOY_KEY --version-label $version key=unset$" "$log"
   # build, hash, probe, deploy: in that order.
   [ "$(sed 's/ .*//' "$log" | tr '\n' ' ')" = "npm graph hash probe graph " ]
@@ -215,7 +225,7 @@ label_for() {
 }
 
 @test "a failed probe fails the task and never deploys" {
-  # 1 is what ormi-probe exits for transport/HTTP failure, an unrecognised body
+  # 1 is what subgraph-probe exits for transport/HTTP failure, an unrecognised body
   # or a wrong query base; the rest guard against any other status being
   # mistaken for "missing".
   for rc in 1 2 7 101 127; do
@@ -362,4 +372,87 @@ two_manifests() {
   [ "$status" -eq 0 ]
   [ "$(logged '^graph build --network mainnet --output-dir ')" -eq 1 ]
   grep -qE '^raindex-mainnet/0xabc-[0-9a-f]{16}$' "$hosted"
+}
+
+zerog_and_base() {
+  printf '%s' '{"0g":{"C":{"address":"0x0a"}},"base":{"C":{"address":"0xbbb"}}}' \
+    >"$work/subgraph/networks.json"
+  export GOLDSKY_TOKEN="g0ldsky-t0ken-do-not-print"
+  export GOLDSKY_QUERY_BASE="https://example.invalid/api/public/project_x"
+}
+
+@test "a Goldsky network is probed and deployed on Goldsky, the rest on Ormi" {
+  zerog_and_base
+  PROBE_RC=10 deploy
+  [ "$status" -eq 0 ]
+  version="$(label_for 0x0a "build of 0g")"
+  out="$(sed -n 's/^graph build --network 0g --output-dir \([^ ]*\) key=unset$/\1/p' "$log")"
+  [ -n "$out" ]
+  grep -q "^probe subgraph-probe --host goldsky --base $GOLDSKY_QUERY_BASE --name raindex-0g --version $version key=unset$" "$log"
+  grep -q "^goldsky --token $GOLDSKY_TOKEN subgraph deploy raindex-0g/$version --path $out telemetry-off=1 key=unset$" "$log"
+  grep -q "^probe subgraph-probe --host ormi --base $ORMI_QUERY_BASE --name raindex-base " "$log"
+  [ "$(logged '^graph deploy raindex-base ')" -eq 1 ]
+  [ "$(logged '^graph deploy raindex-0g ')" -eq 0 ]
+  [ "$(logged '^goldsky .*raindex-base')" -eq 0 ]
+}
+
+@test "an unchanged Goldsky build is skipped on the next run" {
+  zerog_and_base
+  deploy
+  [ "$status" -eq 0 ]
+  : >"$log"
+  deploy
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Subgraph raindex-0g/$(label_for 0x0a "build of 0g") already deployed, skipping."* ]]
+  [ "$(logged '^goldsky ')" -eq 0 ]
+}
+
+@test "a failed Goldsky deploy fails the task and does not stop the others" {
+  zerog_and_base
+  DEPLOY_FAILS="raindex-0g" PROBE_RC=10 deploy
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Did not complete: raindex-0g"* ]]
+  [ "$(logged '^graph deploy raindex-base ')" -eq 1 ]
+}
+
+@test "the Goldsky token is only ever an argument of goldsky deploy and never output" {
+  zerog_and_base
+  for mode in "" "-x"; do
+    : >"$log"
+    : >"$hosted"
+    PROBE_RC=10 deploy "$mode"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"$GOLDSKY_TOKEN"* ]]
+    [ "$(logged 'key=unset$')" -eq "$(wc -l <"$log" | tr -d ' ')" ]
+    [ "$(logged 'g0ldsky-t0ken')" -eq 1 ]
+    [ "$(logged '^goldsky --token g0ldsky-t0ken')" -eq 1 ]
+  done
+}
+
+@test "a Goldsky network without its token or query base fails before any tool runs" {
+  zerog_and_base
+  for var in GOLDSKY_TOKEN GOLDSKY_QUERY_BASE; do
+    : >"$log"
+    (
+      unset "$var"
+      PROBE_RC=10 deploy
+      [ "$status" -ne 0 ]
+      [[ "$output" == *"$var is required"* ]]
+    )
+    [ ! -s "$log" ]
+  done
+}
+
+@test "only the hosts a subgraph deploys to need their settings" {
+  # Ormi only: no Goldsky settings at all (setup exports none).
+  PROBE_RC=10 deploy
+  [ "$status" -eq 0 ]
+  # Goldsky only: no Ormi settings at all.
+  printf '%s' '{"0g":{"C":{"address":"0x0a"}}}' >"$work/subgraph/networks.json"
+  export GOLDSKY_TOKEN="t" GOLDSKY_QUERY_BASE="https://example.invalid/p"
+  unset ORMI_DEPLOY_KEY ORMI_QUERY_BASE
+  : >"$log"
+  PROBE_RC=10 deploy
+  [ "$status" -eq 0 ]
+  [ "$(logged '^goldsky ')" -eq 1 ]
 }
