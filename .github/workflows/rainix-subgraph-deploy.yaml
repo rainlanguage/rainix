@@ -17,19 +17,17 @@ on:
           `<subgraph-name>-<network>`.
       ormi-query-base:
         type: string
-        default: https://subgraph.api.ormilabs.com/api/public/9f4fc2fa-4a15-44f7-a7c1-66fdaa518a71
+        required: true
         description: |
           `ORMI_QUERY_BASE`: public query base of the Ormi account the deploy
-          key belongs to, probed to skip a version that is already live. The
-          default is the org account ORMI_DEPLOY_KEY deploys to.
+          key belongs to, probed to skip a version that is already live.
       goldsky-query-base:
         type: string
-        default: https://api.goldsky.com/api/public/project_clv14x04y9kzi01saerx7bxpg
+        required: true
         description: |
           `GOLDSKY_QUERY_BASE`: public query base of the Goldsky project the
           token deploys to, for networks Ormi does not index
-          (`rainix-static subgraph-targets` names the host). The default is the
-          org project CI_GOLDSKY_TOKEN deploys to.
+          (`rainix-static subgraph-targets` names the host).
     # Declared so cross-org callers can pass them; `secrets: inherit` does not
     # cross organizations.
     secrets:
