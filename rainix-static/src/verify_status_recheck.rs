@@ -18,7 +18,7 @@
 //! Remove this subcommand, its action and the workflow step once the forge
 //! that rainix-manual-sol-artifacts pins polls `checkverifystatus` by GET.
 
-use crate::{fail, subgraph_probe::valid_base, soldeer_gate::split_status_body};
+use crate::{fail, soldeer_gate::split_status_body, subgraph_probe::valid_base};
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::path::Path;
