@@ -425,7 +425,7 @@
           body = ''
             set -euxo pipefail
             dir="''${SUBGRAPH_DIR:-subgraph}"
-            # Refuses a dir that is not one plain name or holds no subgraph.
+            # Refuses a dir that is not a path of plain names or holds no subgraph.
             targets="$(${rainix-static}/bin/rainix-static subgraph-targets "$dir")"
 
             ${pkgs.foundry-bin}/bin/forge build
@@ -447,7 +447,7 @@
           body = ''
             set -euxo pipefail
             dir="''${SUBGRAPH_DIR:-subgraph}"
-            # Refuses a dir that is not one plain name or holds no subgraph.
+            # Refuses a dir that is not a path of plain names or holds no subgraph.
             ${rainix-static}/bin/rainix-static subgraph-targets "$dir" >/dev/null
             (cd "./$dir" && ${pkgs.nodejs_22}/bin/npm ci && docker compose up --abort-on-container-exit)
           '';

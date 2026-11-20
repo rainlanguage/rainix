@@ -27,10 +27,10 @@ setup() {
   [ -f manifests-subgraph/generated/schema.ts ]
 }
 
-@test "subgraph-build refuses a SUBGRAPH_DIR that is not one plain name" {
+@test "subgraph-build refuses a SUBGRAPH_DIR that is not a path of plain names" {
   SUBGRAPH_DIR=../x run subgraph-build
   [ "$status" -ne 0 ]
-  [[ "$output" == *"not one plain directory name"* ]]
+  [[ "$output" == *"not a path of plain directory names"* ]]
   # Refused before anything is built.
   [[ "$output" != *"/bin/forge build"* ]]
 }

@@ -335,6 +335,15 @@ two_manifests() {
   grep -qE '^raindex-matic/manifest-[0-9a-f]{16}$' "$hosted"
 }
 
+@test "a SUBGRAPH_DIR nested under the root deploys the subgraph inside it" {
+  mkdir -p "$work/subgraph/v6/manifests"
+  echo a >"$work/subgraph/v6/manifests/matic.yaml"
+  export SUBGRAPH_DIR=subgraph/v6
+  deploy
+  [ "$status" -eq 0 ]
+  [ "$(logged '^graph deploy raindex-matic manifests/matic.yaml --output-dir ')" -eq 1 ]
+}
+
 @test "a manifests subgraph whose build is unchanged is skipped" {
   two_manifests
   deploy
@@ -345,12 +354,12 @@ two_manifests() {
   [ "$(logged '^graph deploy')" -eq 0 ]
 }
 
-@test "a SUBGRAPH_DIR that is not one plain name fails before any tool runs" {
-  for bad in .. ../x a/b .hidden; do
+@test "a SUBGRAPH_DIR that is not a path of plain names fails before any tool runs" {
+  for bad in .. ../x a//b a/.. /a .hidden; do
     : >"$log"
     SUBGRAPH_DIR="$bad" deploy
     [ "$status" -ne 0 ]
-    [[ "$output" == *"not one plain directory name"* ]]
+    [[ "$output" == *"not a path of plain directory names"* ]]
     [ ! -s "$log" ]
   done
 }
