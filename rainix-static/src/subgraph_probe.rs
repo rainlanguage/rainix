@@ -99,7 +99,7 @@ fn valid_label(s: &str) -> bool {
 /// whitespace. Plain-text HTTP is refused because the skip decision is made on
 /// the response, and a response an attacker can rewrite in transit can make the
 /// task skip a deploy.
-fn valid_base(s: &str) -> Result<&str, String> {
+pub(crate) fn valid_base(s: &str) -> Result<&str, String> {
     let base = s.trim_end_matches('/');
     let host_and_path = base
         .strip_prefix("https://")
