@@ -40,8 +40,8 @@ setup() {
 
 @test "each host's credential is a secret scoped to the deploy step alone" {
   local pair secret env_var required holders
-  # <secret>=<task env var>=<required>: Ormi hosts every caller, Goldsky only some.
-  for pair in ORMI_DEPLOY_KEY=ORMI_DEPLOY_KEY=true CI_GOLDSKY_TOKEN=GOLDSKY_TOKEN=false; do
+  # <secret>=<task env var>=<required>: a caller sets only the hosts its networks use.
+  for pair in ORMI_DEPLOY_KEY=ORMI_DEPLOY_KEY=false CI_GOLDSKY_TOKEN=GOLDSKY_TOKEN=false; do
     secret="${pair%%=*}" env_var="${pair#*=}" required="${env_var#*=}" env_var="${env_var%=*}"
     [ "$(yq -r ".on.workflow_call.secrets.$secret.required" "$workflow")" = "$required" ]
     # shellcheck disable=SC2016
@@ -61,9 +61,9 @@ setup() {
   [ "$(yq -r '.on.workflow_call.inputs.subgraph-name.required' "$workflow")" = "true" ]
   # shellcheck disable=SC2016
   [ "$(yq -r '.jobs.deploy.steps[] | select(.run) | select(.run | test("-c subgraph-deploy$")) | .env.GOLDSKY_QUERY_BASE' "$workflow")" = '${{ inputs.goldsky-query-base }}' ]
-  # Both default to the org accounts, so a caller passes neither.
-  [[ "$(yq -r '.on.workflow_call.inputs.ormi-query-base.default' "$workflow")" == https://subgraph.api.ormilabs.com/api/public/?* ]]
-  [[ "$(yq -r '.on.workflow_call.inputs.goldsky-query-base.default' "$workflow")" == https://api.goldsky.com/api/public/project_?* ]]
+  # Optional with no fallback: a caller sets only the hosts its networks use.
+  [ "$(yq -r '.on.workflow_call.inputs.ormi-query-base | [.required, has("default")] | @tsv' "$workflow")" = $'false\tfalse' ]
+  [ "$(yq -r '.on.workflow_call.inputs.goldsky-query-base | [.required, has("default")] | @tsv' "$workflow")" = $'false\tfalse' ]
 }
 
 @test "the job can only read the repo" {
