@@ -151,8 +151,8 @@
 //   subgraph-targets <subgraph dir>
 //       subgraph-build/test/deploy's targets: one `network TAB host TAB label-prefix
 //       TAB manifest` line per network, from `<dir>/networks.json` or
-//       `<dir>/manifests/<network>.yaml`; refuses a dir that is not one plain
-//       name. Semantics: subgraph_targets.rs module doc.
+//       `<dir>/manifests/<network>.yaml`; refuses a dir that is not a path of
+//       plain names. Semantics: subgraph_targets.rs module doc.
 //   verify-status-recheck --log <file> --config <file>
 //       rainix-manual-sol-artifacts' second opinion on a `forge script
 //       --verify` failure: when every failure in forge's log is a status

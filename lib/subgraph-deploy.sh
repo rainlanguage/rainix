@@ -66,7 +66,7 @@ subgraph_deploy() {
   local deploy_key="${ORMI_DEPLOY_KEY:-}" goldsky_token="${GOLDSKY_TOKEN:-}"
   unset ORMI_DEPLOY_KEY GOLDSKY_TOKEN
 
-  # rainix-static refuses a SUBGRAPH_DIR that is not one plain name, so $dir is
+  # rainix-static refuses a SUBGRAPH_DIR that is not a path of plain names, so $dir is
   # safe to cd into once it has answered.
   local dir="${SUBGRAPH_DIR:-subgraph}" targets
   targets="$("$static" subgraph-targets "$dir")" || return 1

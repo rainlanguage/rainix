@@ -1,8 +1,8 @@
 //! `subgraph-targets` — what `subgraph-deploy` deploys, one line per network.
 //!
-//! The subgraph lives in `<dir>`, one plain directory name in the repo root
-//! (`$SUBGRAPH_DIR`, default `subgraph`), so it can never name a path outside
-//! it. Two shapes:
+//! The subgraph lives in `<dir>`, plain directory names joined by `/` under the
+//! repo root (`$SUBGRAPH_DIR`, default `subgraph`; e.g. `subgraph/v6`), so it
+//! can never name a path outside it. Two shapes:
 //!
 //! - `<dir>/networks.json`: one `subgraph.yaml` built per network with
 //!   `--network`, labelled by the address of that network's first data source
@@ -17,8 +17,8 @@
 //! Prints `network TAB host TAB label-prefix TAB manifest` per network, networks in byte
 //! order. The manifest is empty in the networks.json shape, so it is the LAST
 //! field: tab is IFS whitespace to bash `read`, which collapses an empty field
-//! between two tabs and would shift the label into the manifest. Exits 1 when the
-//! directory name is not plain, it has neither shape, a networks.json network
+//! between two tabs and would shift the label into the manifest. Exits 1 when a
+//! directory name in the path is not plain, it has neither shape, a networks.json network
 //! has no first data source with an address, or a manifest name is not a
 //! plain network name.
 
@@ -88,10 +88,15 @@ fn plain(name: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
 }
 
+/// Plain names joined by `/`: relative, and no empty, `.` or `..` component.
+fn plain_path(path: &str) -> bool {
+    path.split('/').all(plain)
+}
+
 pub(crate) fn targets(root: &Path, dir: &str) -> Result<Vec<Target>, String> {
-    if !plain(dir) {
+    if !plain_path(dir) {
         return Err(format!(
-            "SUBGRAPH_DIR {dir:?} is not one plain directory name"
+            "SUBGRAPH_DIR {dir:?} is not a path of plain directory names"
         ));
     }
     let base = root.join(dir);
@@ -340,6 +345,21 @@ mod tests {
     }
 
     #[test]
+    fn a_nested_dir_reads_the_subgraph_inside_it() {
+        let root = tmp();
+        std::fs::create_dir_all(root.join("subgraph/v6")).unwrap();
+        std::fs::write(
+            root.join("subgraph/v6/networks.json"),
+            r#"{"0g":{"C":{"address":"0xabc"}}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            targets(&root, "subgraph/v6").unwrap(),
+            vec![t("0g", "", "0xabc")]
+        );
+    }
+
+    #[test]
     fn a_directory_with_neither_shape_is_refused() {
         let root = tmp();
         std::fs::create_dir_all(root.join("empty/manifests")).unwrap();
@@ -350,9 +370,13 @@ mod tests {
     #[test]
     fn a_dir_or_manifest_name_that_is_not_plain_is_refused() {
         let root = tmp();
-        for bad in ["", "..", ".hidden", "a/b", "../x", "a b", "$(x)"] {
+        for bad in [
+            "", "..", ".hidden", "../x", "a b", "$(x)", "/a", "a/", "a//b", "a/..", "a/./b", "a/.x",
+        ] {
             assert!(
-                targets(&root, bad).unwrap_err().contains("not one plain"),
+                targets(&root, bad)
+                    .unwrap_err()
+                    .contains("not a path of plain"),
                 "{bad:?} accepted"
             );
         }

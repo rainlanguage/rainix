@@ -6,7 +6,7 @@ on:
         type: string
         default: subgraph
         description: |
-          `SUBGRAPH_DIR`: the subgraph's directory in the repo root.
+          `SUBGRAPH_DIR`: the subgraph's directory under the repo root, plain names joined by `/` (e.g. `subgraph/v6`).
     secrets:
       CACHIX_AUTH_TOKEN:
         required: false
