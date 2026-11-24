@@ -30,6 +30,14 @@ on:
           address on every network, so one value covers the whole `networks`
           list; a repo whose address differs per network dispatches this once
           per network instead.
+      constructor-args:
+        type: string
+        required: false
+        default: ''
+        description: |
+          The contract's ABI-encoded constructor arguments (`0x…`), passed as
+          `--constructor-args`. Empty for a contract whose constructor takes
+          none.
     # No `networks` input: explorers are the caller's own `[etherscan]`.
     #
     # Secrets consumed by the verify step. Declared here so callers in a
@@ -141,6 +149,8 @@ jobs:
             exit 1
           fi
 
+          constructor_args=(${VERIFY_CONSTRUCTOR_ARGS:+--constructor-args "$VERIFY_CONSTRUCTOR_ARGS"})
+
           # Blanked for the Sourcify retry below: forge goes to Etherscan
           # whenever the chain's key holds a value. Blank, not unset — unset it
           # errors resolving the table.
@@ -151,11 +161,11 @@ jobs:
           do
             echo "::group::$VERIFY_CONTRACT on $network"
             nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c \
-              forge verify-contract --chain "$network" "$VERIFY_ADDRESS" "$VERIFY_CONTRACT" --watch --retries 40 --delay 15 \
+              forge verify-contract --chain "$network" "$VERIFY_ADDRESS" "$VERIFY_CONTRACT" "${constructor_args[@]}" --watch --retries 40 --delay 15 \
               || {
                 echo "$network's explorer rejected the submission; retrying through Sourcify"
                 env "${blanked[@]}" nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c \
-                  forge verify-contract --verifier sourcify --chain "$network" "$VERIFY_ADDRESS" "$VERIFY_CONTRACT" --watch --retries 40 --delay 15 \
+                  forge verify-contract --verifier sourcify --chain "$network" "$VERIFY_ADDRESS" "$VERIFY_CONTRACT" "${constructor_args[@]}" --watch --retries 40 --delay 15 \
                   || failed="$failed $network"
               }
             echo '::endgroup::'
@@ -176,6 +186,7 @@ jobs:
         env:
           VERIFY_CONTRACT: ${{ inputs.contract }}
           VERIFY_ADDRESS: ${{ inputs.address }}
+          VERIFY_CONSTRUCTOR_ARGS: ${{ inputs.constructor-args }}
           CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY || vars.CI_DEPLOY_ARBITRUM_ETHERSCAN_API_KEY || '' }}
           CI_DEPLOY_BASE_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_BASE_ETHERSCAN_API_KEY || vars.CI_DEPLOY_BASE_ETHERSCAN_API_KEY || '' }}
           CI_DEPLOY_BASE_SEPOLIA_ETHERSCAN_API_KEY: ${{ secrets.EXPLORER_VERIFICATION_KEY || secrets.CI_DEPLOY_BASE_SEPOLIA_ETHERSCAN_API_KEY || vars.CI_DEPLOY_BASE_SEPOLIA_ETHERSCAN_API_KEY || '' }}
