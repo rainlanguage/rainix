@@ -23,8 +23,8 @@ on:
         required: false
         default: false
         description: |
-          Send type-0 transactions (`--legacy`). Always on for `hyperevm`,
-          whose RPC rejects EIP-1559 fee-history estimation.
+          Send type-0 transactions (`--legacy`), for an RPC that rejects
+          EIP-1559 fee-history estimation.
       rpc_throttle:
         type: boolean
         required: false
@@ -114,7 +114,7 @@ jobs:
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
         run: |
           LEGACY_ARGS=()
-          if [[ "${NETWORK}" == "hyperevm" || "${LEGACY}" == "true" ]]; then
+          if [[ "${LEGACY}" == "true" ]]; then
             LEGACY_ARGS+=(--legacy)
           fi
           THROTTLE_ARGS=()
