@@ -167,7 +167,7 @@ pub(crate) fn build_queue(page: &Value, nonce: u64) -> Result<Value, String> {
                     .cloned()
                     .unwrap_or_else(|| Value::String("0x".to_string()))
             } else {
-                field(tx, *k)?
+                field(tx, k)?
             };
             col.push(v);
         }
