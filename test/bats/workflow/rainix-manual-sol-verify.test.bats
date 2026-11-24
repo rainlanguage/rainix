@@ -9,19 +9,23 @@ setup() {
 }
 
 # The verify step as bash runs it, with every expression stubbed, constructor
-# args $1, and a nix that logs its arguments and exits $2.
+# args $1, and a nix on PATH (the Sourcify retry reaches it through `env`) that
+# logs its arguments and exits $2.
 run_verify() {
   local script="$verify"
   while [[ "$script" =~ \$\{\{[^}]*\}\} ]]; do
     script="${script/"${BASH_REMATCH[0]}"/x}"
   done
+  mkdir -p "$BATS_TEST_TMPDIR/bin"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"%s"\nexit %s\n' "$BATS_TEST_TMPDIR/calls" "$2" >"$BATS_TEST_TMPDIR/bin/nix"
+  chmod +x "$BATS_TEST_TMPDIR/bin/nix"
   (
     cd "$BATS_TEST_TMPDIR" || exit 1
-    VERIFY_CONTRACT=src/A.sol:A VERIFY_ADDRESS=0x3A7387a484d87Aa8bBA45E98AAB401Ce4FBF03E2 \
-      VERIFY_CONSTRUCTOR_ARGS="$1" NIX_STATUS="$2" CALLS="$BATS_TEST_TMPDIR/calls" VERIFY_SCRIPT="$script" bash -c '
-        nix() { printf "%s\n" "$*" >>"$CALLS"; return "$NIX_STATUS"; }
+    PATH="$BATS_TEST_TMPDIR/bin:$PATH" VERIFY_CONTRACT=src/A.sol:A \
+      VERIFY_ADDRESS=0x3A7387a484d87Aa8bBA45E98AAB401Ce4FBF03E2 VERIFY_CONSTRUCTOR_ARGS="$1" \
+      VERIFY_SCRIPT="$script" bash -c '
         sleep() { :; }
-        export -f nix sleep
+        export -f sleep
         bash -c "$VERIFY_SCRIPT"
       '
   )
