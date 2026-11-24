@@ -256,3 +256,168 @@ pub(crate) fn run(script: &str, rpc: &str, out: &Path) -> ! {
     print!("{text}");
     std::process::exit(0);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static N: AtomicUsize = AtomicUsize::new(0);
+
+    fn tmp_dir() -> PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "rainix-static-safe-queue-test-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::SeqCst)
+        ));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    const SAFE: &str = "0x3840aeDaEc8e82f79d8F6a8F6ADCa271E13E0329";
+
+    fn tx(nonce: u64, data: Value) -> Value {
+        json!({
+            "to": format!("0x{:040x}", nonce),
+            "value": "0",
+            "data": data,
+            "operation": 1,
+            "nonce": nonce,
+            "safeTxHash": format!("0x{:064x}", nonce),
+            "confirmations": [],
+        })
+    }
+
+    fn page(results: Vec<Value>) -> Value {
+        json!({ "count": results.len(), "next": null, "previous": null, "results": results })
+    }
+
+    #[test]
+    fn only_a_queue_safe_function_opts_in() {
+        let with = |entry: Value| json!({ "abi": [{"type": "function", "name": "run"}, entry] });
+        assert!(abi_has_queue_safe(&with(json!({"type": "function", "name": "queueSafe"}))));
+        assert!(!abi_has_queue_safe(&with(json!({"type": "event", "name": "queueSafe"}))));
+        assert!(!abi_has_queue_safe(&with(json!({"type": "error", "name": "queueSafe"}))));
+        assert!(!abi_has_queue_safe(&with(json!({"type": "function", "name": "queueSafeX"}))));
+        assert!(!abi_has_queue_safe(&json!({ "bytecode": {} })));
+    }
+
+    #[test]
+    fn artifacts_live_under_the_script_file_name() {
+        assert_eq!(
+            artifact_dir(Path::new("out"), "script/20261123-x.s.sol").unwrap(),
+            Path::new("out").join("20261123-x.s.sol")
+        );
+        assert!(artifact_dir(Path::new("out"), "script/..").is_err());
+    }
+
+    #[test]
+    fn any_artifact_in_the_dir_opts_the_script_in() {
+        let d = tmp_dir();
+        std::fs::write(d.join("Lib.json"), json!({"abi": []}).to_string()).unwrap();
+        std::fs::write(d.join("notes.txt"), "not json").unwrap();
+        assert!(!script_has_queue_safe(&d).unwrap());
+        std::fs::write(
+            d.join("Script.json"),
+            json!({"abi": [{"type": "function", "name": "queueSafe"}]}).to_string(),
+        )
+        .unwrap();
+        assert!(script_has_queue_safe(&d).unwrap());
+    }
+
+    #[test]
+    fn a_missing_dir_or_bad_artifact_is_an_error() {
+        let d = tmp_dir();
+        assert!(script_has_queue_safe(&d.join("absent")).is_err());
+        std::fs::write(d.join("Bad.json"), "{").unwrap();
+        assert!(script_has_queue_safe(&d).is_err());
+    }
+
+    #[test]
+    fn the_safe_comes_from_the_returns_line() {
+        let out = format!(
+            "Compiling 1 files\n{{\"logs\":[],\"returns\":null}}\n\
+             {{\"logs\":[],\"returns\":{{\"0\":{{\"internal_type\":\"address\",\"value\":\"{SAFE}\"}}}}}}\n"
+        );
+        assert_eq!(parse_forge_returns(&out).unwrap(), SAFE);
+    }
+
+    #[test]
+    fn forge_output_without_an_address_is_an_error() {
+        assert!(parse_forge_returns("{\"returns\":null}\n").is_err());
+        assert!(parse_forge_returns("{\"returns\":{\"0\":{\"value\":\"0x12\"}}}").is_err());
+        assert!(parse_forge_returns("{\"returns\":{\"0\":{\"value\":true}}}").is_err());
+        assert!(parse_forge_returns("").is_err());
+    }
+
+    #[test]
+    fn cast_uints_parse_with_or_without_the_exponent_form() {
+        assert_eq!(parse_cast_uint("12\n").unwrap(), 12);
+        assert_eq!(parse_cast_uint("16661 [1.666e4]\n").unwrap(), 16661);
+        assert!(parse_cast_uint("").is_err());
+        assert!(parse_cast_uint("0x0c").is_err());
+    }
+
+    #[test]
+    fn the_transaction_service_loses_its_trailing_slash() {
+        let service = |v: Value| transaction_service(&json!({ "transactionService": v }));
+        assert_eq!(
+            service(json!("https://safe-transaction-mainnet.safe.global/")).unwrap(),
+            "https://safe-transaction-mainnet.safe.global"
+        );
+        assert!(service(json!("")).is_err());
+        assert!(service(Value::Null).is_err());
+        assert_eq!(
+            queue_url("https://s", SAFE, 12),
+            format!(
+                "https://s/api/v1/safes/{SAFE}/multisig-transactions/\
+                 ?executed=false&nonce__gte=12&ordering=nonce&limit=100"
+            )
+        );
+    }
+
+    #[test]
+    fn the_queue_is_written_as_parallel_arrays_in_nonce_order() {
+        let q = build_queue(&page(vec![tx(12, json!("0xabcd")), tx(13, Value::Null)]), 12).unwrap();
+        assert_eq!(
+            q,
+            json!({
+                "to": [format!("0x{:040x}", 12), format!("0x{:040x}", 13)],
+                "value": ["0", "0"],
+                "data": ["0xabcd", "0x"],
+                "operation": [1, 1],
+                "nonce": [12, 13],
+                "safeTxHash": [format!("0x{:064x}", 12), format!("0x{:064x}", 13)],
+            })
+        );
+    }
+
+    #[test]
+    fn an_empty_queue_is_empty_arrays() {
+        assert_eq!(
+            build_queue(&page(vec![]), 6).unwrap(),
+            json!({"to": [], "value": [], "data": [], "operation": [], "nonce": [], "safeTxHash": []})
+        );
+    }
+
+    #[test]
+    fn a_queue_that_is_not_the_whole_queue_is_refused() {
+        let mut more = page(vec![tx(12, Value::Null)]);
+        more["next"] = json!("https://s/next");
+        assert!(build_queue(&more, 12).is_err());
+        assert!(build_queue(&page(vec![tx(12, Value::Null), tx(12, Value::Null)]), 12).is_err());
+        assert!(build_queue(&page(vec![tx(12, Value::Null), tx(14, Value::Null)]), 12).is_err());
+        assert!(build_queue(&page(vec![tx(13, Value::Null)]), 12).is_err());
+        assert!(build_queue(&json!({"next": null}), 12).is_err());
+    }
+
+    #[test]
+    fn a_queued_transaction_missing_a_field_is_refused() {
+        for key in ["to", "value", "operation", "nonce", "safeTxHash"] {
+            let mut t = tx(12, Value::Null);
+            t[key] = Value::Null;
+            assert!(build_queue(&page(vec![t]), 12).is_err(), "{key}");
+        }
+    }
+}
