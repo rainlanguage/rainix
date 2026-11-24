@@ -95,7 +95,7 @@ jobs:
           NETWORK: ${{ inputs.network }}
         run: |
           set -euo pipefail
-          nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge build
+          nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge build "script/${SCRIPT}.s.sol"
           nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c rainix-static safe-queue \
             --script "script/${SCRIPT}.s.sol" \
             --rpc-url "${NETWORK}" \
