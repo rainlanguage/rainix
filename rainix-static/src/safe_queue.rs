@@ -84,7 +84,8 @@ pub(crate) fn parse_cast_uint(stdout: &str) -> Result<u64, String> {
         .split_whitespace()
         .next()
         .ok_or_else(|| "cast printed nothing".to_string())?;
-    tok.parse().map_err(|_| format!("cast printed {tok:?}, not a u64"))
+    tok.parse()
+        .map_err(|_| format!("cast printed {tok:?}, not a u64"))
 }
 
 pub(crate) fn config_url(chain_id: u64) -> String {
@@ -148,7 +149,9 @@ pub(crate) fn build_queue(page: &Value, nonce: u64) -> Result<Value, String> {
     for (i, n) in nonces.iter().enumerate() {
         let want = nonce + i as u64;
         if *n != want {
-            return Err(format!("the queue has a gap: nonce {n} where {want} is next"));
+            return Err(format!(
+                "the queue has a gap: nonce {n} where {want} is next"
+            ));
         }
     }
     let keys = ["to", "value", "data", "operation", "nonce", "safeTxHash"];
@@ -232,21 +235,30 @@ pub(crate) fn run(script: &str, rpc: &str, out: &Path) -> ! {
     }
     let forge = or_fail(run_tool(
         "forge",
-        &["script", script, "--sig", "queueSafe()", "--rpc-url", rpc, "--json"],
+        &[
+            "script",
+            script,
+            "--sig",
+            "queueSafe()",
+            "--rpc-url",
+            rpc,
+            "--json",
+        ],
     ));
     let safe = or_fail(parse_forge_returns(&forge));
     let chain_id = or_fail(
         run_tool("cast", &["chain-id", "--rpc-url", rpc]).and_then(|s| parse_cast_uint(&s)),
     );
     let nonce = or_fail(
-        run_tool("cast", &["call", &safe, "nonce()(uint256)", "--rpc-url", rpc])
-            .and_then(|s| parse_cast_uint(&s)),
+        run_tool(
+            "cast",
+            &["call", &safe, "nonce()(uint256)", "--rpc-url", rpc],
+        )
+        .and_then(|s| parse_cast_uint(&s)),
     );
-    let service =
-        or_fail(curl_json(&config_url(chain_id)).and_then(|c| transaction_service(&c)));
-    let queue = or_fail(
-        curl_json(&queue_url(&service, &safe, nonce)).and_then(|p| build_queue(&p, nonce)),
-    );
+    let service = or_fail(curl_json(&config_url(chain_id)).and_then(|c| transaction_service(&c)));
+    let queue =
+        or_fail(curl_json(&queue_url(&service, &safe, nonce)).and_then(|p| build_queue(&p, nonce)));
     let text = or_fail(serde_json::to_string_pretty(&queue).map_err(|e| e.to_string())) + "\n";
     if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
         or_fail(std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display())));
@@ -296,10 +308,18 @@ mod tests {
     #[test]
     fn only_a_queue_safe_function_opts_in() {
         let with = |entry: Value| json!({ "abi": [{"type": "function", "name": "run"}, entry] });
-        assert!(abi_has_queue_safe(&with(json!({"type": "function", "name": "queueSafe"}))));
-        assert!(!abi_has_queue_safe(&with(json!({"type": "event", "name": "queueSafe"}))));
-        assert!(!abi_has_queue_safe(&with(json!({"type": "error", "name": "queueSafe"}))));
-        assert!(!abi_has_queue_safe(&with(json!({"type": "function", "name": "queueSafeX"}))));
+        assert!(abi_has_queue_safe(&with(
+            json!({"type": "function", "name": "queueSafe"})
+        )));
+        assert!(!abi_has_queue_safe(&with(
+            json!({"type": "event", "name": "queueSafe"})
+        )));
+        assert!(!abi_has_queue_safe(&with(
+            json!({"type": "error", "name": "queueSafe"})
+        )));
+        assert!(!abi_has_queue_safe(&with(
+            json!({"type": "function", "name": "queueSafeX"})
+        )));
         assert!(!abi_has_queue_safe(&json!({ "bytecode": {} })));
     }
 
@@ -379,7 +399,11 @@ mod tests {
 
     #[test]
     fn the_queue_is_written_as_parallel_arrays_in_nonce_order() {
-        let q = build_queue(&page(vec![tx(12, json!("0xabcd")), tx(13, Value::Null)]), 12).unwrap();
+        let q = build_queue(
+            &page(vec![tx(12, json!("0xabcd")), tx(13, Value::Null)]),
+            12,
+        )
+        .unwrap();
         assert_eq!(
             q,
             json!({
