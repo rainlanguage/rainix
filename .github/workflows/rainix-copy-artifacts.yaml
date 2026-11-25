@@ -10,7 +10,7 @@ on:
       CACHIX_AUTH_TOKEN:
         required: false
 env:
-  RAINIX_SHA: 73603eb8397208bec21b0b08d9157b82c0419222
+  RAINIX_SHA: f8f346d6391f6c770edc31ddaa31d5a2a1b331e2
 jobs:
   copy-artifacts:
     runs-on: ubuntu-latest
