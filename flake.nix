@@ -518,6 +518,8 @@
             bats test/bats/workflow/rainix-manual-sol-artifacts.test.bats
             bats test/bats/workflow/rainix-manual-sol-verify.test.bats
             bats test/bats/workflow/rainix-subgraph-deploy.test.bats
+            bats test/bats/workflow/rainix-run-script.test.bats
+            bats test/bats/workflow/rainix-manual-broadcast.test.bats
             bats test/bats/workflow/test-yml.test.bats
           '';
           additionalBuildInputs = [ pkgs.bats ] ++ sol-build-inputs ++ node-build-inputs;

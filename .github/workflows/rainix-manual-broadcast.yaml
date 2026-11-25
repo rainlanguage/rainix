@@ -1,0 +1,132 @@
+name: rainix-manual-broadcast
+on:
+  workflow_call:
+    inputs:
+      script:
+        type: string
+        required: true
+        description: |
+          Script filename under `script/`, without `.s.sol`.
+      network:
+        type: string
+        required: true
+        description: |
+          foundry.toml `[rpc_endpoints]` alias passed as `--rpc-url`.
+      sig:
+        type: string
+        required: false
+        default: run()
+        description: |
+          Entrypoint passed as `--sig`.
+      legacy:
+        type: boolean
+        required: false
+        default: false
+        description: |
+          Send type-0 transactions (`--legacy`), for an RPC that rejects
+          EIP-1559 fee-history estimation.
+      rpc_throttle:
+        type: boolean
+        required: false
+        default: false
+        description: |
+          For a rate-limited public archive RPC: `--compute-units-per-second 60
+          --fork-retries 30 --fork-retry-backoff 2000`.
+    secrets:
+      PRIVATE_KEY:
+        required: true
+      CACHIX_AUTH_TOKEN:
+        required: false
+      RPC_URL_ARBITRUM_FORK:
+        required: false
+      RPC_URL_BASE_FORK:
+        required: false
+      RPC_URL_BASE_SEPOLIA_FORK:
+        required: false
+      RPC_URL_ETHEREUM_FORK:
+        required: false
+      RPC_URL_FLARE_FORK:
+        required: false
+      RPC_URL_HYPEREVM_FORK:
+        required: false
+      RPC_URL_POLYGON_FORK:
+        required: false
+      RPC_URL_ROBINHOOD_FORK:
+        required: false
+      RPC_URL_BSC_FORK:
+        required: false
+      RPC_URL_ZEROG_FORK:
+        required: false
+      RPC_URL_SEPOLIA_FORK:
+        required: false
+env:
+  RAINIX_SHA: 73603eb8397208bec21b0b08d9157b82c0419222
+jobs:
+  broadcast:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: manual-broadcast-${{ inputs.script }}-${{ inputs.network }}
+      cancel-in-progress: false
+    steps:
+      - uses: rainlanguage/rainix/.github/actions/nix-cachix-setup@main
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Install soldeer dependencies
+        if: hashFiles('soldeer.lock') != ''
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge soldeer install
+      # Head fork only, so archive is not required.
+      - name: RPC preflight
+        uses: rainlanguage/rainix/.github/actions/rpc-preflight@main
+        with:
+          archive: 'false'
+        env:
+          RAINIX_RPC_SECRET_ARBITRUM: ${{ secrets.RPC_URL_ARBITRUM_FORK }}
+          RAINIX_RPC_VARS_ARBITRUM: ${{ vars.RPC_URL_ARBITRUM_FORK }}
+          RAINIX_RPC_SECRET_BASE: ${{ secrets.RPC_URL_BASE_FORK }}
+          RAINIX_RPC_VARS_BASE: ${{ vars.RPC_URL_BASE_FORK }}
+          RAINIX_RPC_SECRET_BASE_SEPOLIA: ${{ secrets.RPC_URL_BASE_SEPOLIA_FORK }}
+          RAINIX_RPC_VARS_BASE_SEPOLIA: ${{ vars.RPC_URL_BASE_SEPOLIA_FORK }}
+          RAINIX_RPC_SECRET_ETHEREUM: ${{ secrets.RPC_URL_ETHEREUM_FORK }}
+          RAINIX_RPC_VARS_ETHEREUM: ${{ vars.RPC_URL_ETHEREUM_FORK }}
+          RAINIX_RPC_SECRET_FLARE: ${{ secrets.RPC_URL_FLARE_FORK }}
+          RAINIX_RPC_VARS_FLARE: ${{ vars.RPC_URL_FLARE_FORK }}
+          RAINIX_RPC_SECRET_HYPEREVM: ${{ secrets.RPC_URL_HYPEREVM_FORK }}
+          RAINIX_RPC_VARS_HYPEREVM: ${{ vars.RPC_URL_HYPEREVM_FORK }}
+          RAINIX_RPC_SECRET_POLYGON: ${{ secrets.RPC_URL_POLYGON_FORK }}
+          RAINIX_RPC_VARS_POLYGON: ${{ vars.RPC_URL_POLYGON_FORK }}
+          RAINIX_RPC_SECRET_ROBINHOOD: ${{ secrets.RPC_URL_ROBINHOOD_FORK }}
+          RAINIX_RPC_VARS_ROBINHOOD: ${{ vars.RPC_URL_ROBINHOOD_FORK }}
+          RAINIX_RPC_SECRET_BSC: ${{ secrets.RPC_URL_BSC_FORK }}
+          RAINIX_RPC_VARS_BSC: ${{ vars.RPC_URL_BSC_FORK }}
+          RAINIX_RPC_SECRET_ZEROG: ${{ secrets.RPC_URL_ZEROG_FORK }}
+          RAINIX_RPC_VARS_ZEROG: ${{ vars.RPC_URL_ZEROG_FORK }}
+          RAINIX_RPC_SECRET_SEPOLIA: ${{ secrets.RPC_URL_SEPOLIA_FORK }}
+          RAINIX_RPC_VARS_SEPOLIA: ${{ vars.RPC_URL_SEPOLIA_FORK }}
+      - name: Broadcast script
+        env:
+          SCRIPT: ${{ inputs.script }}
+          SIG: ${{ inputs.sig }}
+          NETWORK: ${{ inputs.network }}
+          LEGACY: ${{ inputs.legacy }}
+          RPC_THROTTLE: ${{ inputs.rpc_throttle }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+        run: |
+          LEGACY_ARGS=()
+          if [[ "${LEGACY}" == "true" ]]; then
+            LEGACY_ARGS+=(--legacy)
+          fi
+          THROTTLE_ARGS=()
+          if [[ "${RPC_THROTTLE}" == "true" ]]; then
+            THROTTLE_ARGS+=(--compute-units-per-second 60 --fork-retries 30 --fork-retry-backoff 2000)
+          fi
+          nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge script "script/${SCRIPT}.s.sol" \
+            "${LEGACY_ARGS[@]}" \
+            "${THROTTLE_ARGS[@]}" \
+            --sig "${SIG}" \
+            --rpc-url "${NETWORK}" \
+            --no-storage-caching \
+            --slow \
+            --broadcast \
+            --private-key "${PRIVATE_KEY}"

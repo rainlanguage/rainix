@@ -161,6 +161,15 @@
 //       `[etherscan]` url in `forge config --json` and exit 0 only if all
 //       read verified. Any other failure stands. Semantics:
 //       verify_status_recheck.rs module doc.
+//   safe-queue --script <path/to/X.s.sol> --rpc-url <alias|url> --out <file>
+//       rainix-run-script's Safe queue: when the script's compiled ABI has
+//       `queueSafe()`, call it for the Safe, read its nonce, fetch its queued
+//       transactions from the chain's Safe transaction service and write them
+//       to <file> as parallel arrays (to, value, data, operation, nonce,
+//       safeTxHash). No `queueSafe()` writes nothing and exits 0. A queue that
+//       spans pages, has two proposals at one nonce, or a gap is fatal. Run
+//       after `forge build`; needs forge, cast and curl on PATH. Semantics:
+//       safe_queue.rs module doc.
 
 mod agent_context_cap;
 mod ci_gate;
@@ -176,6 +185,7 @@ mod prompt_cap;
 mod relative_src_imports;
 mod release_guard;
 mod rpc_preflight;
+mod safe_queue;
 mod soldeer_gate;
 mod subgraph_build_hash;
 mod subgraph_probe;
@@ -461,6 +471,15 @@ fn main() {
                 .unwrap_or_else(|| fail("verify-status-recheck: --config <file> required"));
             verify_status_recheck::run(Path::new(&log), Path::new(&config));
         }
+        "safe-queue" => {
+            let script = flag(&args, "--script")
+                .unwrap_or_else(|| fail("safe-queue: --script <path/to/X.s.sol> required"));
+            let rpc = flag(&args, "--rpc-url")
+                .unwrap_or_else(|| fail("safe-queue: --rpc-url <alias|url> required"));
+            let out =
+                flag(&args, "--out").unwrap_or_else(|| fail("safe-queue: --out <file> required"));
+            safe_queue::run(&script, &rpc, Path::new(&out));
+        }
         "rpc-preflight" => {
             let root = flag(&args, "--root").unwrap_or_else(|| ".".to_string());
             // There is no stdout fallback on purpose: the selected URL may be
@@ -518,7 +537,8 @@ fn main() {
                  (available: no-submodules, relative-src-imports, agent-context-cap, prompt-cap, \
                  comment-loc-cap, codegen-declaration, install-staged-config, snapshots-append-only, \
                  mutation-ledger, ci-gate, soldeer-gate, rpc-preflight, release-guard, \
-                 subgraph-probe, subgraph-build-hash, subgraph-targets, verify-status-recheck)"
+                 subgraph-probe, subgraph-build-hash, subgraph-targets, verify-status-recheck, \
+                 safe-queue)"
             );
             std::process::exit(2);
         }
