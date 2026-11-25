@@ -733,6 +733,8 @@
             # Misc
             denofmt = {
               enable = true;
+              # Parallel batches contend for deno's sqlite fmt cache (DatabaseBusy).
+              require_serial = true;
               excludes = [
                 ".*\\.ts$"
                 ".*\\.js$"
