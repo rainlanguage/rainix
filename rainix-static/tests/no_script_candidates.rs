@@ -43,6 +43,18 @@ fn assert_offenders(dir: &Path, expected: &[&str]) {
     assert_eq!(actual, expected, "{stdout}");
 }
 
+fn assert_clean(dir: &Path) {
+    let out = run(dir);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(out.status.code(), Some(0), "{stdout}");
+    assert_eq!(stdout, "no-script-candidates: clean\n");
+}
+
+fn build_info_text(dir: &Path) -> String {
+    let info = std::fs::read_dir(dir).unwrap().next().unwrap().unwrap();
+    std::fs::read_to_string(info.path()).unwrap()
+}
+
 fn assert_error(dir: &Path, message: &str) {
     let out = run(dir);
     let stderr = String::from_utf8(out.stderr).unwrap();
@@ -93,13 +105,31 @@ fn constant_holding_a_candidate_is_reported() {
 #[test]
 fn src_wiring_to_candidates_and_new_or_type_of_it_pass() {
     let dir = fixture("src-only");
-    let info = std::fs::read_dir(&dir).unwrap().next().unwrap().unwrap();
-    let text = std::fs::read_to_string(info.path()).unwrap();
+    let text = build_info_text(&dir);
     assert!(text.contains("\"src/Beacon.sol\"") && text.contains("TIMELOCK_CANDIDATE"));
-    let out = run(&dir);
-    let stdout = String::from_utf8(out.stdout).unwrap();
-    assert_eq!(out.status.code(), Some(0), "{stdout}");
-    assert_eq!(stdout, "no-script-candidates: clean\n");
+    assert_clean(&dir);
+}
+
+#[test]
+fn constant_imported_from_a_generated_candidate_file_is_reported() {
+    assert_offenders(
+        &fixture("generated-candidate"),
+        &[
+            "script/GeneratedCandidate.s.sol:5: DEPLOYED_ADDRESS",
+            "script/GeneratedCandidate.s.sol:11: DEPLOYED_ADDRESS",
+        ],
+    );
+}
+
+#[test]
+fn naming_a_contract_whose_src_wires_to_a_generated_candidate_passes() {
+    let dir = fixture("generated-contract-type");
+    let text = build_info_text(&dir);
+    assert!(
+        text.contains("\"src/Vault.sol\"")
+            && text.contains("\"src/generated/candidate/Vault.sol\"")
+    );
+    assert_clean(&dir);
 }
 
 #[test]
