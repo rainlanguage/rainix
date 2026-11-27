@@ -49,7 +49,10 @@ fn assert_error(dir: &Path, message: &str) {
     assert_eq!(out.status.code(), Some(1), "{stderr}");
     assert!(out.stdout.is_empty());
     assert!(
-        stderr.contains(&format!("no-script-candidates: {message} {}", dir.display())),
+        stderr.contains(&format!(
+            "no-script-candidates: {message} {}",
+            dir.display()
+        )),
         "{stderr}"
     );
 }
