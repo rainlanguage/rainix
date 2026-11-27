@@ -18,8 +18,8 @@ pub(crate) fn check(build_info_dir: &Path) -> Result<Vec<String>, String> {
         return Err(format!("no build-info in {}", build_info_dir.display()));
     }
     for f in files {
-        let text = std::fs::read_to_string(&f)
-            .map_err(|e| format!("cannot read {}: {e}", f.display()))?;
+        let text =
+            std::fs::read_to_string(&f).map_err(|e| format!("cannot read {}: {e}", f.display()))?;
         let info: Value = serde_json::from_str(&text)
             .map_err(|e| format!("cannot parse {}: {e}", f.display()))?;
         offenders.extend(check_build_info(&info)?);
@@ -59,7 +59,13 @@ pub(crate) fn check_build_info(info: &Value) -> Result<Vec<String>, String> {
             .collect::<Vec<_>>()
             .windows(2)
             .any(|w| w == ["generated", "candidate"]);
-        walk(ast, None, is_script.then_some(path.as_str()), is_candidate, &mut g);
+        walk(
+            ast,
+            None,
+            is_script.then_some(path.as_str()),
+            is_candidate,
+            &mut g,
+        );
     }
     let mut tainted: HashSet<u64> = g
         .names
