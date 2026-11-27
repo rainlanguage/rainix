@@ -17,6 +17,8 @@
 //       fail unless the repo's own committed .gitignore ignores .env (per
 //       `git check-ignore`; global excludes and .git/info/exclude do not
 //       count) and no file named .env is tracked.
+//   no-script-candidates [build-info-dir]
+//       fail if a script/**/*.s.sol resolves to a *_CANDIDATE* declaration.
 //   relative-src-imports [dir]
 //       fail if a tracked src/**/*.sol imports through a path whose first segment
 //       is an entry of the repo root (src/, test/, dependencies/, ...): the
@@ -180,6 +182,7 @@ mod env_ignored;
 mod frozen_snapshots;
 mod install_staged_config;
 mod mutation_ledger;
+mod no_script_candidates;
 mod no_submodules;
 mod prompt_cap;
 mod relative_src_imports;
@@ -271,6 +274,19 @@ fn main() {
                     println!("{line}");
                 }
                 std::process::exit(1);
+            }
+        }
+        "no-script-candidates" => {
+            let dir = Path::new(args.get(2).map(String::as_str).unwrap_or("out/build-info"));
+            match no_script_candidates::check(dir) {
+                Err(e) => fail(&format!("no-script-candidates: {e}")),
+                Ok(offenders) if offenders.is_empty() => println!("no-script-candidates: clean"),
+                Ok(offenders) => {
+                    for line in offenders {
+                        println!("{line}");
+                    }
+                    std::process::exit(1);
+                }
             }
         }
         "relative-src-imports" => {
@@ -534,7 +550,7 @@ fn main() {
         other => {
             eprintln!(
                 "rainix-static: unknown subcommand {other:?} \
-                 (available: no-submodules, relative-src-imports, agent-context-cap, prompt-cap, \
+                 (available: no-submodules, no-script-candidates, relative-src-imports, agent-context-cap, prompt-cap, \
                  comment-loc-cap, codegen-declaration, install-staged-config, snapshots-append-only, \
                  mutation-ledger, ci-gate, soldeer-gate, rpc-preflight, release-guard, \
                  subgraph-probe, subgraph-build-hash, subgraph-targets, verify-status-recheck, \
