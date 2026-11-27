@@ -69,6 +69,13 @@ jobs:
       # the published package; src/ imports are relative. After the install:
       # `dependencies/` is a root entry only once it exists.
       - uses: rainlanguage/rainix/.github/actions/relative-src-imports@main
+      # Scripts are prod once merged, so they may not resolve to a moving candidate.
+      - if: hashFiles('script/**/*.s.sol') != ''
+        run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge build --skip './test/**' --build-info --build-info-path "$RUNNER_TEMP/build-info"
+      - if: hashFiles('script/**/*.s.sol') != ''
+        uses: rainlanguage/rainix/.github/actions/no-script-candidates@main
+        with:
+          build-info: ${{ runner.temp }}/build-info
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c slither .
       - run: nix develop github:rainlanguage/rainix/${{ env.RAINIX_SHA }}#sol-shell -c forge fmt --check
       # forge's own linter. `forge lint` alone ALWAYS exits 0 — it prints its

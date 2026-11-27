@@ -1,0 +1,17 @@
+name: no-script-candidates
+description: >-
+  Fails when a script/**/*.s.sol resolves, directly, through an import alias, or through any function or constant it uses, to a *_CANDIDATE* declaration. Scripts are prod once merged; candidates move with source. Reads forge build-info, so build with --build-info first.
+inputs:
+  build-info:
+    description: forge build-info directory.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Check scripts reference no candidate
+      shell: bash
+      env:
+        BUILD_INFO: ${{ inputs.build-info }}
+      run: |
+        set -euo pipefail
+        nix run "path:$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)#rainix-static" -- no-script-candidates "$BUILD_INFO"
