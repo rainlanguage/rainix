@@ -39,6 +39,7 @@ pub(crate) fn check(build_info_dir: &Path) -> Result<Vec<String>, String> {
 #[derive(Default)]
 struct Graph {
     names: HashMap<u64, String>,
+    candidates: HashSet<u64>,
     edges: HashMap<u64, HashSet<u64>>,
     uses: Vec<(String, u64, u64)>,
 }
@@ -52,13 +53,20 @@ pub(crate) fn check_build_info(info: &Value) -> Result<Vec<String>, String> {
     for (path, src) in sources {
         let ast = src.get("ast").ok_or(format!("{path}: no ast"))?;
         let is_script = path.starts_with("script/") && path.ends_with(".s.sol");
-        walk(ast, None, is_script.then_some(path.as_str()), &mut g);
+        // Generated candidate constants (`DEPLOYED_ADDRESS`, ...) carry no `_CANDIDATE` in their names.
+        let is_candidate = path
+            .split('/')
+            .collect::<Vec<_>>()
+            .windows(2)
+            .any(|w| w == ["generated", "candidate"]);
+        walk(ast, None, is_script.then_some(path.as_str()), is_candidate, &mut g);
     }
     let mut tainted: HashSet<u64> = g
         .names
         .iter()
         .filter(|(_, n)| n.contains("_CANDIDATE"))
         .map(|(&id, _)| id)
+        .chain(g.candidates.iter().copied())
         .collect();
     loop {
         let before = tainted.len();
@@ -106,13 +114,16 @@ fn is_unit(node: &Value) -> bool {
     }
 }
 
-fn walk(node: &Value, unit: Option<u64>, script: Option<&str>, g: &mut Graph) {
+fn walk(node: &Value, unit: Option<u64>, script: Option<&str>, candidate: bool, g: &mut Graph) {
     match node {
-        Value::Array(a) => a.iter().for_each(|n| walk(n, unit, script, g)),
+        Value::Array(a) => a.iter().for_each(|n| walk(n, unit, script, candidate, g)),
         Value::Object(o) => {
             let id = o.get("id").and_then(Value::as_u64);
             if let (Some(id), Some(name)) = (id, o.get("name").and_then(Value::as_str)) {
                 g.names.insert(id, name.to_string());
+                if candidate {
+                    g.candidates.insert(id);
+                }
             }
             let unit = if is_unit(node) { id.or(unit) } else { unit };
             if let Some(r) = o.get("referencedDeclaration").and_then(Value::as_u64) {
@@ -129,7 +140,7 @@ fn walk(node: &Value, unit: Option<u64>, script: Option<&str>, g: &mut Graph) {
                     g.uses.push((path.to_string(), offset, r));
                 }
             }
-            o.values().for_each(|v| walk(v, unit, script, g));
+            o.values().for_each(|v| walk(v, unit, script, candidate, g));
         }
         _ => {}
     }
